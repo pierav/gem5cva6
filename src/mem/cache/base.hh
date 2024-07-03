@@ -344,6 +344,7 @@ class BaseCache : public ClockedObject
 
     /** Write/writeback buffer */
     WriteQueue writeBuffer;
+    unsigned int writeBufferSize;
 
     /** Tag and data Storage */
     BaseTags *tags;

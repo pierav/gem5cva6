@@ -31,6 +31,9 @@
 #ifndef __ARCH_RISCV_PAGETABLE_H__
 #define __ARCH_RISCV_PAGETABLE_H__
 
+#include <iomanip>
+
+#include "arch/riscv/page_size.hh"
 #include "base/bitunion.hh"
 #include "base/logging.hh"
 #include "base/trie.hh"
@@ -79,28 +82,40 @@ EndBitUnion(PTESv39)
 struct TlbEntry;
 typedef Trie<Addr, TlbEntry> TlbEntryTrie;
 
+
 struct TlbEntry : public Serializable
 {
     // The base of the physical page.
-    Addr paddr;
+    Addr paddr = 0;
 
     // The beginning of the virtual page this entry maps.
-    Addr vaddr;
+    Addr vaddr = 0;
     // The size of the page this represents, in address bits.
-    unsigned logBytes;
+    unsigned logBytes = 0;
 
-    uint16_t asid;
+    uint16_t asid = 0;
 
-    PTESv39 pte;
+    PTESv39 pte = 0;
 
-    TlbEntryTrie::Handle trieHandle;
+    TlbEntryTrie::Handle trieHandle = NULL;
 
     // A sequence number to keep track of LRU.
-    uint64_t lruSeq;
+    uint64_t lruSeq = 0;
 
-    TlbEntry()
-        : paddr(0), vaddr(0), logBytes(0), pte(), lruSeq(0)
-    {}
+    uint64_t shc = 0; /* Shared Counter */
+    uint64_t mwc = 0; /* May write Counter*/
+
+    Addr __pa(){
+        return paddr << PageShift;
+    }
+
+    bool isMatchPA(TlbEntry *e){
+        Addr mask = ~(std::max(e->size(), size()) - 1);
+        if ((e->__pa() & mask) == (__pa() & mask)){
+            return true;
+        }
+        return false;
+    }
 
     // Return the page size in bytes
     Addr size() const
@@ -110,6 +125,28 @@ struct TlbEntry : public Serializable
 
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
+
+    std::string dump(){
+
+        std::ostringstream ss;
+        ss << std::hex;
+        ss << "vpn=" << vaddr;
+        ss << " asid=" << asid;
+        ss << " ppn=" << paddr;
+        ss << " size=" << size();
+        ss << " [";
+        ss << (pte.d ? 'D' : ' ');
+        ss << (pte.a ? 'A' : ' ');
+        ss << (pte.g ? 'G' : ' ');
+        ss << (pte.u ? 'U' : ' ');
+        ss << (pte.r ? 'R' : ' ');
+        ss << (pte.w ? 'W' : ' ');
+        ss << (pte.x ? 'X' : ' ');
+        ss << "]";
+        ss << ' ' << mwc << '/' << shc;
+        return ss.str();
+    }
+
 };
 
 } // namespace RiscvISA

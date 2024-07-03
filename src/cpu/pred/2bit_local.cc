@@ -76,6 +76,11 @@ LocalBP::LocalBP(const LocalBPParams &params)
 
     DPRINTF(Fetch, "instruction shift amount: %i\n",
             instShiftAmt);
+
+    for (int i = 0; i < localPredictorSets; i++){ // TODO no for
+        localCtrs[i] += 1 << (localCtrBits - 1);
+    }
+
 }
 
 void

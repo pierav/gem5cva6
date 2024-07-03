@@ -50,6 +50,8 @@
 namespace gem5
 {
 
+class MyExecContext;
+
 class TimingSimpleCPU : public BaseSimpleCPU
 {
   public:

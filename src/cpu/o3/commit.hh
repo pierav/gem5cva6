@@ -90,6 +90,7 @@ class ThreadState;
  */
 class Commit
 {
+
   public:
     /** Overall commit status. Used to determine if the CPU can deschedule
      * itself due to a lack of activity.
@@ -460,6 +461,10 @@ class Commit
     // HTM
     int htmStarts[MaxThreads];
     int htmStops[MaxThreads];
+
+    /** Termination */
+    Addr passAddr;
+    Addr failAddr;
 
     struct CommitStats : public statistics::Group
     {

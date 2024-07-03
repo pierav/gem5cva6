@@ -191,3 +191,7 @@ class BaseO3CPU(BaseCPU):
         TournamentBP(numThreads=Parent.numThreads), "Branch Predictor"
     )
     needsTSO = Param.Bool(False, "Enable TSO Memory model")
+
+
+    passAddr = Param.Addr(0x0, "Good trap address")
+    failAddr = Param.Addr(0x0, "Bad trap address")

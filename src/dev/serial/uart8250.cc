@@ -87,7 +87,7 @@ Uart8250::scheduleIntr(Event *event)
 
 Uart8250::Uart8250(const Params &p)
     : Uart(p, p.pio_size), registers(this, name() + ".registers"),
-      lastTxInt(0),
+      register_width(p.register_width), lastTxInt(0),
       txIntrEvent([this]{ processIntrEvent(TX_INT); }, "TX"),
       rxIntrEvent([this]{ processIntrEvent(RX_INT); }, "RX")
 {
@@ -216,11 +216,12 @@ Uart8250::writeIer(Register<Ier> &reg, const Ier &ier)
 Tick
 Uart8250::read(PacketPtr pkt)
 {
-    Addr daddr = pkt->getAddr() - pioAddr;
+    Addr daddr = (pkt->getAddr() - pioAddr) / register_width;
+    unsigned int size = pkt->getSize() / register_width;
 
     DPRINTF(Uart, "Read register %#x\n", daddr);
 
-    registers.read(daddr, pkt->getPtr<void>(), pkt->getSize());
+    registers.read(daddr, pkt->getPtr<void>(), size);
 
     pkt->makeAtomicResponse();
     return pioDelay;
@@ -229,12 +230,13 @@ Uart8250::read(PacketPtr pkt)
 Tick
 Uart8250::write(PacketPtr pkt)
 {
-    Addr daddr = pkt->getAddr() - pioAddr;
+    Addr daddr = (pkt->getAddr() - pioAddr)/register_width;
+    unsigned int size = pkt->getSize() / register_width;
 
     DPRINTF(Uart, "Write register %#x value %#x\n", daddr,
             pkt->getRaw<uint8_t>());
 
-    registers.write(daddr, pkt->getPtr<void>(), pkt->getSize());
+    registers.write(daddr, pkt->getPtr<void>(), size);
 
     pkt->makeAtomicResponse();
     return pioDelay;

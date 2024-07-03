@@ -75,6 +75,7 @@ PMAChecker::isUncacheable(const AddrRange &range)
 bool
 PMAChecker::isUncacheable(const Addr &addr, const unsigned size)
 {
+    // printf("PMA p@:%lx : %lx\n", addr, addr + size);
     AddrRange range(addr, addr + size);
     return isUncacheable(range);
 }

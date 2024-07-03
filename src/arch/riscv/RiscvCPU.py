@@ -59,3 +59,10 @@ class RiscvO3CPU(BaseO3CPU, RiscvCPU):
 
 class RiscvMinorCPU(BaseMinorCPU, RiscvCPU):
     mmu = RiscvMMU()
+
+
+# PR:
+from m5.objects.BaseCva6CPU import BaseCva6CPU
+
+class RiscvCva6CPU(BaseCva6CPU, RiscvCPU):
+    mmu = RiscvMMU()

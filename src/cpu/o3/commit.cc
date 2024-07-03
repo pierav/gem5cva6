@@ -66,6 +66,7 @@
 #include "params/BaseO3CPU.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
+#include "sim/sim_exit.hh"
 
 namespace gem5
 {
@@ -96,7 +97,9 @@ Commit::Commit(CPU *_cpu, const BaseO3CPUParams &params)
       trapLatency(params.trapLatency),
       canHandleInterrupts(true),
       avoidQuiesceLiveLock(false),
-      stats(_cpu, this)
+      stats(_cpu, this),
+      passAddr(params.passAddr),
+      failAddr(params.failAddr)
 {
     if (commitWidth > MaxWidth)
         fatal("commitWidth (%d) is larger than compiled limit (%d),\n"
@@ -1265,6 +1268,18 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
     // Finally clear the head ROB entry.
     rob->retireHead(tid);
+
+    // GOOD TRAP / BAD TRAP
+    if (passAddr == head_inst->pcState().instAddr()){
+        std::cout << "*** GOOD TRAP *** @0x"
+                <<  std::hex << passAddr << std::endl;
+        exitSimLoop("*** GOOD TRAP ***", 0);
+    }
+    if (failAddr == head_inst->pcState().instAddr()){
+        std::cout << "*** BAD TRAP *** @0x"
+                << std::hex << failAddr << std::endl;
+        exitSimLoop("*** BAD TRAP ***", 1);
+    }
 
 #if TRACING_ON
     if (debug::O3PipeView) {

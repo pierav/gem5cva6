@@ -472,6 +472,8 @@ class Request : public Extensible<Request>
 
   public:
 
+    uint64_t pte = 0;
+
     /**
      * Minimal constructor. No fields are initialized. (Note that
      *  _flags and privateFlags are cleared by Flags default

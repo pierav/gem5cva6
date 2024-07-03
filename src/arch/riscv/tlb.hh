@@ -80,6 +80,15 @@ class TLB : public BaseTLB
         statistics::Scalar writeMisses;
         statistics::Scalar writeAccesses;
 
+        statistics::Scalar inserts;
+        statistics::Scalar insertsS;
+        statistics::Scalar insertsSW;
+
+        statistics::Scalar read;
+        statistics::Scalar readS;
+        statistics::Scalar readSW;
+        statistics::Scalar readConst;
+
         statistics::Formula hits;
         statistics::Formula misses;
         statistics::Formula accesses;
@@ -94,6 +103,9 @@ class TLB : public BaseTLB
     TLB(const Params &p);
 
     Walker *getWalker();
+
+
+
 
     void takeOverFrom(BaseTLB *old) override {}
 
@@ -136,6 +148,9 @@ class TLB : public BaseTLB
                            BaseMMU::Mode mode) const override;
 
   private:
+    void entry_insert(TlbEntry *e);
+    void entry_remove(TlbEntry *e);
+
     uint64_t nextSeq() { return ++lruSeq; }
 
     TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden);

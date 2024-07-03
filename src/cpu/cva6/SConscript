@@ -1,0 +1,85 @@
+# -*- mode:python -*-
+
+Import('*')
+
+if env['CONF']['BUILD_ISA']:
+    SimObject('BaseCva6CPU.py',
+              sim_objects=['BaseCva6CPU'],
+              enums=[])
+
+    Source('cpu.cc')
+    Source('dyn_inst.cc')
+
+    # CPU stages
+    Source('stage_fetch1.cc')
+    Source('stage_fetch2.cc')
+    Source('stage_decode.cc')
+    Source('stage_issue.cc')
+    Source('stage_execute.cc')
+    # TODO: Source('stage_commit.cc')
+
+    Source('func_unit.cc')
+    Source('pipe_data.cc')
+    Source('buffer.cc')
+    Source('pipeline.cc')
+    Source('scoreboard.cc')
+    Source('stats.cc')
+
+    Source('fu_lsu.cc')
+
+    # Extensions
+    Source('pure_block.cc')
+    Source('minicache.cc')
+    Source('vp.cc')
+    Source('vp_dpe.cc')
+
+    # Utils
+    Source('registerfile.cc')
+
+    Source('plugin.cc')
+
+    Source('VTAGE.cc')
+    DebugFlag('ValuePredictor', 'ValuePredictor VTAGE')
+
+    DebugFlag('Cva6Execute', 'Cva6 Execute stage')
+    DebugFlag('Cva6Issue', 'Cva6 Issue stage')
+    DebugFlag('Cva6Interrupt', 'Cva6 interrupt handling')
+    DebugFlag('Cva6Mem', 'Cva6 memory accesses')
+    DebugFlag('Cva6Scoreboard', 'Cva6 Execute register scoreboard')
+    DebugFlag('Cva6Trace', 'Cva6Trace cycle-by-cycle state trace')
+    DebugFlag('Cva6Timing', 'Extra timing for instructions')
+    DebugFlag('Cva6X', 'Cva6 pipeline state')
+    DebugFlag('Cva6Commit', 'Cva6 Commit events')
+    DebugFlag('Cva6CommitCpt', 'Cva6 Commit events')
+    DebugFlag('Cva6FU', 'Cva6 fonctional units')
+    DebugFlag('Cva6LSU', 'Cva6 load store unit')
+
+    DebugFlag('Cva6Minicache', 'The Load store unit minicache')
+    DebugFlag('Cva6VP', 'Value predictions')
+
+    DebugFlag('Cva6Plugin', 'Plugins debug informations')
+
+
+    DebugFlag('Cva6LambdaRDA', 'Lambda: Register Dead Analyser')
+    DebugFlag('Cva6LambdaCommit', 'Lambda: debut in flight commit')
+    DebugFlag('Cva6LambdaLearn', 'Lambda: learning from commit')
+    DebugFlag('Cva6LambdaDump', 'Lambda: Dump everything at end')
+
+    CompoundFlag('Cva6Lambda', ['Cva6LambdaRDA',
+                                'Cva6LambdaCommit',
+                                'Cva6LambdaLearn',
+                                'Cva6LambdaDump'])
+
+    CompoundFlag('Cva6', ['Cva6Execute',
+                          'Cva6FU',
+                          'Cva6LSU',
+                          'Cva6Issue',
+                          'Cva6Interrupt',
+                          'Cva6Mem',
+                          'Cva6Scoreboard',
+                          'Cva6X',
+                          'Cva6Commit',
+                          'Cva6Minicache',
+                          'Cva6VP',
+                          'Cva6Plugin'])
+

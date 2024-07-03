@@ -77,6 +77,8 @@ TLB::TLB(const Params &p) :
 {
     for (size_t x = 0; x < size; x++) {
         tlb[x].trieHandle = NULL;
+        tlb[x].mwc = 0;
+        tlb[x].shc = 0;
         freeList.push_back(&tlb[x]);
     }
 
@@ -89,6 +91,60 @@ TLB::getWalker()
 {
     return walker;
 }
+
+void
+TLB::entry_insert(TlbEntry *e){
+    /* Annotate entries */
+    e->mwc = e->pte.w;
+    e->shc = 1;
+    for (size_t i = 0; i < size; i++) {
+        if (tlb[i].trieHandle) {
+            //DPRINTF(TLB, "tlb[%d]: %s\n", i, tlb[i].dump());
+            if (e->isMatchPA(&tlb[i])){
+                // printf("MATCH PA : %s == %s\n",
+                //     e->dump().c_str(), tlb[i].dump().c_str());
+                assert(tlb[i].shc);
+                e->mwc += tlb[i].pte.w;
+                e->shc += 1;
+                tlb[i].mwc += e->pte.w;
+                tlb[i].shc += 1;
+            }
+        }
+    }
+
+    stats.inserts += 1;
+    stats.insertsS += e->shc > 1;
+    stats.insertsSW += e->mwc > 1;
+    // if (shc > 1){
+    //     fatal("Insert entry: %d/%d : %s\n", mwc, shc, e->dump());
+    // }
+    /* Insert */
+    Addr key = buildKey(e->vaddr, e->asid);
+    e->trieHandle = trie.insert(key, TlbEntryTrie::MaxBits - e->logBytes, e);
+}
+
+
+void
+TLB::entry_remove(TlbEntry *e){
+    /* Remove */
+    assert(e->trieHandle);
+    trie.remove(e->trieHandle);
+    e->trieHandle = NULL;
+    e->mwc = 0;
+    e->shc = 0;
+    freeList.push_back(e);
+
+    /* Annotate entries */
+    for (size_t i = 0; i < size; i++) {
+        if (tlb[i].trieHandle) {
+            if (e->isMatchPA(&tlb[i])){
+                tlb[i].mwc -= e->pte.w;
+                tlb[i].shc -= 1;
+            }
+        }
+    }
+}
+
 
 void
 TLB::evictLRU()
@@ -140,19 +196,19 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden)
 }
 
 TlbEntry *
-TLB::insert(Addr vpn, const TlbEntry &entry)
-{
-    DPRINTF(TLB, "insert(vpn=%#x, asid=%#x): ppn=%#x pte=%#x size=%#x\n",
-        vpn, entry.asid, entry.paddr, entry.pte, entry.size());
-
+TLB::insert(Addr vpn, const TlbEntry &entry) {
     // If somebody beat us to it, just use that existing entry.
     TlbEntry *newEntry = lookup(vpn, entry.asid, BaseMMU::Read, true);
     if (newEntry) {
         // update PTE flags (maybe we set the dirty/writable flag)
+        assert(newEntry->pte == entry.pte); // PR: must be true ?
         newEntry->pte = entry.pte;
         assert(newEntry->vaddr == vpn);
         return newEntry;
     }
+
+    DPRINTF(TLB, "insert(vpn=%#x, asid=%#x): ppn=%#x pte=%#x size=%#x\n",
+        vpn, entry.asid, entry.paddr, entry.pte, entry.size());
 
     if (freeList.empty())
         evictLRU();
@@ -160,12 +216,10 @@ TLB::insert(Addr vpn, const TlbEntry &entry)
     newEntry = freeList.front();
     freeList.pop_front();
 
-    Addr key = buildKey(vpn, entry.asid);
     *newEntry = entry;
     newEntry->lruSeq = nextSeq();
     newEntry->vaddr = vpn;
-    newEntry->trieHandle =
-    trie.insert(key, TlbEntryTrie::MaxBits - entry.logBytes, newEntry);
+    entry_insert(newEntry);
     return newEntry;
 }
 
@@ -213,10 +267,7 @@ TLB::remove(size_t idx)
         tlb[idx].vaddr, tlb[idx].asid, tlb[idx].paddr, tlb[idx].pte,
         tlb[idx].size());
 
-    assert(tlb[idx].trieHandle);
-    trie.remove(tlb[idx].trieHandle);
-    tlb[idx].trieHandle = NULL;
-    freeList.push_back(&tlb[idx]);
+    entry_remove(&tlb[idx]);
 }
 
 Fault
@@ -318,6 +369,14 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     DPRINTF(TLBVerbose, "translate(vpn=%#x, asid=%#x): %#x\n",
             vaddr, satp.asid, paddr);
     req->setPaddr(paddr);
+    req->pte = (uint64_t)e->pte; // PR keep track of PTE for debug
+
+    if (mode != BaseMMU::Write){
+        stats.read += 1;
+        stats.readS += e->shc > 1;
+        stats.readSW += e->mwc > 1;
+        stats.readConst += e->mwc == 0;
+    }
 
     return NoFault;
 }
@@ -514,9 +573,10 @@ TLB::unserialize(CheckpointIn &cp)
         freeList.pop_front();
 
         newEntry->unserializeSection(cp, csprintf("Entry%d", x));
-        Addr key = buildKey(newEntry->vaddr, newEntry->asid);
-        newEntry->trieHandle = trie.insert(key,
-            TlbEntryTrie::MaxBits - newEntry->logBytes, newEntry);
+        entry_insert(newEntry);
+        // Addr key = buildKey(newEntry->vaddr, newEntry->asid);
+        // newEntry->trieHandle = trie.insert(key,
+        //     TlbEntryTrie::MaxBits - newEntry->logBytes, newEntry);
     }
 }
 
@@ -528,6 +588,15 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
     ADD_STAT(writeHits, statistics::units::Count::get(), "write hits"),
     ADD_STAT(writeMisses, statistics::units::Count::get(), "write misses"),
     ADD_STAT(writeAccesses, statistics::units::Count::get(), "write accesses"),
+    ADD_STAT(inserts, statistics::units::Count::get(), "inserts"),
+    ADD_STAT(insertsS, statistics::units::Count::get(), "inserts Shared"),
+    ADD_STAT(insertsSW, statistics::units::Count::get(), "inserts S Write"),
+
+    ADD_STAT(read, statistics::units::Count::get(), "Read"),
+    ADD_STAT(readS, statistics::units::Count::get(), "Read Shared"),
+    ADD_STAT(readSW, statistics::units::Count::get(), "Read Shared Write"),
+    ADD_STAT(readConst, statistics::units::Count::get(), "Read Const"),
+
     ADD_STAT(hits, statistics::units::Count::get(),
              "Total TLB (read and write) hits", readHits + writeHits),
     ADD_STAT(misses, statistics::units::Count::get(),

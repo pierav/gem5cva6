@@ -205,6 +205,7 @@ class Uart8250 : public Uart
     using Register = Registers::Register<T>;
 
     Registers registers;
+    unsigned int register_width;
 
     uint8_t readRbr(Register8 &reg);
     void writeThr(Register8 &reg, const uint8_t &data);

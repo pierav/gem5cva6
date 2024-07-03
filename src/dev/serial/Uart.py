@@ -69,9 +69,13 @@ class Uart8250(Uart):
     cxx_header = "dev/serial/uart8250.hh"
     cxx_class = "gem5::Uart8250"
     pio_size = Param.Addr(0x8, "Size of address range")
+    register_width = Param.Unsigned(0x1, "Size of registers")
 
 
 class RiscvUart8250(Uart8250):
+    register_width = 4
+    pio_size = 8*4
+
     def generateDeviceTree(self, state):
         node = self.generateBasicPioDeviceNode(
             state, "uart", self.pio_addr, self.pio_size
@@ -82,4 +86,7 @@ class RiscvUart8250(Uart8250):
         node.append(FdtPropertyWords("clock-frequency", [0x384000]))
         node.append(FdtPropertyWords("interrupt-parent", state.phandle(plic)))
         node.appendCompatible(["ns8250", "ns16550a"])
+        node.append(FdtPropertyWords("reg-shift", [2]))
+        node.append(FdtPropertyWords("reg-io-width", [4]))
         yield node
+

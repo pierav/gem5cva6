@@ -137,6 +137,9 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
             break;
         }
 
+        DPRINTFS(Faults, tc->getCpuPtr(), "Fault (%s) code(%d) at PC: %s\n",
+                name(), _code, pc_state);
+
         // Set fault cause, privilege, and return PC
         uint64_t _cause = _code;
         if (isInterrupt()) {
@@ -161,7 +164,9 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         // Set PC to fault handler address
         Addr addr = isa->getFaultHandlerAddr(tvec, _code, isInterrupt());
         pc_state.set(addr);
+        // std::cout << "BEG tc->pcState(pc_state);\n";
         tc->pcState(pc_state);
+        // std::cout << "END tc->pcState(pc_state);\n";
     } else {
         invokeSE(tc, inst);
     }
