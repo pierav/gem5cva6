@@ -32,29 +32,49 @@ Issue::evaluate() {
     }
 
     /* Issue instructions */
-    bool used_fu[fus.nbFu()] = { false };
+    // bool used_fu[fus.nbFu()] = { false };
 
     unsigned int cnt_push_load = 0;
     // unsigned int cnt_push_store = 0;
 
     assert(out.empty());
     int nb_issued = 0;
-    for (int i = 0; i < nb_issue_port; i++){
-        // DPRINTF(Cva6Issue, "Attempting to issue (port %d)\n", i);
-        // Try to issue instruction
-        Cva6DynInstPtr inst = scoreboard.getIssueInst(0);
-        if (inst->isBubble()){
-            DPRINTF(Cva6Issue, "(port %d) Scoreboard stall...\n", i);
-            break; // No instruction to issue
+    for (int i = 0; i < nb_issue_port; i++){ // Try to issue instruction
+        bool is_over_serialise;
+        bool is_ready;
+        Cva6DynInstPtr inst = scoreboard.getIssueInst(0,
+            is_over_serialise, is_ready);
+
+        /* 0) Is instruction present ?*/
+        if (inst->isBubble() || is_over_serialise){
+            DPRINTF(Cva6Issue, "(port %d) Frontend stall...\n", i);
+            stats.issue_stall_front += 1;
+            break;
         }
+        DPRINTF(Cva6Issue, "(port %d) process %s\n", i, *inst);
+        if (!inst->issue_start_ts){
+            inst->issue_start_ts = cpu.curCycle();
+        }
+
+        /* 1) Is operands ready ? */
+        if (!is_ready){
+            DPRINTF(Cva6Issue, "(port %d) Read operands stall...\n", i);
+            stats.issue_stall_iro += 1;
+            break;
+        }
+
+        /* 2) Is available FU ? */
         if (!fus.canPush(inst)){
             DPRINTF(Cva6Issue, "(port %d) FU stall...\n", i);
+            stats.issue_stall_fu += 1;
             break; // No available FU
         }
 
+        /* 3) Is FU contention ? */
         if (!inst->isFault() && inst->staticInst->isLoad()){
             if (cnt_push_load >= 2){
                 DPRINTF(Cva6Issue, "(port %d) LOAD stall...\n", i);
+                stats.issue_stall_fu += 1;
                 break; // No available FU
             } else {
                 cnt_push_load += 1;
@@ -71,13 +91,21 @@ Issue::evaluate() {
         }
         */
 
+        /* Finnaly issue the instruction */
+        inst->issue_ts = cpu.curCycle();
+        if (!inst->isFault() && inst->staticInst->isLoad()){
+            stats.issue_stall_raw.sample(
+                    inst->issue_ts - inst->issue_start_ts);
+        }
+        stats.issue_pass +=1;
+
         /* Decorate the inst with FU details */
         inst->fuIndex = fus.getValidFuIndex(inst);
         // if (used_fu[inst->fuIndex] && ){
         //     DPRINTF(Cva6Issue, "(port %d) LSU stall...\n", i);
         //     break; // FU already used
         // }
-        used_fu[inst->fuIndex] = true;
+        // used_fu[inst->fuIndex] = true;
 
         /* Can insert the instruction into this FU */
         DPRINTF(Cva6Issue, "(port %d) Issuing %s FU: %d\n", i,
@@ -100,6 +128,7 @@ Issue::evaluate() {
             // Cycles delta = inst->issue_ts  - inst->issue_start_ts;
             // printf("DELTA : %d\n", delta);
         }
+
         /* Some statistics */
         if (!inst->isFault()){
             stats.typeIssued[0][inst->staticInst->opClass()]++;
@@ -107,7 +136,6 @@ Issue::evaluate() {
         nb_issued += 1;
     }
     stats.numIssued.sample(nb_issued);
-
 
     scoreboard.tick();
 }

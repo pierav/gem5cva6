@@ -369,14 +369,13 @@ class Cva6DynInst : public RefCounted
     }
 
     RegVal readMiscReg(int misc_reg) {
-      fatal_if(ex_csrs.count(misc_reg), "CSR forward\n");
+      // fatal_if(ex_csrs.count(misc_reg), "CSR forward\n");
       return cpu->thread->readMiscReg(misc_reg);
     }
 
     void setMiscReg(int misc_reg, RegVal val) {
-      // fatal_if(ex_misc_reg_set,
-      //   "Instruction cannot write multiple CSR\n");
-      ex_csrs[misc_reg] = val;
+      cpu->thread->setMiscReg(misc_reg, val);
+      // ex_csrs[misc_reg] = val;
     }
     /*
      * 3 steps execution:

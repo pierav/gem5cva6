@@ -50,13 +50,29 @@ class Issue : public Named
     {
       statistics::Distribution numIssued;
       statistics::Vector2d typeIssued;
+      statistics::Scalar issue_stall_front;
+      statistics::Scalar issue_stall_iro;
+      statistics::Scalar issue_stall_fu;
+      statistics::Scalar issue_pass;
+
+      statistics::Distribution issue_stall_raw;
 
       IssueStats(BaseCPU &cpu, const BaseCva6CPUParams &params) :
         statistics::Group(&cpu, "issue"),
         ADD_STAT(numIssued, statistics::units::Count::get(),
           "Number of insts issued each cycle"),
         ADD_STAT(typeIssued, statistics::units::Count::get(),
-          "Number of instructions issued per FU type"){
+          "Number of instructions issued per FU type"),
+        ADD_STAT(issue_stall_front, statistics::units::Count::get(),
+                 "Frontend stalls issue"),
+        ADD_STAT(issue_stall_iro, statistics::units::Count::get(),
+                 "Issue read operands stall"),
+        ADD_STAT(issue_stall_fu, statistics::units::Count::get(),
+                 "Issue functional unit stall"),
+        ADD_STAT(issue_pass, statistics::units::Count::get(),
+                 "Nothing stall issue"),
+         ADD_STAT(issue_stall_raw, statistics::units::Count::get(),
+                "Delta Cycles between sb enter and issue"){
         numIssued
           .init(0,params.issueWidth,1)
           .flags(statistics::pdf);
@@ -65,6 +81,10 @@ class Issue : public Named
           .init(1, enums::Num_OpClass)
           .flags(statistics::total | statistics::pdf | statistics::dist);
         typeIssued.ysubnames(enums::OpClassStrings);
+
+        issue_stall_raw
+          .init(0,16,1)
+          .flags(statistics::pdf);
       }
     } stats;
 

@@ -377,7 +377,6 @@ class L1Cache(Cache):
     # replacement_policy = RandomRP()
     # clusivity = 'mostly_incl'
     # write_buffers = 0
-    cache_line_size = 64
 
     def __init__(self, options=None):
         super(L1Cache, self).__init__()
@@ -438,7 +437,6 @@ class L2Cache(Cache):
     response_latency = 1
     mshrs = 20
     tgts_per_mshr = 12
-    cache_line_size = 64
 
     def __init__(self, opts=None):
         super().__init__()
@@ -750,6 +748,10 @@ if not CONFIG_USE_ATOMIC:
 
 else:
     system.cpu = [RiscvAtomicSimpleCPU(cpu_id=i) for i in range(1)]
+
+# system.cpu[0].ArchISA.enable_Zicbom_fs = False
+# system.cpu[0].ArchISA.enable_Zicboz_fs = False
+# system.cpu[0].ArchISA.enable_rvv = False
 
 createHiFivePlatform(system)
 

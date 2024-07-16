@@ -125,19 +125,21 @@ Cva6DynInst::executeInitiate(){
         return;
     }
     // Setup default next pc. Jump instructions modify this value.
-    set(pc_next, pc/*->clone()*/); // PR: LEAK HERE!!
-
+    set(pc_next, pc);
     // Initate memory references
     if (staticInst->isMemRef()){
         ExecContextSpeculative context(this);
         Fault fault = staticInst->initiateAcc(&context, traceData);
-        assert(fault == NoFault); // Must not fault for now
-        assert(dreq); // initiateAcc must create dreq
-        if (traceData){
-            traceData->setMem(
-                dreq->req->getVaddr(),
-                dreq->req->getSize(),
-                dreq->req->getFlags());
+        if (fault != NoFault){
+            setFaultEx(fault);
+        } else {
+            assert(dreq); // initiateAcc must create dreq
+            if (traceData){
+                traceData->setMem(
+                    dreq->req->getVaddr(),
+                    dreq->req->getSize(),
+                    dreq->req->getFlags());
+            }
         }
     }
 }

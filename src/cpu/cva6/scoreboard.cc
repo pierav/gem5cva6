@@ -260,41 +260,28 @@ Scoreboard::issueInst(Cva6DynInstPtr inst, SimpleThread &thread){
 }
 
 Cva6DynInstPtr
-Scoreboard::getIssueInstInternal(size_t index){
-    assert(index == 0); // TODO
-    for (Cva6DynInstPtr inst: issue_queue){
-        if (inst->issue_completed){
-            continue;
+Scoreboard::getIssueInst(
+    size_t index,
+    bool &is_over_serialise,
+    bool &is_ready
+){
+    Cva6DynInstPtr inst = Cva6DynInst::bubble();
+    is_over_serialise = false;
+    is_ready = false;
+    for (Cva6DynInstPtr dyn: issue_queue){
+        if (!dyn->issue_completed){
+            inst = dyn;
+            break;
         }
-        return inst;
+        if (dyn->isFault() ||
+            dyn->staticInst->isSerializeAfter()){
+            is_over_serialise = true;
+        }
     }
-    return Cva6DynInst::bubble();
-}
-
-Cva6DynInstPtr
-Scoreboard::getIssueInst(size_t index){
-    Cva6DynInstPtr inst = getIssueInstInternal(index);
     if (inst->isBubble()){
-        stats.issue_stall_front += 1;
-        stats.issue_stall +=1;
-        DPRINTF(Cva6Scoreboard, "issue stall: no instruction\n");
         return inst;
     }
-
-    if (!inst->issue_start_ts){
-        inst->issue_start_ts = cpu.curCycle();
-    }
-    if (!canInstIssue(inst)){
-        stats.issue_stall_back += 1;
-        stats.issue_stall +=1;
-        DPRINTF(Cva6Scoreboard, "issue stall: dependancy lock %s\n", *inst);
-        return Cva6DynInst::bubble();
-    }
-
-    if (!inst->issue_ts){
-        inst->issue_ts = cpu.curCycle();
-    }
-    stats.issue_pass +=1;
+    is_ready = canInstIssue(inst);
     return inst;
 }
 
@@ -326,11 +313,6 @@ Scoreboard::commitInst(Cva6DynInstPtr inst){
     // Simply marks instruction
     assert(!inst->commit_completed); // Already commited
     inst->commit_completed = true;
-
-    if (!inst->isFault() && inst->staticInst->isLoad()){
-        stats.issue_stall_raw.sample(inst->issue_ts - inst->issue_start_ts);
-    }
-
 }
 
 void

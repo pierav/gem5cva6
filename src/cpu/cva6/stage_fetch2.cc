@@ -166,16 +166,24 @@ Fetch2::updateBranchPrediction(const BranchData &branch){
 void
 Fetch2::predictBranch(Cva6DynInstPtr inst, BranchData &branch){
     assert(!inst->predictedTaken);
-
+    StaticInstPtr si = inst->staticInst;
     /* Skip non-control/sys call instructions */
-    if ((inst->staticInst->isControl() || inst->staticInst->isSyscall()) &&
-        !inst->staticInst->isSerializeAfter()){
+    if ((si->isControl() || si->isSyscall()) &&
+        !si->isSerializeAfter()){
+        std::unique_ptr<PCStateBase> inst_pc(inst->pc->clone());
+
         /* Tried to predict */
         DPRINTF(Branch, "Trying to predict for inst: %s\n", *inst);
-        std::unique_ptr<PCStateBase> inst_pc(inst->pc->clone());
         inst->triedToPredict = true;
-        inst->predictedTaken = branchPredictor.predict(
-                inst->staticInst, inst->id.fetchSeqNum, *inst_pc, 0);
+
+        if (si->isUncondCtrl() && si->isDirectCtrl()){
+            inst->predictedTaken = true;
+            si->branchTarget(*inst_pc);
+            // si->advancePC(*inst_pc);
+        } else {
+            inst->predictedTaken = branchPredictor.predict(
+                    si, inst->id.fetchSeqNum, *inst_pc, 0);
+        }
         set(inst->predictedTarget, inst_pc);
 
         if (inst->predictedTaken){

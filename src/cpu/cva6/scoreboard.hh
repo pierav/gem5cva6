@@ -43,45 +43,6 @@ namespace cva6 {
 
 class Scoreboard : public Named
 {
-  protected:
-
-    struct ScoreboardStats : public statistics::Group
-    {
-      /** Stats */
-      statistics::Scalar issue_stall_front;
-      statistics::Scalar issue_stall_back;
-      statistics::Scalar issue_stall;
-      statistics::Scalar issue_pass;
-
-      statistics::Formula issue_passrate;
-      statistics::Distribution issue_stall_raw;
-
-
-
-      ScoreboardStats(Cva6CPU &cpu) :
-        statistics::Group(&cpu, "scoreboard"),
-        ADD_STAT(issue_stall_front, statistics::units::Count::get(),
-                 "Frontend stalls issue"),
-        ADD_STAT(issue_stall_back, statistics::units::Count::get(),
-                 "Insts deps stalls issue"),
-        ADD_STAT(issue_stall, statistics::units::Count::get(),
-                 "issue_stall_front + issue_stall_back"),
-        ADD_STAT(issue_pass, statistics::units::Count::get(),
-                 "Nothing stall issue"),
-        ADD_STAT(issue_passrate, statistics::units::Rate<
-          statistics::units::Count, statistics::units::Count>::get(),
-                 "pass / (pass + stall)"),
-         ADD_STAT(issue_stall_raw, statistics::units::Count::get(),
-                "Delta Cycles between sb enter and issue")
-      {
-        issue_passrate.precision(6);
-        issue_passrate = issue_pass / (issue_pass + issue_stall);
-        issue_stall_raw
-          .init(0,16,1)
-          .flags(statistics::pdf);
-      }
-    } stats;
-
   public:
     Cva6CPU &cpu;
     const BaseISA::RegClasses regClasses;
@@ -126,7 +87,6 @@ protected:
     Scoreboard(const std::string &name,
                Cva6CPU &cpu_, uint64_t size) :
         Named(name),
-        stats(cpu_),
         cpu(cpu_),
         regClasses(cpu.thread->getIsaPtr()->regClasses()),
         intRegOffset(0),
@@ -163,8 +123,6 @@ protected:
      *  due to be written by other marked-up instructions in flight */
     bool canInstIssue(Cva6DynInstPtr inst);
 
-    Cva6DynInstPtr getIssueInstInternal(size_t index);
-
   public:
 
     /** Is Available space in scoreboard */
@@ -173,7 +131,9 @@ protected:
     void pushInst(Cva6DynInstPtr inst);
 
     /* Return the instruction to issue. Bubble if none. */
-    Cva6DynInstPtr getIssueInst(size_t index);
+    Cva6DynInstPtr getIssueInst(size_t index, bool &is_over_serialise,
+      bool &is_ready);
+
     /** Issue the instruction */
     void issueInst(Cva6DynInstPtr inst, SimpleThread &thread);
 

@@ -165,7 +165,6 @@ class BaseCache(ClockedObject):
     # in the current cache. Typically, this would be enabled in the
     # data cache.
     write_allocator = Param.WriteAllocator(NULL, "Write allocator")
-    cache_line_size =  Param.Unsigned(128 // 8, "Cache line size (Bytes)")
 
 
 

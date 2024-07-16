@@ -123,10 +123,12 @@ std::string instDump(Cva6DynInstPtr inst, ThreadContext *thread) {
     }
     if (inst->staticInst->isLoad()){
         assert(inst->dreq);
-        assert(inst->dreq->req->hasPaddr());
+        // assert(inst->dreq->req->hasPaddr());
         assert(inst->dreq->req->hasVaddr());
         ss << " VA=" << inst->dreq->req->getVaddr();
-        ss << " PA=" << inst->dreq->req->getPaddr();
+        if (inst->dreq->req->hasPaddr()){
+            ss << " PA=" << inst->dreq->req->getPaddr();
+        }
         ss << " PTE=" << inst->dreq->req->pte;
     }
     return ss.str();
