@@ -13,6 +13,7 @@
 
 #include "base/named.hh"
 #include "base/statistics.hh"
+#include "base/time.hh"
 #include "cpu/cva6/dyn_inst.hh"
 #include "cpu/cva6/pure_block.hh"
 #include "debug/Cva6Plugin.hh"
@@ -60,13 +61,18 @@ class PluginSimpointBar : public Plugin
     Cycles oldcycle;
     Cycles firstcycle;
 
+    Time startTime;
+    double oldtime;
+
   public:
     PluginSimpointBar(const std::string &name,
       Cva6CPU &cpu_,
       const BaseCva6CPUParams &params) :
       Plugin(name, cpu_),
       oldcycle(0),
-      firstcycle(0)
+      firstcycle(0),
+      startTime(true),
+      oldtime(0.f)
     { init(params); }
     void init(const BaseCva6CPUParams &params);
     void commit(Cva6DynInstPtr inst);

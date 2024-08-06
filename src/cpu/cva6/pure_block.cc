@@ -77,12 +77,20 @@ RegDeadAnayser::init_rdmap(const char *elfpath){
         /* Is a custom reg_dead symbol */
         const char *REG_DEAD_KEY = "REG_DEAD.";
         char *base = strstr(symname, REG_DEAD_KEY);
-        if (base == NULL) {
+        if (base == NULL) { /* Not a reg dead symbol */
           continue;
         }
         base += strlen(REG_DEAD_KEY);
-        RegId reg = reverseRegisterName(cpu, base);
-        DPRINTF(Cva6LambdaRDA, "REG_DEAD: %x : %s\n", addr, reg);
+        if (strcmp(base, "arg") == 0){ /* An useless reg dead */
+          warn("Not an isa register: %s\n", symname);
+          continue;
+        }
+        RegId reg;
+        if (reverseRegisterName(cpu, base, reg)){
+          DPRINTF(Cva6LambdaRDA, "REG_DEAD: %x : %s\n", addr, reg);
+        } else {
+          fatal("No register valid in : %s\n", symname);
+        }
         /* Insert register in reg dead map */
         rdmap[addr].set(reg);
     }
@@ -97,7 +105,7 @@ RegDeadAnayser::init_rdmap(const char *elfpath){
 
 void
 PureBlock::pushLambda(){
-
+  return;
   while (window.size() > 1){
     DPRINTF(Cva6LambdaLearn, "*** Try to learn on:\n");
     for (int i = 0; i < window.size(); i++){
@@ -198,6 +206,7 @@ PureBlock::commit(Cva6DynInstPtr inst) {
     state = Idle;
     return;
   }
+  stats.commit += 1;
 
   // Compute instruction HASH
   inststate_t inststate(inst);
@@ -207,11 +216,19 @@ PureBlock::commit(Cva6DynInstPtr inst) {
   } else {
     infiniteBtb[inststate] = 1; // setup
   }
-  stats.commit += 1;
-
+  inst_state_handler.commit(&inststate);
+  return;
 
   // const int MAX_SRC = 3;
   // const int MAX_DST = 1;
+  /* perform red dead ckecks */
+  bool reg_dead[3];
+  for (unsigned int i = 0; i < inst->staticInst->numSrcRegs(); i++) {
+    RegId reg = inst->staticInst->srcRegIdx(i);
+    if (reg.classValue() != InvalidRegClass){
+      reg_dead[i] = rda.isRegDead(inst->pc->instAddr(), reg);
+    }
+  }
 
   switch(state){
     case Idle:
@@ -220,8 +237,8 @@ PureBlock::commit(Cva6DynInstPtr inst) {
     [[fallthrough]];
     case Append:{
       if (inst->isFault() ||
-         inst->staticInst->isStore() ||
-         inst->staticInst->isControl()
+         inst->staticInst->isStore()
+        //  || inst->staticInst->isControl()
         ) {
         // if (register_dst.count(true) == 1 ){
           pushLambda();
@@ -231,7 +248,7 @@ PureBlock::commit(Cva6DynInstPtr inst) {
       }
       state = Append;
 
-      // Append all regs dependancies
+      // Append all regs dependancdies
       for (unsigned int i = 0; i < inst->staticInst->numSrcRegs(); i++) {
         RegId reg = inst->staticInst->srcRegIdx(i);
         if (reg.classValue() != InvalidRegClass){
@@ -240,7 +257,7 @@ PureBlock::commit(Cva6DynInstPtr inst) {
             register_src_val.set(reg, inst->getSrcRegOperand(i));
           }
           /* Perform reg dead check */
-          if (rda.isRegDead(inst->pc->instAddr(), reg)){
+          if (reg_dead[i]){
             rfdst.clear(reg);
           }
         }
@@ -306,7 +323,7 @@ PureBlock::commit(Cva6DynInstPtr inst) {
   for (unsigned int i = 0; i < inst->staticInst->numSrcRegs(); i++) {
     RegId reg = inst->staticInst->srcRegIdx(i);
     ss << riscvRegisterName(reg) << ':';
-    if (rda.isRegDead(pc, reg)){
+    if (reg_dead[i]){
       ss << "X";
     } else {
       ss << '.';

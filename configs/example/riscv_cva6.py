@@ -681,7 +681,7 @@ def good_bad_trap(elfname):
 print("*** Create system...")
 system = System()
 system.clk_domain = SrcClockDomain()
-system.clk_domain.clock = '3GHz' # '50MHz'
+system.clk_domain.clock = '1GHz' # '50MHz'
 system.clk_domain.voltage_domain=VoltageDomain()
 system.mem_ranges = [addr_range_mem]
 system.cache_line_size = 64 # 128 // 8

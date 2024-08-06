@@ -13,8 +13,7 @@ namespace cva6 {
 
 std::string riscvRegisterName(RegId reg);
 
-RegId reverseRegisterName(Cva6CPU &cpu, char* name);
-
+bool reverseRegisterName(Cva6CPU &cpu, char* name, RegId &reg);
 
 /* BinaryRegisterFile: riscv only */
 class BinaryRegisterFile
@@ -44,7 +43,7 @@ class BinaryRegisterFile
     void clear(RegId reg){ bitset &= ~((uint64_t)1 << key(reg)); }
     uint64_t get(){ return bitset; }
     void clearall() {  bitset = 0; }
-    uint8_t popcount() { return __builtin_popcount(bitset); }
+    uint8_t popcount() { return __builtin_popcountll(bitset); }
 
     // RegId i2id(int i){
     //     return RegId(i < 32 ? IntRegClass : FloatRegClass, i % 32);

@@ -46,6 +46,7 @@ RiscvStaticInst::alignmentOk(ExecContext* xc, Addr addr, Addr size) const
     if (addr % size == 0) {
         return true;
     }
+    return true; // PR: alignement should not depends on XC !
 
     // Even if it's not aligned, we're still fine if the check is not enabled.
     // We perform the check first because detecting whether the check itself is

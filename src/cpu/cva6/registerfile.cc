@@ -30,7 +30,7 @@ std::string riscvRegisterName(RegId reg){
   return RiscvISA::registerName(reg);
 }
 
-RegId reverseRegisterName(Cva6CPU &cpu, char* name){
+bool reverseRegisterName(Cva6CPU &cpu, char* name, RegId &reg){
   int index = 0;
   RegClassType type = IntRegClass;
   for (int i = 0; i < IntRegNames.size(); i++){
@@ -47,16 +47,17 @@ RegId reverseRegisterName(Cva6CPU &cpu, char* name){
       goto done;
     }
   }
-  fatal("Invalid reg translation : %s", name);
+  return false;
+  // fatal("Invalid reg translation : %s", name);
   /* Todo some kind of x* ? */
   done:
   BaseISA::RegClasses rcs = cpu.thread->getIsaPtr()->regClasses();
   // const RegClass *rc = rcs.at(type);
-  RegId reg = RegId(*rcs.at(type), index);
+  reg = RegId(*rcs.at(type), index);
   /* Final check*/
   fatal_if(strcmp(riscvRegisterName(reg).c_str(), name) != 0,
     "Invalid reg translation : %s", name);
-  return reg;
+  return true;
 }
 
 std::string

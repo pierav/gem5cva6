@@ -103,7 +103,8 @@ class Execute : public Named
       plugins.push_back(new PluginVPP(name_ + "vpp", cpu, params));
       plugins.push_back(new PluginMCVP(name_ + "mcvp", cpu, params));
       plugins.push_back(new PluginGoodbadTrap(name_ + "gbt", cpu, params));
-      // plugins.push_back(new PluginLambda(name_ + "lambda", cpu, params));
+
+      plugins.push_back(new PluginLambda(name_ + "lambda", cpu, params));
       // plugins.push_back(new PluginMemConst(name_ + "memc", cpu, params));
     }
 

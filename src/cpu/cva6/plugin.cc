@@ -64,8 +64,35 @@ PluginSimpointBar::init(const BaseCva6CPUParams &params){
         assert(params.simpoint_start_insts.size() == 2);
         simcpt_size = params.simpoint_start_insts[1];
     }
+    startTime.setTimer();
 }
+
 #include "sim/cur_tick.hh"
+
+uint64_t
+procInfo(const char *filename, const char *target)
+{
+    int done = 0;
+    char line[80];
+    char format[80];
+    long usage;
+
+    FILE *fp = fopen(filename, "r");
+    while (fp && !feof(fp) && !done) {
+        if (fgets(line, 80, fp)) {
+            if (startswith(line, target)) {
+                snprintf(format, sizeof(format), "%s %%ld", target);
+                sscanf(line, format, &usage);
+                fclose(fp);
+                return usage;
+            }
+        }
+    }
+    if (fp)
+        fclose(fp);
+
+    return 0;
+}
 
 void
 PluginSimpointBar::commit(Cva6DynInstPtr inst){
@@ -77,16 +104,35 @@ PluginSimpointBar::commit(Cva6DynInstPtr inst){
         }
         cpt += 1;
         if (cpt % (deltainst) == 0){
+            /* IPC */
             float ipc = (float)deltainst / (cpu.curCycle() - oldcycle);
             float ipcg =  (float)cpt / (cpu.curCycle() - firstcycle);
             oldcycle = cpu.curCycle();
-
-            uint64_t tick = gem5::curTick();
-
-            printf("%16ld: SIMCPT: %ld/%ld = %f :: ipc=%f, ipcg=%f\n",
+            /* Target time */
+            Tick tick = curTick();
+            /* Host time */
+            Time now;
+            now.setTimer();
+            double hosttime = now - startTime;
+            double delta_hosttime = hosttime - oldtime;
+            /* Memory usage */
+            // VmRSS VmSize
+            uint64_t host_mem_usage = procInfo("/proc/self/status", "VmRSS:");
+            char *unit = (char*)"kMGT???";
+            while (host_mem_usage > 1024){
+                unit = (char*)unit + 1;
+                host_mem_usage /= 1024;
+            }
+            /* Display */
+            printf("%16ld: SIMCPT: %ld/%ld = %f"
+                " :: ipc=%f, ipcg=%f"
+                " :: Host:%.2fs(+%.2f) %ld%c\n",
                 tick,
                 cpt, simcpt_size, (float)cpt/simcpt_size,
-                ipc, ipcg);
+                ipc, ipcg,
+                hosttime, delta_hosttime, host_mem_usage, *unit);
+
+            oldtime = hosttime;
         }
     }
 }
