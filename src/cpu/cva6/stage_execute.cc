@@ -87,40 +87,9 @@ Execute::doInstCommitAccounting(Cva6DynInstPtr inst){
 }
 
 
-
-void regDump(RegId reg, std::ostringstream &ss){
-    if (reg.classValue() == IntRegClass){
-        ss << " x";
-    } else if (reg.classValue() == FloatRegClass){
-        ss << "fp";
-    } else {
-        ss << "??";
-    }
-    ss << std::dec << std::setfill('0') << std::setw(2) << reg.index();
-}
-
 std::string instDump(Cva6DynInstPtr inst, ThreadContext *thread) {
     std::ostringstream ss;
-
     ss << *inst;
-    for (unsigned int i = 0; i < inst->staticInst->numDestRegs(); i++) {
-        RegId reg = inst->staticInst->destRegIdx(i);
-        if (reg.classValue() != InvalidRegClass){
-            RegVal regval = inst->reg_dst_val[i];
-            regDump(reg, ss);
-            ss << ' ' << std::right
-               << std::hex << std::setw(16) << regval << ' ';
-        }
-    }
-    for (unsigned int i = 0; i < inst->staticInst->numSrcRegs(); i++) {
-        RegId reg = inst->staticInst->srcRegIdx(i);
-        if (reg.classValue() != InvalidRegClass){
-            RegVal regval = inst->reg_src_val[i];
-            regDump(reg, ss);
-            ss << ' ' << std::right
-               << std::hex << std::setw(16) << regval << ' ';
-        }
-    }
     if (inst->staticInst->isLoad()){
         assert(inst->dreq);
         // assert(inst->dreq->req->hasPaddr());
@@ -248,6 +217,36 @@ Execute::evaluate() {
         // c2e.inst = inst;
         commitInst(inst, resolved_branch);
         scoreboard.commitInst(inst);
+
+        /* Checker */
+        if (!inst->isFault() && inst->staticInst->isMemRef()){
+            /* Request values */
+            uint64_t addr = inst->dreq->getPaddr();
+            uint8_t size = inst->dreq->getSize();
+            uint64_t value = inst->dreq->getData();
+            if (inst->dreq->isBufferable()){ /* Bufferable load or store */
+                if (inst->staticInst->isLoad()){ /* Load checker */
+                    bool isconst = memcheck.check_load(addr, size, value);
+                    inst->exec_data.is_const_load = isconst;
+                } else { /* Update store*/
+                    bool indempotant = memcheck.check_store(addr, size, value);
+                    inst->exec_data.is_silent_store = indempotant;
+                }
+            } else { /* Not bufferable */
+                memcheck.invalidate(addr);
+            }
+        }
+
+        /* RDA */
+        uint64_t pc =inst->pc->instAddr();
+        if (!inst->isFault()){
+            for (unsigned int i = 0; i < inst->staticInst->numSrcRegs(); i++) {
+                RegId reg = inst->staticInst->srcRegIdx(i);
+                if (reg.classValue() != InvalidRegClass){
+                    inst->exec_data.is_reg_dead[i] = rda.isRegDead(pc, reg);
+                }
+            }
+        }
 
         // MC commit
         if (mc.isEnable() &&            /** MC enable */

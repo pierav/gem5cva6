@@ -6,194 +6,61 @@
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/dyn_inst.hh"
 #include "cpu/cva6/misc/lru_containers.hh"
+#include "cpu/cva6/misc/memory.hh"
 #include "cpu/cva6/registerfile.hh"
 
 namespace gem5 {
 namespace cva6 {
 
 #define NB_INFLIGHT 32
-
-//<PC, rs1, rs2, rs3, rd>
-struct inststate_t
-{
-  uint64_t regs[5] = {0};
-  inststate_t(Cva6DynInstPtr inst);
-  inststate_t() {}
-  bool operator==(const struct inststate_t& o) const {
-    return memcmp(this, &o, sizeof(struct inststate_t)) == 0;
-  }
-  bool operator<(const struct inststate_t& o) const {
-    return memcmp(this, &o, sizeof(struct inststate_t)) < 0;
-  }
-  size_t dohash() const {
-    assert(sizeof(inststate_t) == 8*5);
-    uint64_t res = 0;
-    for (int i = 0; i < 5; i++){
-      res ^= regs[i] << i;
-    }
-    return res;
-  }
-};
-
-
-struct inststate_hash_t
-{
-  size_t operator()(const inststate_t& p) const {
-    return p.dohash();
-  }
-};
-
-struct fifo_t
-{
-  inststate_t buff[NB_INFLIGHT];
-  // Only for backup singleton
-  uint64_t dohash(uint64_t n) const {
-    uint64_t res = 0;
-    for (int i = 0; i < n; i++){
-      res ^= buff[i].dohash();
-    }
-    return res;
-
-  }
-  bool operator==(const struct fifo_t& o) const {
-    return memcmp(this, &o, sizeof(struct fifo_t)) == 0;
-  }
-  void push(inststate_t *state){
-    /* insert state in the fifo */
-    for (int i = NB_INFLIGHT - 1; i > 0; i--){
-      buff[i] = buff[i-1];
-    }
-    buff[0] = *state;
-  }
-};
-
-class fifo_hash_t
-{
-public:
-    size_t operator()(const fifo_t& p) const {
-      return p.dohash(NB_INFLIGHT);
-    }
-};
-
-struct chunck_t
-{
-  const fifo_t *unique_fifo;
-  size_t size;
-  chunck_t() {}
-  chunck_t(const fifo_t *fifo, size_t size_) :
-    unique_fifo(fifo), size(size_) {}
-
-  bool operator==(const struct chunck_t& o) const {
-    assert(size == o.size);
-    return memcmp(unique_fifo, o.unique_fifo, sizeof(inststate_t) * size) == 0;
-  }
-
-  uint64_t dohash() const {
-    return unique_fifo->dohash(size);
-  }
-};
-
-
-class inststaten_hash_t
-{
-public:
-    size_t operator()(const chunck_t& p) const {
-      return p.dohash();
-    }
-};
-
-
 #define HISTSIZE 1000000
+using state_t = Cva6DynInst::inststate_t;
 
 class InstStatesHandler
 {
-  /* The current fifo */
-  fifo_t fifo;
-  /* Backup used to perform singletons of fifo */
-  std::unordered_set<fifo_t, fifo_hash_t> backup;
-  // lru_set<fifo_t, fifo_hash_t> backupn;
-  /**/
-  chunck_t chuncks[NB_INFLIGHT];
-  std::unordered_map<chunck_t, uint64_t, inststaten_hash_t>
-    saves[NB_INFLIGHT];
-
-  lru_suffix_tree<inststate_t, inststate_hash_t> suffixtree;
+  lru_suffix_tree<const state_t*> suffixtree;
+  std::set<state_t> memsave;
+  std::deque<Cva6DynInstPtr> committed;
 
   struct InstStatesHandlerStats : public statistics::Group
   {
     statistics::Scalar req;
+    statistics::Scalar replayI;
     statistics::Vector replay;
+    statistics::Vector replay_cl;
+    statistics::Vector replay_ss;
+    statistics::Vector replay_clss;
+
+    statistics::Vector replay_rd;
+    statistics::Vector replay_rdk1;
+
     InstStatesHandlerStats(Cva6CPU &cpu) :
       statistics::Group(&cpu, "states"),
       ADD_STAT(req, "Requests"),
-      ADD_STAT(replay, "Replays")
-    { replay.init(NB_INFLIGHT+1); }
+      ADD_STAT(replay, "Replays"),
+      ADD_STAT(replay_cl, "replay_cl"),
+      ADD_STAT(replay_ss, "replay_ss"),
+      ADD_STAT(replay_clss, "replay_clss"),
+      ADD_STAT(replay_rd, "replay_clss"),
+      ADD_STAT(replay_rdk1, "")
+    {
+      replay.init(NB_INFLIGHT+1);
+      replay_cl.init(NB_INFLIGHT+1);
+      replay_ss.init(NB_INFLIGHT+1);
+      replay_clss.init(NB_INFLIGHT+1);
+      replay_rd.init(NB_INFLIGHT+1);
+      replay_rdk1.init(NB_INFLIGHT+1);
+    }
   } stats;
 
   public:
-
   InstStatesHandler (Cva6CPU &cpu) :
     // backupn(HISTSIZE),
     suffixtree(NB_INFLIGHT, HISTSIZE),
+    committed(NB_INFLIGHT),
     stats(cpu) {
   }
-
-  void commit(inststate_t *state){
-    size_t depth = suffixtree.insert(*state);
-    assert(depth <= NB_INFLIGHT);
-    for (int i = 0; i <= depth; i++){
-      stats.replay[i] += 1;
-    }
-    stats.req += 1;
-    return;
-    #if 0
-    /* insert state in the fifo */
-    fifo.push(state);
-    /* Check area */
-    // uint64_t area_gb = sizeof(fifo_t) * backup.size();
-    // if (area_gb > 10ULL << 30){
-    //   fatal("Attention ca va peter : %d ", backup.size());
-    // }
-    /* Get singleton*/
-    // auto tuitb = backup.insert(fifo);
-    // const fifo_t *singleton_fifo = &(*tuitb.first);
-    // // printf("Get backup new ? %d \n", tuitb.second);
-
-    const fifo_t *singleton_fifo = backupn.insert(fifo);
-
-    /* Compute stats */
-    for (int i = 0; i < NB_INFLIGHT; i++){
-      assert(saves[i].size() < HISTSIZE+10); // delayed assert
-      chunck_t ch = chunck_t(singleton_fifo, i+1);
-      // for (auto &e: saves[i]){
-      //   printf("%lx, ", e.first.dohash());
-      // }
-      // printf("\n");
-      if (saves[i].count(ch)){
-        stats.replay[i] += 1;
-        saves[i][ch] += 1;
-      } else {
-        saves[i][ch] = 1;
-      }
-      // printf("SAVES[%d]=", i);
-    }
-
-    fifo_t evicted_fifo;
-    if (backupn.is_overflow(evicted_fifo)){
-      // printf("Evict: H=%lx\n", evicted_fifo.dohash(NB_INFLIGHT));
-      for (int i = 0; i < NB_INFLIGHT; i++){
-        chunck_t ch = chunck_t(&evicted_fifo, i+1);
-        // printf("Erase : (%ld) at i=%d size=%ld H=%lx\n",
-        //   saves[i].count(ch), i, saves[i].size(), ch.dohash());
-        if (saves[i].count(ch)){ // Erase if present
-          saves[i].erase(ch);
-        }
-      }
-      // Finnally free key
-      backupn.evict();
-    }
-   #endif
-  }
+  void commit(Cva6DynInstPtr inst);
 };
 
 class LambdaPredictor: public Named
@@ -237,55 +104,13 @@ class LambdaPredictor: public Named
 // class LambdaValueTable: public Named{
 // };
 
-class RegDeadAnayser : public Named
-{
-  protected:
-    Cva6CPU &cpu;
-    std::map<uint64_t /*pc*/, BinaryRegisterFile /*reg dead*/> rdmap;
-    struct RegDeadAnayserStats : public statistics::Group
-    {
-      statistics::Scalar req;
-      statistics::Scalar regdead;
-      RegDeadAnayserStats(Cva6CPU &cpu) :
-        statistics::Group(&cpu, "rda"),
-        ADD_STAT(req, statistics::units::Count::get(), "Request"),
-        ADD_STAT(regdead, statistics::units::Count::get(), "RD Request")
-      { }
-    } stats;
-
-    void init_rdmap(const char *elf);
-
-  public:
-    RegDeadAnayser(const std::string &name,
-      Cva6CPU &cpu_,
-      const BaseCva6CPUParams &params) :
-      Named(name),
-      cpu(cpu_),
-      stats(cpu_)
-    {
-      if (!params.userelf.empty()){
-        init_rdmap(params.userelf.c_str());
-      }
-    }
-
-    bool isRegDead(uint64_t pc, RegId reg){
-      bool ret = rdmap.count(pc) && rdmap[pc].isSet(reg);
-      stats.req += 1;
-      stats.regdead += ret;
-      return ret;
-    }
-};
-
 class PureBlock : public Named
 {
   public:
 
     Cva6CPU &cpu;
-    RegDeadAnayser rda;
 
     /* In flight learn */
-    BinaryRegisterFile rfsrc;
-    BinaryRegisterFile rfdst;
     std::deque<Cva6DynInstPtr> window;
 
     enum PureBlockState
@@ -342,18 +167,11 @@ class PureBlock : public Named
 
     enum PureBlockState state;
 
-    std::map<inststate_t, uint64_t> infiniteBtb;
     InstStatesHandler inst_state_handler;
     uint64_t pctrigger;
     uint64_t pccnt;
 
-    RegisterFile<bool> register_src;
-    RegisterFile<bool> register_dst;
 
-    RegisterFile<uint64_t> register_src_val;
-    RegisterFile<uint64_t> register_dst_val;
-
-    std::map<struct lambda_t, uint64_t> lambdaBtb;
 
     struct LambdaStats : public statistics::Group
     {
@@ -381,7 +199,6 @@ class PureBlock : public Named
     } stats;
 
    protected:
-    inststate_t inststateInit(Cva6DynInstPtr inst);
     void pushLambda();
 
    public:
@@ -390,13 +207,8 @@ class PureBlock : public Named
       const BaseCva6CPUParams &params) :
       Named(name),
       cpu(cpu_),
-      rda(name, cpu_, params),
       state(Idle),
       inst_state_handler(cpu_),
-      register_src(cpu),
-      register_dst(cpu),
-      register_src_val(cpu),
-      register_dst_val(cpu),
       stats(cpu)
       { }
 

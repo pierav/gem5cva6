@@ -39,25 +39,103 @@ Cva6DynInst::isLastOpInInst() const
     return !(staticInst->isMicroop() && !staticInst->isLastMicroop());
 }
 
+
+Cva6DynInst::inststate_t::inststate_t(const Cva6DynInstPtr inst){
+    assert(inst);
+  fatal_if(inst->isBubble(), "Cannot be bubble\n");
+
+  /* If fault bypass */
+  if (inst->isFault()){
+    return;
+  }
+
+  // First arg is PC
+  fatal_if(inst->numSrcRegs() > 3, "Too mush src\n");
+  fatal_if(inst->numDstRegs() > 1, "Too mush dst\n");
+
+  int k = 0;
+  regs[k++] = inst->pc->instAddr();
+
+  for (unsigned int i = 0; i < inst->numSrcRegs(); i++) {
+    RegId reg = inst->staticInst->srcRegIdx(i);
+    if (reg.classValue() != InvalidRegClass){
+      regs[k++] = inst->reg_src_val[i];
+    }
+  }
+  for (unsigned int i = 0; i < inst->numDstRegs(); i++) {
+    RegId reg = inst->staticInst->destRegIdx(i);
+    if (reg.classValue() != InvalidRegClass){
+      regs[k++] = inst->reg_dst_val[i];
+    }
+  }
+}
+
+
 #include <iomanip>
 
-std::ostream &
-operator <<(std::ostream &os, const Cva6DynInst &inst){
-    if (inst.isBubble()){
+
+void regDump(RegId reg, std::ostream &ss){
+    if (reg.classValue() == IntRegClass){
+        ss << " x";
+    } else if (reg.classValue() == FloatRegClass){
+        ss << "fp";
+    } else {
+        ss << "??";
+    }
+    ss << std::dec << std::setfill('0') << std::setw(2) << reg.index();
+}
+
+void dump64breg(uint64_t val, bool valid, std::ostream &ss){
+    if (valid){
+        ss << std::right << std::hex << std::setw(16) << val;
+    } else {
+        ss << "uuuuuuuuuuuuuuuu";
+    }
+}
+
+std::ostream&
+Cva6DynInst::basedump(std::ostream &os) const {
+    if (isBubble()){
         os << "bubble";
     } else {
-        os << "0x" << std::hex << inst.pc->instAddr() << std::dec << ": ";
-        if (inst.isFault()){
-            os << "F: " << inst.getFault()->name();
-        } else if (inst.staticInst) {
+        os << "0x" << std::hex << pc->instAddr() << std::dec << ": ";
+        if (isFault()){
+            os << "F: " << getFault()->name();
+        } else if (staticInst) {
             os << std::setw(30) << std::left
-            << inst.staticInst->disassemble(inst.pc->instAddr());
+            << staticInst->disassemble(pc->instAddr());
             //   << "Flags=";
-            //inst.staticInst->printFlags(os, ",");
+            // staticInst->printFlags(os, ",");
             //   ->getName();
+            if (issue_start_ts){
+                for (unsigned int i = 0; i < numDstRegs(); i++) {
+                    RegId reg = dstRegIdx(i);
+                    if (reg.classValue() != InvalidRegClass){
+                        os << ' ';
+                        RegVal regval = reg_dst_val[i];
+                        regDump(reg, os);
+                        os << ':';
+                        dump64breg(regval, reg_dst_val_valid[i], os);
+                    }
+                }
+                for (unsigned int i = 0; i < numSrcRegs(); i++) {
+                    RegId reg = srcRegIdx(i);
+                    if (reg.classValue() != InvalidRegClass){
+                         os << ' ';
+                        RegVal regval = reg_src_val[i];
+                        regDump(reg, os);
+                        os << ':';
+                        dump64breg(regval, reg_src_val_valid[i], os);
+                    }
+                }
+            }
         }
     }
     return os;
+}
+
+std::ostream &operator <<(std::ostream &os, const Cva6DynInst &inst){
+    return inst.basedump(os);
 }
 
 Fault

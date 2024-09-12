@@ -1,8 +1,7 @@
 #include "cpu/cva6/registerfile.hh"
+#include "cpu/reg_class.hh"
 
 namespace gem5 {
-namespace cva6 {
-
 
 const std::vector<std::string> FloatRegNames = {
     "ft0", "ft1", "ft2", "ft3",
@@ -60,6 +59,28 @@ bool reverseRegisterName(Cva6CPU &cpu, char* name, RegId &reg){
   return true;
 }
 
+
+int id2i(RegId reg){
+    if (reg.classValue() == InvalidRegClass){
+        return 66; // Out of boud
+    } else if (reg.is(IntRegClass)){
+        return reg.index();
+    } else if (reg.is(FloatRegClass)){
+        return reg.index() + 32;
+    }
+    fatal("Invalid register: %s\n", reg);
+}
+
+RegId i2id(int i){
+    if (i < 32){
+        return RiscvISA::intRegClass[i];
+    } else if (i < 64){
+        return RiscvISA::floatRegClass[i - 32];
+    } else {
+        fatal("Invalid register index: %d\n", i);
+    }
+}
+
 std::string
 BinaryRegisterFile::dump(const uint64_t *vals){
   std::stringstream ss;
@@ -88,5 +109,4 @@ BinaryRegisterFile::dump(const uint64_t *vals){
 }
 
 
-} // namespace cva6
 } // namespace gem5

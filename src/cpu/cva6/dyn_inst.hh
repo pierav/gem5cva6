@@ -182,7 +182,7 @@ class Cva6DynInst : public RefCounted
     std::unique_ptr<PCStateBase> pc_next; // Next PC
     bool pc_next_taken = false; // Is next pc taken
     /** CSR write */
-    std::map<int, RegVal> ex_csrs;
+    std::map<int, RegVal> ex_csrs; /* OUTDATED */
     /** LSU */
     /* Minicache */
     mc_inst_data_t mc_data;
@@ -191,6 +191,12 @@ class Cva6DynInst : public RefCounted
 
     /************ Commit ******************/
     bool commit_completed = false; // Used by LSU store buffer
+    struct exec_data_t
+    {
+      bool is_silent_store = true;
+      bool is_const_load = true;
+      bool is_reg_dead[3] = { false };
+    } exec_data;
 
   public:
     Cva6DynInst() {
@@ -221,7 +227,65 @@ class Cva6DynInst : public RefCounted
       //   staticInst, *pc, staticInst);
     }
 
+    //<PC, rs1, rs2, rs3, rd>
+    struct inststate_t
+    {
+      uint64_t regs[5] = {0};
+      inststate_t(const Cva6DynInstPtr inst);
+      inststate_t() {}
+      bool operator==(const struct inststate_t& o) const {
+        return memcmp(this, &o, sizeof(inststate_t)) == 0;
+      }
+      bool operator<(const struct inststate_t& o) const {
+        return memcmp(this, &o, sizeof(inststate_t)) < 0;
+      }
+      size_t dohash() const {
+        assert(sizeof(inststate_t) == 8*5);
+        uint64_t res = 0;
+        for (int i = 0; i < 5; i++){
+          res ^= regs[i] << i;
+        }
+        return res;
+      }
+      struct Hash
+      {
+        size_t operator()(const inststate_t p) const {
+          return p.dohash();
+        }
+      };
+      struct KeyEqual
+      {
+        bool operator()(const inststate_t lhs, const inststate_t rhs) const {
+          return memcmp(&lhs, &rhs, sizeof(inststate_t)) == 0;
+        }
+      };
+    };
 
+    struct StateHash
+    {
+      size_t operator()(const Cva6DynInstPtr p) const {
+        // assert(p);
+        if (!p)
+          return 0;
+        return inststate_t(p).dohash();
+      }
+    };
+
+    struct StateKeyEqual
+    {
+      bool operator()(const Cva6DynInstPtr lhs,
+                      const Cva6DynInstPtr rhs) const {
+        if (lhs == rhs){
+          return true;
+        }
+        if (!lhs || !rhs){
+          return false;
+        }
+        assert(lhs);
+        assert(rhs);
+        return inststate_t(lhs) == inststate_t(rhs);
+      }
+    };
 
 
   public:
@@ -297,12 +361,16 @@ class Cva6DynInst : public RefCounted
 
 
     /** *** ExecContext Interface *** */
-    uint8_t numSrcRegs(){
+    uint8_t numSrcRegs() const {
       assert(staticInst);
       return staticInst->numSrcRegs();
     }
 
-    RegVal getSrcRegOperand(int idx){
+    RegId srcRegIdx(int idx) const {
+      return staticInst->srcRegIdx(idx);
+    }
+
+    RegVal getSrcRegOperand(int idx) const {
       assert(staticInst);
       assert(idx < staticInst->numSrcRegs());
       assert(reg_src_val_valid[idx]);
@@ -316,12 +384,16 @@ class Cva6DynInst : public RefCounted
       reg_src_val[idx] = val;
     }
 
-    uint8_t numDstRegs(){
+    uint8_t numDstRegs() const {
       assert(staticInst);
       return staticInst->numDestRegs();
     }
 
-    RegVal getDstRegOperand(int idx){
+    RegId dstRegIdx(int idx) const {
+      return staticInst->destRegIdx(idx);
+    }
+
+    RegVal getDstRegOperand(int idx) const {
       assert(staticInst);
       assert(idx < staticInst->numDestRegs());
       assert(reg_dst_val_valid[idx]);
@@ -406,6 +478,9 @@ class Cva6DynInst : public RefCounted
     }
 
     ~Cva6DynInst();
+
+
+  std::ostream& basedump(std::ostream &os) const;
 };
 
 /** Print a summary of the instruction */

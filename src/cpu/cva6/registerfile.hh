@@ -9,11 +9,16 @@
 #include "cpu/reg_class.hh"
 
 namespace gem5 {
-namespace cva6 {
 
+/* Some utilities */
 std::string riscvRegisterName(RegId reg);
-
 bool reverseRegisterName(Cva6CPU &cpu, char* name, RegId &reg);
+int id2i(RegId reg);
+RegId i2id(int i);
+
+inline std::string registerName(int i) {
+    return riscvRegisterName(i2id(i));
+}
 
 /* BinaryRegisterFile: riscv only */
 class BinaryRegisterFile
@@ -22,34 +27,27 @@ class BinaryRegisterFile
     uint64_t bitset = 0;
 
   public:
-        BinaryRegisterFile(uint64_t val=0) : bitset(val) {}
-
-  protected:
-    int key(RegId reg){
-        if (reg.classValue() == InvalidRegClass){
-            return 66; // Out of boud
-        } else if (reg.is(IntRegClass)){
-            return reg.index();
-        } else if (reg.is(FloatRegClass)){
-            return reg.index() + 32;
-        }
-        fatal("Invalid register: %s\n", reg);
-    }
+    BinaryRegisterFile(uint64_t val=0) : bitset(val) {}
 
   public:
-    bool isSet(RegId reg){ return (bitset >> key(reg)) & 1; }
+    /* Setters */
+    bool isSet(RegId reg){ return (bitset >> id2i(reg)) & 1; }
     bool isSetRaw(int i){ return (bitset >> i) & 1; }
-    void set(RegId reg){ bitset |= (uint64_t)1 << key(reg); }
-    void clear(RegId reg){ bitset &= ~((uint64_t)1 << key(reg)); }
-    uint64_t get(){ return bitset; }
+    void set(RegId reg){ bitset |= (uint64_t)1 << id2i(reg); }
+    /* Clear */
+    void clear(RegId reg){ bitset &= ~((uint64_t)1 << id2i(reg)); }
+    void clear() { bitset = 0; }
     void clearall() {  bitset = 0; }
+    /* Getters */
+    uint64_t get(){ return bitset; }
     uint8_t popcount() { return __builtin_popcountll(bitset); }
+    bool isSingle() { return popcount() == 1; }
+    RegId getSingle() {
+        assert(isSingle());
+        return i2id(__builtin_ctzll(bitset));
+    }
 
-    // RegId i2id(int i){
-    //     return RegId(i < 32 ? IntRegClass : FloatRegClass, i % 32);
-    // }
     std::string dump(const uint64_t *vals=NULL);
-
 };
 
 template <class T>
@@ -58,7 +56,7 @@ class RegisterFile
 
   protected:
 
-    Cva6CPU &cpu;
+    BaseCPU &cpu;
     const BaseISA::RegClasses regClasses;
 
     const unsigned intRegOffset;
@@ -74,10 +72,9 @@ class RegisterFile
     // The register file
     std::vector<T> rf;
 
-
-    RegisterFile(Cva6CPU &cpu_) :
+    RegisterFile(BaseCPU &cpu_) :
         cpu(cpu_),
-        regClasses(cpu.thread->getIsaPtr()->regClasses()),
+        regClasses(cpu.getContext(0)->getIsaPtr()->regClasses()),
         intRegOffset(0),
         floatRegOffset(intRegOffset + regClasses.at(IntRegClass)->numRegs()),
         ccRegOffset(floatRegOffset + regClasses.at(FloatRegClass)->numRegs()),
@@ -127,8 +124,6 @@ class RegisterFile
         return rf[id];
     }
 
-
-
     bool all(T val){
         for (T _val : rf){
             if (_val != val){
@@ -143,6 +138,7 @@ class RegisterFile
             rf[i] = val;
         }
     }
+
     uint16_t count(T val){
         uint16_t count = 0;
         for (T _val : rf){
@@ -155,5 +151,4 @@ class RegisterFile
 
 };
 
-} // namespace cva6
 } // namespace gem5

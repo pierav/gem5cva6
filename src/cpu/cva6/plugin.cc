@@ -124,11 +124,11 @@ PluginSimpointBar::commit(Cva6DynInstPtr inst){
                 host_mem_usage /= 1024;
             }
             /* Display */
-            printf("%16ld: SIMCPT: %ld/%ld = %f"
-                " :: ipc=%f, ipcg=%f"
-                " :: Host:%.2fs(+%.2f) %ld%c\n",
-                tick,
-                cpt, simcpt_size, (float)cpt/simcpt_size,
+            printf("%16ld: SIMCPT: %ld/%ld :: "
+                "{'p':%f, 'ipc':%f, 'ipcg':%f, 'host':%.2f,"
+                " 'hdelta':%.2f, 'hmem':'%ld%c'}\n",
+                tick, cpt, simcpt_size,
+                (float)cpt/simcpt_size,
                 ipc, ipcg,
                 hosttime, delta_hosttime, host_mem_usage, *unit);
 

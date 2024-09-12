@@ -15,6 +15,7 @@
 #include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/func_unit.hh"
+#include "cpu/cva6/misc/reg_dead.hh"
 #include "cpu/cva6/pipe_data.hh"
 #include "cpu/cva6/plugin.hh"
 #include "cpu/cva6/scoreboard.hh"
@@ -54,6 +55,10 @@ class Execute : public Named
     unsigned int commitWidth;
     bool vpFlush;
 
+    /* Checker */
+    InfiniteMemory64 memcheck;
+    RegDeadAnayser rda;
+
   protected:
 
     /** Generate Branch data based (into branch) on an observed (or not)
@@ -63,9 +68,6 @@ class Execute : public Named
 
     /** Check possible interrupts. */
     bool checkInterrupts();
-
-    /** Invoke interrupt. */
-    bool takeInterrupt(BranchData &branch);
 
     /** Do the stats handling and instruction count and PC event events
      *  related to the new instruction/op counts */
@@ -93,7 +95,9 @@ class Execute : public Named
         dpe(dpe_),
         mc(mc_),
         commitWidth(params.commitWidth),
-        vpFlush(params.vpFlush)
+        vpFlush(params.vpFlush),
+        memcheck("memcheck", cpu_),
+        rda(name_, cpu_, params)
     {
       if (params.plugin_memtrace_path != ""){
         plugins.push_back(new PluginMemtrace(
