@@ -367,28 +367,40 @@ class DTLBRequest :
       if (pkt){
         delete pkt;
       }
-      delete raw_data;
+      delete [] raw_data; // test
     }
 
   public:
     /* Setter that bypass everything */
     void complete_forward(uint64_t val);
+
+    /* Default getter */
+    uint64_t getPaddr() { return req->getPaddr(); }
+    uint16_t getSize() { return req->getSize(); }
     RegVal getData();
 
     /* Cacheline getter */
     bool isCl(){ return pkt2 != nullptr; }
-    uint8_t* getClData(){ return raw_data; }
+    uint8_t* getClData(){
+      assert(isCl());
+      return raw_data;
+    }
     uint64_t getClPaddr(){ return req->getPaddr() & ~(raw_size - 1); }
     uint64_t getClVaddr(){ return req->getVaddr() & ~(raw_size - 1); }
     uint16_t getClSize(){ return raw_size; }
 
-    uint64_t getDWData(){ return *(uint64_t*)(raw_data +
-      (getClPaddr() & 0b111)); }
+    /* Double Word getter */
+    /* xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx */
+    /* @DW - @CL = offset in line ? */
+    uint64_t getDWData(){
+      assert(isCl());
+      return *(uint64_t*)(raw_data + (getDWPaddr() - getClPaddr()));
+    }
     uint64_t getDWPaddr(){ return req->getPaddr() & ~0b111; }
     uint64_t getDWVaddr(){ return req->getVaddr() & ~0b111; }
     uint16_t getDWSize(){ return 8; }
 
-  bool isBufferable(){
+    bool isBufferable(){
     // assert(req->hasPaddr()); // No fault VP HIT !
     return !req->isUncacheable() &&
            !req->isAtomic() &&
