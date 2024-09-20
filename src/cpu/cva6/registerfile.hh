@@ -5,10 +5,10 @@
 #include "arch/riscv/utility.hh"
 #include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/cpu.hh"
-#include "cpu/cva6/dyn_inst.hh"
 #include "cpu/reg_class.hh"
 
 namespace gem5 {
+namespace cva6 {
 
 /* Some utilities */
 std::string riscvRegisterName(RegId reg);
@@ -46,7 +46,6 @@ class BinaryRegisterFile
         assert(isSingle());
         return i2id(__builtin_ctzll(bitset));
     }
-
     std::string dump(const uint64_t *vals=NULL);
 };
 
@@ -151,4 +150,5 @@ class RegisterFile
 
 };
 
+} // namespace cva6
 } // namespace gem5

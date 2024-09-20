@@ -9,6 +9,7 @@
 #include "cpu/cva6/registerfile.hh"
 
 namespace gem5 {
+namespace cva6 {
 
 class RegDeadAnayser : public Named
 {
@@ -49,4 +50,6 @@ class RegDeadAnayser : public Named
     }
 };
 
+
+} // namespace cva6
 } // namespace gem5

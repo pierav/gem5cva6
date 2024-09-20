@@ -19,6 +19,7 @@
 #include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/exec_context_static.hh"
+#include "cpu/cva6/lambda_types.hh"
 #include "cpu/cva6/minicache.hh"
 #include "cpu/cva6/vp.hh"
 #include "cpu/inst_seq.hh"
@@ -198,6 +199,9 @@ class Cva6DynInst : public RefCounted
       bool is_reg_dead[3] = { false };
     } exec_data;
 
+    /************ MetaData ******************/
+    lambda_inst_metadata_t l_data;
+
   public:
     Cva6DynInst() {
       assert(isBubble());
@@ -366,9 +370,7 @@ class Cva6DynInst : public RefCounted
       return staticInst->numSrcRegs();
     }
 
-    RegId srcRegIdx(int idx) const {
-      return staticInst->srcRegIdx(idx);
-    }
+    const RegId &srcRegIdx(int i) const { return staticInst->srcRegIdx(i); }
 
     RegVal getSrcRegOperand(int idx) const {
       assert(staticInst);

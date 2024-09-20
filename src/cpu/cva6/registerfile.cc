@@ -2,6 +2,7 @@
 #include "cpu/reg_class.hh"
 
 namespace gem5 {
+namespace cva6 {
 
 const std::vector<std::string> FloatRegNames = {
     "ft0", "ft1", "ft2", "ft3",
@@ -108,5 +109,5 @@ BinaryRegisterFile::dump(const uint64_t *vals){
   return ss.str();
 }
 
-
+} // namespace cva6
 } // namespace gem5

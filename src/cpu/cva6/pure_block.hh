@@ -14,6 +14,7 @@ namespace cva6 {
 
 #define NB_INFLIGHT 32
 #define HISTSIZE 1000000
+
 using state_t = Cva6DynInst::inststate_t;
 
 class InstStatesHandler
@@ -104,6 +105,7 @@ class LambdaPredictor: public Named
 // class LambdaValueTable: public Named{
 // };
 
+
 class PureBlock : public Named
 {
   public:
@@ -177,27 +179,45 @@ class PureBlock : public Named
     {
       /** Stats */
       statistics::Scalar commit;
-      statistics::Scalar replayI;
-      statistics::Scalar replayI2;
-      statistics::Scalar replayI3;
       statistics::Scalar replayL;
-
       statistics::Distribution Lsize;
       LambdaStats(Cva6CPU &cpu) :
         statistics::Group(&cpu, "lambda"),
         ADD_STAT(commit, statistics::units::Count::get(), "commit"),
-        ADD_STAT(replayI, statistics::units::Count::get(), "replayI"),
-        ADD_STAT(replayI2, statistics::units::Count::get(), "replayI2"),
-        ADD_STAT(replayI3, statistics::units::Count::get(), "replayI3"),
         ADD_STAT(replayL, statistics::units::Count::get(), "replayL"),
         ADD_STAT(Lsize, statistics::units::Count::get(), "Lsize")
       {
         Lsize
-          .init(0,16,1)
+          .init(0,32,1)
           .flags(statistics::pdf);
       }
     } stats;
 
+    struct LambdaPredStats : public statistics::Group
+    {
+      statistics::Scalar req;
+      statistics::Scalar hit;
+      statistics::Scalar miss;
+      statistics::Scalar miss_indempotance;
+      statistics::Scalar miss_val;
+      statistics::Scalar miss_pc;
+      statistics::Distribution hitLsize;
+      LambdaPredStats(Cva6CPU &cpu) :
+        statistics::Group(&cpu, "lambdapred"),
+        ADD_STAT(req, statistics::units::Count::get(), "req"),
+        ADD_STAT(hit, statistics::units::Count::get(), "hit"),
+        ADD_STAT(miss, statistics::units::Count::get(), "miss"),
+        ADD_STAT(miss_indempotance,
+          statistics::units::Count::get(), "miss_indempotance"),
+        ADD_STAT(miss_val, statistics::units::Count::get(), "miss_val"),
+        ADD_STAT(miss_pc, statistics::units::Count::get(), "miss_pc"),
+        ADD_STAT(hitLsize, statistics::units::Count::get(), "hitLsize")
+      {
+        hitLsize
+          .init(0,32,1)
+          .flags(statistics::pdf);
+      }
+    } statsp;
    protected:
     void pushLambda();
 
@@ -209,7 +229,8 @@ class PureBlock : public Named
       cpu(cpu_),
       state(Idle),
       inst_state_handler(cpu_),
-      stats(cpu)
+      stats(cpu),
+      statsp(cpu)
       { }
 
     bool lookup(Cva6DynInstPtr inst){

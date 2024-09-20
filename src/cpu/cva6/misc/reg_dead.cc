@@ -16,6 +16,7 @@
 #include <cstdio>
 
 namespace gem5 {
+namespace cva6 {
 
 void
 RegDeadAnayser::init_rdmap(const char *elfpath){
@@ -72,4 +73,5 @@ RegDeadAnayser::init_rdmap(const char *elfpath){
     close(fd);
 }
 
+}
 }
