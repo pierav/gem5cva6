@@ -205,6 +205,7 @@ Fetch2::output_inst(Cva6DynInstPtr inst){
     inst->id.fetchSeqNum = fetchInfo.fetchSeqNum;
     out.push(inst);
     dpe.insert(inst);
+    cpu.pipeline->lh.on_fetch(inst);
 }
 
 void

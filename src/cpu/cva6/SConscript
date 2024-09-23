@@ -32,6 +32,7 @@ if env['CONF']['BUILD_ISA']:
     Source('minicache.cc')
     Source('vp.cc')
     Source('vp_dpe.cc')
+    Source('lambda.cc')
 
     # Utils
     Source('registerfile.cc')

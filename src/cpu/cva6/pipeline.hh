@@ -11,6 +11,7 @@
 
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/func_unit.hh"
+#include "cpu/cva6/lambda.hh"
 #include "cpu/cva6/stage_decode.hh"
 #include "cpu/cva6/stage_execute.hh"
 #include "cpu/cva6/stage_fetch1.hh"
@@ -36,6 +37,7 @@ class Pipeline : public Ticked
     VPDPE &dpe;            /** Delayed Prediction Unit */
     Minicache mc;          /** Minicache for LSU */
     FUPipelines fus;       /** All functional units */
+    LambdaHandler lh;      /** Lambda handler */
 
   protected:
     /** Pipeline registers */
@@ -64,6 +66,7 @@ class Pipeline : public Ticked
       dpe(*new VPDPE(cpu.name() + ".dpe", cpu, p, vp)),
       mc(cpu.name() + ".mc", cpu, p.minicacheSize),
       fus(cpu.name() + ".fus", cpu, p, scoreboard, mc),
+      lh(cpu.name() + ".lh", cpu, p),
       f1ToF2(cpu.name() + ".f1ToF2", "lines"),
       f2ToD(p.issueWidth),
       dToIssue(p.issueWidth),

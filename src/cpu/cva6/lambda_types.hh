@@ -21,12 +21,12 @@ namespace cva6 {
 */
 struct lambdakto1_t
 {
-  uint64_t pc_start;
-  uint64_t pc_end;
-  uint64_t pc_end_next;
-  uint64_t size;
-  uint64_t rd;
-  uint64_t rd_val;
+  uint64_t pc_start = 0;
+  uint64_t pc_end = 0;
+  uint64_t pc_end_next = 0;
+  uint64_t size = 0;
+  uint64_t rd = 0;
+  uint64_t rd_val = 0;
 
   bool operator==(const struct lambdakto1_t& o) const {
     return memcmp(this, &o, sizeof(lambdakto1_t)) == 0;
@@ -82,12 +82,15 @@ struct lambda_inst_metadata_t
     return is_check_pc;
   }
 
-  bool do_final_check(uint64_t val, uint64_t cpt, bool isk1){
+  bool do_ckeck_k1(bool isk1){
+    return is_check_regalloc = isk1;
+  }
+
+  bool do_final_check(uint64_t val, uint64_t cpt){
     check_val = val;
     check_cpt_indempotance = cpt;
     is_check_val = lambda.rd_val == check_val;
     is_check_indempotance = check_cpt_indempotance >= lambda.size;
-    is_check_regalloc = isk1;
     return is_check_pc &&
            is_check_val &&
            is_check_indempotance &&

@@ -159,14 +159,14 @@ class PluginLambda : public Plugin
       Plugin(name, cpu_),
       handler("lambda", cpu_, params) {
       // get a callback when we exit
-      registerExitCallback([this]() { handler.dump(); });
+      // registerExitCallback([this]() { handler.dump(); });
     }
 
   void commit(Cva6DynInstPtr inst){
     handler.commit(inst);
     n++;
     if (n % 1000000 == 0){
-      handler.dump();
+      // handler.dump();
     }
   }
 };

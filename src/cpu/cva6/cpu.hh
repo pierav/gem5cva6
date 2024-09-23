@@ -46,7 +46,7 @@ typedef SimpleThread Cva6Thread;
  */
 class Cva6CPU : public BaseCPU
 {
-  protected:
+  public:
     /** pipeline is a container for the clockable pipeline stage objects.
      *  Elements of pipeline call TheISA to implement the model. */
     cva6::Pipeline *pipeline;

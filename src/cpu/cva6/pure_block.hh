@@ -112,9 +112,6 @@ class PureBlock : public Named
 
     Cva6CPU &cpu;
 
-    /* In flight learn */
-    std::deque<Cva6DynInstPtr> window;
-
     enum PureBlockState
     {
       Idle = 0,
@@ -170,56 +167,6 @@ class PureBlock : public Named
     enum PureBlockState state;
 
     InstStatesHandler inst_state_handler;
-    uint64_t pctrigger;
-    uint64_t pccnt;
-
-
-
-    struct LambdaStats : public statistics::Group
-    {
-      /** Stats */
-      statistics::Scalar commit;
-      statistics::Scalar replayL;
-      statistics::Distribution Lsize;
-      LambdaStats(Cva6CPU &cpu) :
-        statistics::Group(&cpu, "lambda"),
-        ADD_STAT(commit, statistics::units::Count::get(), "commit"),
-        ADD_STAT(replayL, statistics::units::Count::get(), "replayL"),
-        ADD_STAT(Lsize, statistics::units::Count::get(), "Lsize")
-      {
-        Lsize
-          .init(0,32,1)
-          .flags(statistics::pdf);
-      }
-    } stats;
-
-    struct LambdaPredStats : public statistics::Group
-    {
-      statistics::Scalar req;
-      statistics::Scalar hit;
-      statistics::Scalar miss;
-      statistics::Scalar miss_indempotance;
-      statistics::Scalar miss_val;
-      statistics::Scalar miss_pc;
-      statistics::Distribution hitLsize;
-      LambdaPredStats(Cva6CPU &cpu) :
-        statistics::Group(&cpu, "lambdapred"),
-        ADD_STAT(req, statistics::units::Count::get(), "req"),
-        ADD_STAT(hit, statistics::units::Count::get(), "hit"),
-        ADD_STAT(miss, statistics::units::Count::get(), "miss"),
-        ADD_STAT(miss_indempotance,
-          statistics::units::Count::get(), "miss_indempotance"),
-        ADD_STAT(miss_val, statistics::units::Count::get(), "miss_val"),
-        ADD_STAT(miss_pc, statistics::units::Count::get(), "miss_pc"),
-        ADD_STAT(hitLsize, statistics::units::Count::get(), "hitLsize")
-      {
-        hitLsize
-          .init(0,32,1)
-          .flags(statistics::pdf);
-      }
-    } statsp;
-   protected:
-    void pushLambda();
 
    public:
     PureBlock(const std::string &name,
@@ -228,14 +175,8 @@ class PureBlock : public Named
       Named(name),
       cpu(cpu_),
       state(Idle),
-      inst_state_handler(cpu_),
-      stats(cpu),
-      statsp(cpu)
+      inst_state_handler(cpu_)
       { }
-
-    bool lookup(Cva6DynInstPtr inst){
-      return true;
-    }
 
     void commit(Cva6DynInstPtr inst);
     void dump();

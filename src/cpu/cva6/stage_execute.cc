@@ -310,6 +310,8 @@ Execute::evaluate() {
             }
         }
 
+        cpu.pipeline->lh.on_commit(inst);
+
         for (Plugin *plugin: plugins){
             plugin->commit(inst);
         }
