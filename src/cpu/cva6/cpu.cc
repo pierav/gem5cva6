@@ -82,19 +82,31 @@ DTLBRequest::sendData(){
     DPRINTF(Cva6X, "sendData...\n");
     assert(state == Translated);
     state = InMemory;
-
     bool read = mode == BaseMMU::Read;
+    if (is_prefetch_mode){
+        read = true;
+    }
     /* Build requested packed */
     pkt = read ? Packet::createRead(req) : Packet::createWrite(req);
     pkt->dataStatic<uint8_t>(data);
     pkt->pushSenderState(this);
 
-    if (fault != NoFault){ // TLB Fault: do not request cache
+    /* Early exit when Store Prefetch failure */
+    if (is_prefetch_mode && !isBufferable()){
+        prefetch_mode_failed = true;
+        pkt->makeResponse();
+        onRecv(pkt);
+        return;
+    }
+
+    /* TLB Fault: do not request cache */
+    if (fault != NoFault){
         pkt->makeResponse();
         printf("FAULT!\n");
         onRecv(pkt);
         return;
     }
+
     #if 1
     /* If possible fetch cache line */
     if (mode == BaseMMU::Read &&
@@ -213,12 +225,14 @@ std::string
 DTLBRequest::name(){
     std::ostringstream oss;
     assert((int)state < (int)DTLBRequest::DTLBRequestState::End);
+    char key = mode == BaseMMU::Read ? 'R' :
+                    is_prefetch_mode ? 'C' : 'W';
     oss << "<...>.DTLBreq("
         << DTLBRequestStateName[(int)state]
         << std::hex
         << ",Vx" << req->getVaddr()
         << ",#x" << req->getSize()
-        << ",[" << (mode == BaseMMU::Read ? "R" : "W") << "]"
+        << ",[" << key << "]"
         << ",Dx" << getData();
     oss << ")";
     return oss.str();

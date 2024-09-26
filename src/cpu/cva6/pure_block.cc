@@ -114,42 +114,6 @@ InstStatesHandler::commit(Cva6DynInstPtr inst){
 }
 
 
-
-class LambdaCheckInst : public StaticInst
-{
-  uint64_t check;
-  RegId srcRegIdxArr[1]; RegId destRegIdxArr[0];
-  public:
-  LambdaCheckInst(RegId reg, uint64_t v)
-    : StaticInst("lambda.check", IntAluOp), check(v) {
-    setRegIdxArrays(
-      reinterpret_cast<RegIdArrayPtr>(
-          &std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
-      reinterpret_cast<RegIdArrayPtr>(
-          &std::remove_pointer_t<decltype(this)>::destRegIdxArr));
-    setSrcRegIdx(_numSrcRegs++, reg);
-    flags[IsInteger] = true;
-    // flags[IsMicroop] = true;
-  }
-  Fault execute(ExecContext *xc, trace::InstRecord *td) const override {
-    uint64_t val = xc->getRegOperand(this, 0);
-    if (check != val){
-      return std::make_shared<SpeculativeFault>("missprediction");
-    }
-    return NoFault;
-  }
-  void advancePC(PCStateBase &pc_state) const override { /* Nothing */}
-  std::string
-  generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const {
-    std::stringstream ss;
-    ss << mnemonic << ' ';
-    ss << registerName(srcRegIdxArr[0]) << ", ";
-    ss << check;
-    return ss.str();
-  }
-};
-
-
 void
 PureBlock::commit(Cva6DynInstPtr inst) {
   #if 0

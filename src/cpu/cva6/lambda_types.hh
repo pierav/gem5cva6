@@ -97,14 +97,25 @@ struct lambda_inst_metadata_t
            is_check_regalloc;
   }
 
+  bool is_valid(){
+    return is_check_pc &&
+           is_check_val &&
+           is_check_indempotance &&
+           is_check_regalloc;
+  }
+
   /*** Learning metadata ***/
   /* Learning step 1 */
-  uint64_t is_in_trace_region = 0;
+  int64_t is_in_trace_region = 0;
   /* Learning step 2 */
   bool is_learned = false;
   bool is_learned_first = false;
   bool is_learned_last = false;
   lambdakto1_t lambdalearn;
+
+
+  /* To Flags lambda.pred */
+  bool is_uop_lambda_pred = false;
 };
 
 

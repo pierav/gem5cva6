@@ -17,8 +17,6 @@
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/dyn_inst.hh"
 #include "cpu/cva6/fu_base.hh"
-#include "cpu/cva6/minicache.hh"
-#include "cpu/cva6/scoreboard.hh"
 #include "mem/packet.hh"
 
 namespace gem5 {
@@ -41,16 +39,13 @@ class LSUStoreBuffer
     const unsigned int depth_commit = 16; // WT: 4; WB: 8
     std::deque<Cva6DynInstPtr> speculative_queue;
     Cva6DynInstChunk commit_queue;
-    Scoreboard &scoreboard;         /** Pointer back to the scoreboard */
 
   public:
     LSUStoreBuffer(const std::string &name,
-                   Cva6CPU &cpu_,
-                   Scoreboard &scoreboard_) :
+                   Cva6CPU &cpu_) :
         Named(name),
         cpu(cpu_),
-        commit_queue(name + ".SQc"),
-        scoreboard(scoreboard_) { ; }
+        commit_queue(name + ".SQc") { ; }
 
     // there is no store pending in neither the speculative unit or
     // the non-speculative queue
@@ -91,18 +86,15 @@ class LSUAmoBuffer
     Cva6DynInstPtr amo_buffer; // Fifo with 1 element :)
     bool amo_committed;
     LSUStoreBuffer *store_buffer; /** Pointer back to store buffer */
-    Scoreboard &scoreboard;         /** Pointer back to the scoreboard */
 
     LSUAmoBuffer(const std::string &name,
                  Cva6CPU &cpu_,
-                 LSUStoreBuffer *store_buffer_,
-                 Scoreboard &scoreboard_) :
+                 LSUStoreBuffer *store_buffer_) :
         Named(name),
         cpu(cpu_),
         amo_buffer(Cva6DynInst::bubble()),
         amo_committed(false),
-        store_buffer(store_buffer_),
-        scoreboard(scoreboard_) { ; }
+        store_buffer(store_buffer_){ }
 
     bool canPush(Cva6DynInstPtr inst_);
     void push(Cva6DynInstPtr inst_);
@@ -120,16 +112,13 @@ class LSUStoreUnit
   public:
     LSUStoreBuffer store_buffer;
     LSUAmoBuffer amo_buffer;
-    Scoreboard &scoreboard;         /** Pointer back to the scoreboard */
 
   public:
-    LSUStoreUnit(const std::string &name, Cva6CPU &cpu_,
-                 Scoreboard &scoreboard_)
+    LSUStoreUnit(const std::string &name, Cva6CPU &cpu_)
         : Named(name),
           cpu(cpu_),
-          store_buffer(name + ".store_buffer", cpu, scoreboard_),
-          amo_buffer(name + ".amo_buffer", cpu, &store_buffer, scoreboard_),
-          scoreboard(scoreboard_) { ; }
+          store_buffer(name + ".store_buffer", cpu),
+          amo_buffer(name + ".amo_buffer", cpu, &store_buffer) { ; }
 
   protected:
     ReadyValidIntf *destUnit(Cva6DynInstPtr inst){
@@ -195,7 +184,6 @@ class LSULoadUnit
     Cva6DynInstChunk insts_in_memory; /** instructions in memory */
     LSUStoreBuffer *store_buffer;     /** Pointer back to store buffer */
     Cva6CPU &cpu;                     /** Pointer back to CPU */
-    Scoreboard &scoreboard;           /** Pointer back to the scoreboard */
     struct LSULoadUnitStats : public statistics::Group
     {
       statistics::Scalar req;
@@ -211,15 +199,13 @@ class LSULoadUnit
   public:
     LSULoadUnit(const std::string &name,
                 LSUStoreBuffer *store_buffer_,
-                Cva6CPU &cpu_,
-                Scoreboard &scoreboard_) :
+                Cva6CPU &cpu_) :
         Named(name),
         loadqueue(name + ".LQ"),
         insts_in_memory(name + ".LQF"),
         store_buffer(store_buffer_),
         cpu(cpu_),
-        scoreboard(scoreboard_),
-        stats(cpu) { ; }
+        stats(cpu) { }
 
     bool canPush(Cva6DynInstPtr inst_);
     void push(Cva6DynInstPtr inst_);
@@ -236,26 +222,18 @@ class LSUBase
     Cva6CPU &cpu;
     LSUStoreUnit store_unit;
     LSULoadUnit load_unit;
-    Scoreboard &scoreboard; /** Pointer back to the scoreboard */
     Cva6DynInstChunk lsu_fifo; /** Lsu bypass buffer */
-
-    Minicache &mc;
 
   public:
     LSUBase(const std::string &name,
             Cva6CPU &cpu_,
-            const BaseCva6CPUParams &params,
-            Scoreboard &scoreboard_,
-            Minicache &mc_) :
+            const BaseCva6CPUParams &params) :
         Named(name),
         cpu(cpu_),
-        store_unit(name + ".store_unit", cpu, scoreboard_),
+        store_unit(name + ".store_unit", cpu),
         load_unit(name + ".load_unit", &store_unit.store_buffer,
-          cpu, scoreboard_),
-        scoreboard(scoreboard_),
-        lsu_fifo(name + ".LSQ"),
-        mc(mc_)
-        { ; }
+          cpu),
+        lsu_fifo(name + ".LSQ") { }
 
   protected:
     ReadyValidIntf *destUnit(Cva6DynInstPtr inst){
@@ -277,17 +255,70 @@ class LSUBase
 };
 
 
+class LSUBaseChecker
+    : public Named, public virtual ReadyValidIntf
+{
+  protected:
+    Cva6CPU &cpu;
+    Cva6DynInstChunk cqueue;  /** CheckQueue */
+    Cva6DynInstChunk lsu_fifo; /** Lsu bypass buffer */
+  public:
+    LSUBaseChecker(const std::string &name,
+            Cva6CPU &cpu_,
+            const BaseCva6CPUParams &params) :
+        Named(name),
+        cpu(cpu_),
+        cqueue(name + ".CQ"),
+        lsu_fifo(name + ".LSQ")
+        { }
+    bool canPush(Cva6DynInstPtr inst);
+    void push(Cva6DynInstPtr inst);
+    bool canPop(Cva6DynInstPtr inst);
+    void pop(Cva6DynInstPtr inst);
+    void flushfrom(Cva6DynInstPtr inst_);
+    bool advance();
+};
+
+class LSUWithCheckerLQ : public virtual ReadyValidIntf
+{
+  protected:
+  LSUBase base;
+  LSUBaseChecker checker;
+  LSUWithCheckerLQ(const std::string &name,
+            Cva6CPU &cpu_,
+            const BaseCva6CPUParams &params):
+            base(name, cpu_, params),
+            checker(name, cpu_, params) {}
+  ReadyValidIntf *du(Cva6DynInstPtr inst){
+    if (inst->l_data.is_predicted){
+      return &checker;
+    }
+    return &base;
+  }
+  bool canPush(Cva6DynInstPtr inst){ return du(inst)->canPush(inst); }
+  void push(Cva6DynInstPtr inst){ return du(inst)->push(inst); }
+  bool canPop(Cva6DynInstPtr inst){ return du(inst)->canPop(inst); }
+  void pop(Cva6DynInstPtr inst){ return du(inst)->pop(inst); }
+  void flushfrom(Cva6DynInstPtr inst){
+    base.flushfrom(inst);
+    checker.flushfrom(inst);
+  }
+  bool advance(){
+    base.advance();
+    checker.advance();
+    return true;
+  }
+};
+
 class FULSU
-  : public LSUBase, public FUBase
+  : public LSUWithCheckerLQ, public FUBase
 {
   public:
     FULSU(const std::string &name,
           std::vector<OpClass> &ops,
           Cva6CPU &cpu_,
-          const BaseCva6CPUParams &params,
-          Scoreboard &scoreboard_,
-          Minicache &mc_)
-      : LSUBase(name, cpu_, params, scoreboard_, mc_),
+          const BaseCva6CPUParams &params)
+      : LSUWithCheckerLQ(name, cpu_, params),
         FUBase(name, ops)
         { ; }
 };

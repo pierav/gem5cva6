@@ -97,8 +97,9 @@ void inst_lambda_dump(Cva6DynInstPtr inst){
      << b2c[inst->exec_data.is_silent_store]
      << b2c[inst->l_data.is_const];
 
-  os << '[' << inst->l_data.is_in_trace_region -1 << "] : ";
-  os << *inst;
+  // os << '[' << inst->l_data.is_in_trace_region -1 << "] : ";
+
+  os << " " << *inst;
   /* When prediction is made */
   if (inst->l_data.is_predicted_first){
     os << " PRED " << inst->l_data.lambda.str();
@@ -135,13 +136,13 @@ void inst_lambda_dump(Cva6DynInstPtr inst){
   if (!inst->isFault()){
     for (unsigned int i = 0; i < inst->staticInst->numSrcRegs(); i++) {
       RegId reg = inst->staticInst->srcRegIdx(i);
+      os << ' ';
       os << riscvRegisterName(reg) << ':';
       if (inst->exec_data.is_reg_dead[i]){
         os << "X";
       } else {
         os << '.';
       }
-      os << ' ';
     }
   }
   /* When commit end */
@@ -192,14 +193,32 @@ LambdaLVTConst::check_and_insert(Cva6DynInstPtr inst){
 
 lambdakto1_t
 LambdaAlgoLLT::predict(uint64_t pc){
-  if (llt.count(pc)){
-    return llt[pc];
+  if (llt.count(pc) && llt[pc].conf.valid()){
+    return llt[pc].lambda;
   }
   return { 0 };
 }
-
+void
+LambdaAlgoLLT::evict(Cva6DynInstPtr inst){
+  assert(inst->l_data.is_predicted);
+  uint64_t pc = inst->pc->instAddr();
+  llt[pc].conf.invalidate();
+}
 void
 LambdaAlgoLLT::commit(Cva6DynInstPtr inst){
+
+  // /* Update table counters */
+  // TODO
+  // if (inst->l_data.is_valid()){
+  //   llt[pc]->inc();
+  // } else {
+  //   /* Even when miss predictions: update the new value */
+  //   bool is_lambda_still_valid = inst->l_data.is_check_indempotance &&
+  //                               inst->l_data.is_check_regalloc;
+  //   e->dec();
+  // }
+
+
   /* Learn */
   /* Annotate if instruction is const */
   inst->l_data.is_const = lvt.check_and_insert(inst);
@@ -290,7 +309,7 @@ LambdaAlgoLLT::pushLambda(){
     window[window.size()-1]->l_data.is_in_trace_region = -1;
 
     /* Insert lambda in LLT */
-    llt[lambda.pc_start] = lambda;
+    llt[lambda.pc_start] = LLTEntry_t(lambda);
 
     // Append Lambda for statistics
     if (lambdaBtb.count(lambda) > 0){
@@ -377,6 +396,7 @@ LambdaAlgoLLT::dump(){
 
 void
 LambdaHandler::on_fetch(Cva6DynInstPtr inst){
+
   uint64_t pc = inst->pc->instAddr();
   if (!in_lambda){ /* Try to perform prediction */
     prediction = algo.predict(pc);
@@ -397,6 +417,24 @@ LambdaHandler::on_fetch(Cva6DynInstPtr inst){
   if (predictionttl != -1) {
     predictionttl -= 1;
   }
+
+  /* (1) : maintain reg allog valid (can be performed at fetch) */
+  if (inst->l_data.is_predicted_first){
+    rf.clear();
+  }
+  if (inst->l_data.is_predicted){
+    rf.push(inst);
+  }
+  /* Somewehere between fetch and commit */
+  if (inst->l_data.is_predicted_last){/* If we reach end of lambda */
+    inst->l_data.do_ckeck_k1(rf.isKto1());
+  }
+}
+
+void
+LambdaHandler::on_noisy_store(Cva6DynInstPtr inst){
+  assert(inst->l_data.is_predicted);
+  algo.evict(inst);
 }
 
 /*
@@ -409,8 +447,9 @@ LambdaHandler::on_fetch(Cva6DynInstPtr inst){
  *  4) * Predicted value
  *     . Not constant load ?
  * */
-void
+bool
 LambdaHandler::on_commit(Cva6DynInstPtr inst){
+  bool valid = true;
   /* (0) : maintain indempotence counter */
   bool isLambdable = isInstLamdable(inst);
   if (isLambdable){
@@ -418,17 +457,7 @@ LambdaHandler::on_commit(Cva6DynInstPtr inst){
   } else {
     last_landable_cpt = 0;
   }
-  /* (1) : maintain reg allog valid (can be performed at fetch) */
-  if (inst->l_data.is_predicted_first){
-    rf.clear();
-  }
-  if (inst->l_data.is_predicted){
-    rf.push(inst);
-  }
-  /* Somewehere between fetch and commit */
-  if (inst->l_data.is_predicted_last){/* If we reach end of lambda */
-    inst->l_data.do_ckeck_k1(rf.isKto1());
-  }
+
   /* */
   if (inst->l_data.is_predicted_last){ /* Check PC end */
     inst->l_data.do_check_pc_next(inst->pc_next->instAddr());
@@ -437,8 +466,7 @@ LambdaHandler::on_commit(Cva6DynInstPtr inst){
   if (inst->l_data.is_predicted_last){
     RegId reg = i2id(inst->l_data.lambda.rd);
     uint64_t value = cpu.thread->getReg(reg);
-    bool valid = inst->l_data.do_final_check(value,
-      last_landable_cpt);
+    valid = inst->l_data.do_final_check(value, last_landable_cpt);
     stats.req += 1;
     stats.hit += valid;
     stats.miss += !valid;
@@ -449,8 +477,29 @@ LambdaHandler::on_commit(Cva6DynInstPtr inst){
       stats.hitLsize.sample(inst->l_data.lambda.size);
     }
   }
+  return valid;
+}
+
+void
+LambdaHandler::on_post_commit(Cva6DynInstPtr inst){
   /* Learn new lambdas ... */
   algo.commit(inst);
+}
+
+
+Cva6DynInstPtr
+LambdaHandler::newPredInst(Cva6DynInstPtr inst){
+  assert(inst->l_data.is_predicted);
+  lambdakto1_t p = inst->l_data.lambda;
+  StaticInstPtr si = new LambdaPredInst(i2id(p.rd), p.rd_val);
+  assert(si);
+  /* Create the compound Dynamic instruction */
+  Cva6DynInstPtr i2 = new Cva6DynInst(&cpu, si, &inst->pc);
+  i2->id.fetchSeqNum = 1; // Setup fake sequence number
+  assert(i2->staticInst);
+  /* Annotate i2 */
+  i2->l_data.is_uop_lambda_pred = true;
+  return i2;
 }
 
 } // namespace cva6

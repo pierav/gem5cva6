@@ -7,15 +7,15 @@
  *
  */
 
+
 #include "cpu/cva6/fu_lsu.hh"
 
 #include <iomanip>
 #include <sstream>
 #include <typeinfo>
 
-#include "base/named.hh"
+#include "cpu/cva6/pipeline.hh"
 #include "debug/Cva6LSU.hh"
-#include "debug/Cva6Minicache.hh"
 
 // #include "debug/Cva6Timing.hh"
 // #include "enums/OpClass.hh"
@@ -110,8 +110,6 @@ LSUStoreBuffer::canPop(Cva6DynInstPtr inst_){
         DPRINTF(Cva6LSU, "STROREB %s\n", inst_->dreq->name());
     }
     return !speculative_queue.empty() && /* data to commit */
-            // speculative_queue.front() == inst_ &&
-            // scoreboard.isCommitInst(inst_) && /* Non speculative */
             inst_->dreq->isTranslated() && /* */
             commit_queue.size() < depth_commit; /* Available space*/
 }
@@ -173,12 +171,9 @@ LSUStoreBuffer::advance(){
 }
 
 
-
-
 /************************************************************************
  * Amo buffer Unit
  ***********************************************************************/
-
 
 bool
 LSUAmoBuffer::canPush(Cva6DynInstPtr inst_){
@@ -246,7 +241,7 @@ LSUAmoBuffer::advance(){
     /* Need to send memory request ? */
     if (!amo_buffer->isBubble() && /* Data to transfer */
         store_buffer->isEmpty() && /* All stores have drained */
-        scoreboard.isCommitInst(amo_buffer) &&
+        cpu.pipeline->getIq(FAST_IQ).isCommitInst(amo_buffer) &&
         /* The AMO is in the commit stage */
         amo_buffer->dreq->isTranslated() && /* Not already sent*/
         !cpu.dcache->isBlocked() /* Cache ready */
@@ -324,8 +319,8 @@ LSULoadUnit::advance(){
         }
         /* If inst is uncacheable, wait inst until commit head */
         if (inst->dreq->req->isUncacheable()){
-            if (!scoreboard.isCommitInst(inst)){
-                 break;
+            if (!cpu.pipeline->getIq(FAST_IQ).isCommitInst(inst)){
+                break;
             }
         }
         /* Cache is ready */
@@ -347,10 +342,10 @@ LSULoadUnit::advance(){
     return !loadqueue.empty();
 }
 
-
 /************************************************************************
  * Load Store Unit
  ***********************************************************************/
+
 bool
 LSUBase::canPush(Cva6DynInstPtr inst){
     return lsu_fifo.size() < 8;
@@ -366,45 +361,19 @@ LSUBase::push(Cva6DynInstPtr inst){
 
 bool
 LSUBase::canPop(Cva6DynInstPtr inst){
-    if (inst->mc_data.is_taken()) {
+    if (inst->dreq->fault != NoFault){
         return true;
-    } else
-    {
-        if (inst->dreq->fault != NoFault){
-            return true;
-        } else {
-            return destUnit(inst)->canPop(inst);
-        }
+    } else {
+        return destUnit(inst)->canPop(inst);
     }
 }
 
 void
 LSUBase::pop(Cva6DynInstPtr inst){
-    if (inst->mc_data.is_taken()) {
-        assert(inst->dreq);
-        inst->dreq->complete_forward(inst->mc_data.value);
-        DPRINTF(Cva6LSU, POP_STR "%s %s\n", *inst, inst->dreq->name());
+    if (inst->dreq->fault != NoFault){
+        // Nothing to do
     } else {
-        if (inst->dreq->fault != NoFault){
-            // Nothing to do
-        } else {
-            destUnit(inst)->pop(inst);
-        }
-    }
-
-    if (mc.isEnable()){
-        if (inst->dreq->fault == NoFault &&
-            inst->staticInst->isLoad() &&   /* Load operation */
-            inst->dreq->isBufferable() &&
-             /* cacheable, no amo, no llsc, no cmo */
-            !inst->mc_data.hit              /* Newer */
-        ){
-            if (inst->dreq->isCl()){
-                mc.writeback_load_speculative(inst->dreq->getClPaddr(),
-                    inst->dreq->getClSize(), inst->dreq->getClData(),
-                    inst->mc_data);
-            }
-        }
+        destUnit(inst)->pop(inst);
     }
 }
 
@@ -412,7 +381,6 @@ void
 LSUBase::flushfrom(Cva6DynInstPtr inst_){
     load_unit.flushfrom(inst_);
     store_unit.flushfrom(inst_);
-    mc.flush(); // TODO !!!! Inflight store!
     lsu_fifo.flushfrom(inst_);
 }
 
@@ -425,7 +393,6 @@ LSUBase::advance(){
             inst->dreq->translateTiming();
         }
     }
-
     while (!lsu_fifo.empty()){
         Cva6DynInstPtr inst = lsu_fifo.front();
         DPRINTF(Cva6LSU, "Select Queue : %s : %s\n", *inst,
@@ -433,45 +400,14 @@ LSUBase::advance(){
         if (!inst->dreq->isTranslated()){
             break;
         }
-
         if (inst->dreq->fault != NoFault){
             lsu_fifo.pop(inst);
             continue;
         } else {
             assert(inst->dreq->req->hasPaddr());
-            uint64_t paddr = inst->dreq->req->getPaddr();
-            uint64_t size = inst->dreq->req->getSize();
-
-            /** 0) Bypass LQ with minicache */
-            if (inst->staticInst->isLoad() &&
-               mc.isEnable() &&
-               inst->dreq->isBufferable() &&
-               // Cacheable , no amo, no llsc, no cmo */
-               !scoreboard.is_fence_issued()
-            ){
-                if (mc.lookup(paddr, size, inst->mc_data)){
-                    lsu_fifo.pop(inst);
-                    mc.load_issue(paddr, inst->mc_data);
-                    continue;
-                }
-            }
-
-            /** 1) Actual LSU*/
             if (destUnit(inst)->canPush(inst)){
                 destUnit(inst)->push(inst);
                 lsu_fifo.pop(inst);
-                if (mc.isEnable() &&
-                    !inst->dreq->req->isUncacheable()){
-                    if (inst->dreq->req->getFlags() != 0){
-                        mc.clear(paddr);
-                    } else if (inst->staticInst->isLoad()){
-                        mc.load_issue(paddr, inst->mc_data);
-                    } else {
-                        mc.write_speculative(paddr, size,
-                            inst->dreq->getData(), inst->mc_data);
-                    }
-                } else {
-                }
                 continue;
             }
         }
@@ -479,6 +415,102 @@ LSUBase::advance(){
     }
     store_unit.advance();
     load_unit.advance();
+    return true;
+}
+
+
+/************************************************************************
+ * Load Store Unit (Checker)
+ ***********************************************************************/
+bool
+LSUBaseChecker::canPush(Cva6DynInstPtr inst){
+    return lsu_fifo.size() < 8;
+}
+
+void
+LSUBaseChecker::push(Cva6DynInstPtr inst){
+    assert(inst->dreq);
+    lsu_fifo.push(inst);
+}
+
+bool
+LSUBaseChecker::canPop(Cva6DynInstPtr inst){
+    if (inst->dreq->fault != NoFault){
+        return true;
+    } else {
+        return inst->dreq->isCompleted();
+    }
+}
+
+void
+LSUBaseChecker::pop(Cva6DynInstPtr inst){
+    // Nothing to do
+}
+
+void
+LSUBaseChecker::flushfrom(Cva6DynInstPtr inst_){
+    cqueue.flushfrom(inst_);
+    lsu_fifo.flushfrom(inst_);
+}
+
+bool
+LSUBaseChecker::advance(){
+    /* Perform translations */
+    DPRINTF(Cva6LSU, "Advance ... [%d]\n", lsu_fifo.size());
+    for (Cva6DynInstPtr inst: lsu_fifo){
+        if (!inst->dreq->isLaunched()){
+            inst->dreq->translateTiming();
+        }
+    }
+
+    /* */
+    while (!lsu_fifo.empty()){
+        Cva6DynInstPtr inst = lsu_fifo.front();
+        DPRINTF(Cva6LSU, "Select lsu_fifo : %s : %s\n", *inst,
+            inst->dreq->name());
+        if (!inst->dreq->isTranslated()){
+            break;
+        }
+
+        /* Push in CQ */
+        if (inst->dreq->fault != NoFault){
+            lsu_fifo.pop(inst);
+            continue;
+        } else {
+            if (cqueue.size() < 8){
+                cqueue.push(inst);
+                lsu_fifo.pop(inst);
+                continue;
+            }
+        }
+        break; // Break if no access emitted
+    }
+
+    /* Try to send instruction to memory */
+    while (!cqueue.empty()){
+        Cva6DynInstPtr inst = cqueue.front();
+        DPRINTF(Cva6LSU, "Select cqueue : %s : %s\n", *inst,
+            inst->dreq->name());
+
+        /* Instruction is translated */
+        if (!inst->dreq->isTranslated()){
+            break;
+        }
+
+        if (cpu.dcache->isBlocked()){
+            break;
+        }
+
+        /* Switch store to load */
+        if (inst->staticInst->isStore()){
+           inst->dreq->setPrefetchMode();
+        }
+        /* When all conditions are met, send data */
+        inst->dreq->sendData();
+        // Also move instructuction to allow new space
+        cqueue.pop(inst);
+        break;
+    }
     return true;
 }
 

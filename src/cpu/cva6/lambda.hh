@@ -30,6 +30,7 @@ class LambdaAlgo
   public:
   virtual lambdakto1_t predict(uint64_t pc) = 0;
   virtual void commit(Cva6DynInstPtr inst) = 0;
+  virtual void evict(Cva6DynInstPtr inst) = 0;
 };
 
 class LambdaAlgoLLT : public LambdaAlgo
@@ -41,7 +42,36 @@ class LambdaAlgoLLT : public LambdaAlgo
   /* In flight instructions to learn */
   std::deque<Cva6DynInstPtr> window;
   /* Last Lambda Table */
-  std::map<uint64_t, lambdakto1_t> llt;
+  struct LLTEntry_t
+  {
+    lambdakto1_t lambda;
+    struct sat_conf
+    {
+      int64_t conf = 0;
+      void update_conf(bool valid){
+        if (valid && conf < 4){
+          conf += 1;
+        }
+        if (!valid && conf > -4){
+          conf -= 1;
+        }
+      }
+      bool valid(){
+        return conf >= 0;
+      }
+      void invalidate(){
+        conf = -4;
+      }
+      void reset(){
+        conf = 0;
+      }
+    } conf;
+    LLTEntry_t(lambdakto1_t &lambda_){
+      lambda = lambda_;
+    }
+    LLTEntry_t() {}
+  };
+  std::map<uint64_t, LLTEntry_t> llt;
   /* Insert a lambda in LT */
   void pushLambda();
   /* Statistics */
@@ -76,8 +106,8 @@ class LambdaAlgoLLT : public LambdaAlgo
   LambdaAlgoLLT(Cva6CPU &cpu_) : cpu(cpu_), stats(cpu_) {}
   lambdakto1_t predict(uint64_t pc) override;
   void commit(Cva6DynInstPtr inst) override;
+  void evict(Cva6DynInstPtr inst) override;
 };
-
 
 class LambdaHandler : public Named
 {
@@ -136,8 +166,19 @@ class LambdaHandler : public Named
     cpu(cpu_),
     algo(selectAlgo(cpu_, params)),
     stats(cpu_) {}
+
   void on_fetch(Cva6DynInstPtr inst);
-  void on_commit(Cva6DynInstPtr inst);
+
+  void on_noisy_store(Cva6DynInstPtr inst);
+  bool on_commit(Cva6DynInstPtr inst);
+  void on_post_commit(Cva6DynInstPtr inst);
+
+  Cva6DynInstPtr newPredInst(Cva6DynInstPtr);
+
+  void flush_fetch(){
+    predictionttl = -1;
+    in_lambda = false;
+  }
 };
 
 } // namespace cva6

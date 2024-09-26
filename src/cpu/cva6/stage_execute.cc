@@ -37,13 +37,6 @@ Execute::tryToBranch(Cva6DynInstPtr inst, Fault fault, BranchData &branch){
         inst->isLastOpInInst() &&
         (inst->staticInst->isSerializeAfter() ||
          inst->staticInst->isSquashAfter());
-    if (!inst->isFault() &&
-       (inst->staticInst->isReadBarrier() ||
-       inst->staticInst->isWriteBarrier())){
-        DPRINTF(Cva6Minicache, "CLEAR ALL FROM: %s\n", *inst);
-        mc.clear_all();
-        // is_serialise = true;
-    }
 
     bool is_addr_unmatch = inst->triedToPredict &&
                           *inst->predictedTarget != *target;
@@ -140,8 +133,6 @@ Execute::evaluate() {
     resolved_branch = BranchData(); // Default is no branch
     if (checkInterrupts()){
         /* Signalling an interrupt this cycle */
-        // DPRINTF(Cva6Interrupt, "Considering interrupt status from PC: %s\n",
-        //     cpu.getContext()->pcState());
         Fault interrupt = cpu.getInterruptController()->getInterrupt();
         assert(interrupt != NoFault);
         /* The interrupt *must* set pcState */
@@ -154,7 +145,6 @@ Execute::evaluate() {
         std::unique_ptr<PCStateBase> target(
             cpu.getContext()->pcState().clone());
         InstSeqNum num = 0;
-
         resolved_branch = BranchData(
             false, //
             true, // Need squash
@@ -174,49 +164,102 @@ Execute::evaluate() {
     fus.advance();
 
     /** Process result */
-    for (Cva6DynInstPtr inst: scoreboard.getIssueQueue()){
-        if (scoreboard.isInstInFu(inst)){
-            // For all instructions in FUs try to complete the execution
-            if (fus.canPop(inst)){
-                fus.pop(inst);                  /* Compute FU and pop */
-                inst->executeComplete();        /* Complete FU result */
-                scoreboard.completeInst(inst);  /* Notify scoreboard */
-                // TODO commit & flush ???
-            }
-        }
-    }
+    cpu.pipeline->getIq(true).execute();
+    cpu.pipeline->getIq(false).execute();
 
     /* Commit stage*/
     Fault fault;
+    uint16_t commitidx[2] = { 0 };
     for (int i = 0; i < commitWidth; i++){ // Dual port commit
         if (!resolved_branch.isBubble()){
             break; // Block if already jump, fault ...
         }
-        DPRINTF(Cva6Execute, "Attempting to commit (port%d)\n", i);
-        Cva6DynInstPtr inst = scoreboard.getCommitInst(i);
-        if (inst->isBubble()){
+
+        DPRINTF(Cva6Execute, "Attempting to retire (port%d)\n", i);
+        /* Get the Valid Issue Unit */
+        if (!cpu.pipeline->rob.size()) {
             break; // No instruction to commit
         }
-        DPRINTF(Cva6Execute, "begin commit: %s\n", *inst);
 
-        if (inst->isMemRef()){
-            assert(inst->dreq);
+        Cva6DynInstPtr inst = cpu.pipeline->rob.front();
+        DPRINTF(Cva6Execute, "rob entry: %s\n", *inst);
+
+        bool inLambda = inst->l_data.is_predicted;
+        IssueUnit &iq = cpu.pipeline->getIq(inLambda);
+        Cva6DynInstPtr inst_check = iq.getCommitInst(commitidx[inLambda]++);
+        DPRINTF(Cva6Execute, " iq entry: %s\n", *inst_check);
+        assert(inst == inst_check);
+
+        if (!inst->execute_completed){
+            DPRINTF(Cva6Execute, "(port%d) inst is not ex : %s\n", i, *inst);
+            break;
         }
 
-        // For address prediction
-        // bool misspredaddr = dpe.post_commit(inst);
-        // if (misspredaddr){
-        //     scoreboard.flush_value_from(inst, true);
-        //     flushfrom(Cva6DynInst::bubble()); // Only Flush FUS et inps
-        //     i=commitWidth;
-        //     break;
-        // }
+        /* Can deadlock !*/
+        if (inLambda && !inst->isFault() && inst->staticInst->isStore()) {
+            /* 1) check silent store */
+            assert(inst->dreq->is_prefetch_mode);
+            uint64_t prefetch_data = inst->dreq->getData();
+            uint64_t data = inst->getSrcRegOperand(0); // Data or addr ?
+            uint16_t size = inst->dreq->getSize();
+            bool misspred = memcmp(&data, &prefetch_data, size) != 0;
+            if (inst->dreq->prefetch_mode_failed || misspred){
+                DPRINTF(Cva6Commit, "MISSPRED STORE SILENT : %s\n", *inst);
+                cpu.pipeline->lh.on_noisy_store(inst);
+                std::unique_ptr<PCStateBase> target(
+                    cpu.getContext()->pcState().clone());
+                InstSeqNum num = 0;
+                resolved_branch = BranchData(
+                    false, /* Is predicted : need update */
+                    true, /* Need squash */
+                    num, /* sn:0 Squash everything */
+                    *target,
+                    true // Unused
+                );
+                flush();
+                return; /* EARLY FLUSH : do not commit */
+            }
+        }
 
-        /* Commit */
-        // ForwardInstData &c2e = *commit_to_issue.inputWire;
-        // c2e.inst = inst;
         commitInst(inst, resolved_branch);
-        scoreboard.commitInst(inst);
+        iq.commit(inst);
+        cpu.pipeline->rob.pop(inst);
+
+        /* Check lambda misspred */
+        bool misspred = !cpu.pipeline->lh.on_commit(inst);
+        if (misspred){
+            DPRINTF(Cva6Commit, "MISSPRED LAMBDA: %s\n", *inst);
+            std::unique_ptr<PCStateBase> target(
+                cpu.getContext()->pcState().clone());
+            InstSeqNum num = 0;
+            resolved_branch = BranchData(
+                false, //
+                true, // Need squash
+                num,
+                *target,
+                true // Unused
+            );
+        } else {
+            /* Commit also lambda.pred when le lambda is fully commited*/
+            /* This avoid lambda overlap in IQ */
+            if (inst->l_data.is_predicted_last){
+                int idx = commitidx[FAST_IQ]++;
+                Cva6DynInstPtr uopl =
+                    cpu.pipeline->getIq(FAST_IQ).getCommitInst(idx);
+                /* Some assertions about lambda order */
+                assert(!uopl->isBubble());
+                assert(uopl->l_data.is_uop_lambda_pred);
+                assert(cpu.pipeline->rob.front() == uopl);
+                /* We simply have to drop the instriction in the IQ/ROB*/
+                iq.commit(uopl);
+                cpu.pipeline->rob.pop(uopl);
+                /* Also check that the prediction was valid (debug only)*/
+                RegId reg = uopl->dstRegIdx(0);
+                uint64_t prediction = uopl->getDstRegOperand(0);
+                uint64_t value = cpu.thread->getReg(reg);
+                assert(prediction == value);
+            }
+        }
 
         /* Checker */
         if (!inst->isFault() && inst->staticInst->isMemRef()){
@@ -237,70 +280,11 @@ Execute::evaluate() {
             }
         }
 
-        /* RDA */
-        uint64_t pc =inst->pc->instAddr();
-        if (!inst->isFault()){
-            for (unsigned int i = 0; i < inst->staticInst->numSrcRegs(); i++) {
-                RegId reg = inst->staticInst->srcRegIdx(i);
-                if (reg.classValue() != InvalidRegClass){
-                    inst->exec_data.is_reg_dead[i] = rda.isRegDead(pc, reg);
-                }
-            }
-        }
-
-        // MC commit
-        if (mc.isEnable() &&            /** MC enable */
-            inst->isMemRef() &&         /** Load and stores */
-            // !inst->vp_data.hit &&       /** Not vp DETER */
-            inst->dreq->isBufferable() &&
-            inst->dreq->req->hasPaddr() /* Not VP deter*/
-        ){
-
-            uint64_t paddr = inst->dreq->req->getPaddr();
-            uint8_t size = inst->dreq->req->getSize();
-            uint64_t rawdata = inst->dreq->getData();
-            uint8_t *data = (uint8_t*)&rawdata;
-            bool isstore = inst->staticInst->isStore();
-            if (inst->dreq->isCl()){
-                paddr = inst->dreq->getClPaddr();
-                size = inst->dreq->getClSize();
-                data = inst->dreq->getClData();
-            }
-            mc.commit(paddr, size, data, isstore, inst->mc_data);
-            // TODO
-
-
-            #if 1
-
-            if (// !inst->vp_data.hit && // Not vp DETER
-                inst->mc_data.hit && // mc hit
-                inst->staticInst->isLoad()
-            ){
-                uint64_t real_val = inst->dreq->getData();
-                uint64_t mc_val = inst->mc_data.value;
-                if (real_val != mc_val){
-                    fatal("MCERROR : %lx != %lx\n", real_val, mc_val);
-                } else {
-                    // printf("%lx == %lx\n", real_val, mc_val);
-                }
-            }
-            #endif
-        }
-
+#if 0
         // VP commit
-        bool misspred = dpe.commit(inst);
         if (misspred){
             if (vpFlush){ // Flush
-                std::unique_ptr<PCStateBase> target(
-                    cpu.getContext()->pcState().clone());
-                InstSeqNum num = 0;
-                resolved_branch = BranchData(
-                    false, //
-                    true, // Need squash
-                    num,
-                    *target,
-                    true // Unused
-                );
+
             } else { // Replay the scoreboard if needed
                 Cva6DynInstPtr vilain = scoreboard.flush_value_from(inst);
                 if (!vilain->isBubble()){ //
@@ -309,8 +293,8 @@ Execute::evaluate() {
                 }
             }
         }
-
-        cpu.pipeline->lh.on_commit(inst);
+#endif
+        cpu.pipeline->lh.on_post_commit(inst);
 
         for (Plugin *plugin: plugins){
             plugin->commit(inst);
@@ -331,7 +315,7 @@ Execute::flushfrom(Cva6DynInstPtr inst){
     DPRINTF(Cva6Execute, "Flush fus & inp\n");
     fus.flushfrom(inst);
     inp.flushfrom(inst);
-    dpe.flushfrom(inst);
+    cpu.pipeline->rob.flushfrom(inst);
 }
 
 bool
@@ -342,20 +326,8 @@ Execute::checkInterrupts()
     if (cpu.checkInterrupts() && 1) {
         DPRINTF(Cva6Commit, "IT\n");
         /* lsu chech in memory instruction ! */
-        /* TODO create canFlush() or allow speculative loads */
-        Cva6DynInstPtr inst = scoreboard.getHeadInst();
-
-        if (!inst->isBubble()){
-            if (inst->isMemRef()){
-            // if (inst->dreq && inst->dreq->isOutsideCpu()){
-                return false;
-            }
-            if (inst->staticInst->isAtomic() ||
-                inst->staticInst->isStoreConditional()) {
-                return false;
-            }
-        }
-        return true;
+        return cpu.pipeline->iq0.canInterrupts() &&
+               cpu.pipeline->iq1.canInterrupts();
     }
 
     return false;

@@ -176,7 +176,8 @@ Fetch2::predictBranch(Cva6DynInstPtr inst, BranchData &branch){
         DPRINTF(Branch, "Trying to predict for inst: %s\n", *inst);
         inst->triedToPredict = true;
 
-        if (si->isUncondCtrl() && si->isDirectCtrl()){
+        if (0 && si->isUncondCtrl() && si->isDirectCtrl()){
+            /* BUG JAL ! Must use RAS !*/
             inst->predictedTaken = true;
             si->branchTarget(*inst_pc);
             // si->advancePC(*inst_pc);
@@ -203,9 +204,20 @@ void
 Fetch2::output_inst(Cva6DynInstPtr inst){
     /* Fetch and prediction sequence numbers originate here */
     inst->id.fetchSeqNum = fetchInfo.fetchSeqNum;
+    /* RDA */
+    uint64_t pc =inst->pc->instAddr();
+    if (!inst->isFault()){
+        for (unsigned int i = 0; i < inst->staticInst->numSrcRegs(); i++) {
+            RegId reg = inst->staticInst->srcRegIdx(i);
+            if (reg.classValue() != InvalidRegClass){
+                inst->exec_data.is_reg_dead[i] =
+                    cpu.pipeline->rda.isRegDead(pc, reg);
+            }
+        }
+    }
     out.push(inst);
-    dpe.insert(inst);
     cpu.pipeline->lh.on_fetch(inst);
+
 }
 
 void
@@ -322,9 +334,6 @@ Fetch2::evaluate(){
     /* Make sure the input (if any left) is pushed */
     if (!inp.outputWire->isBubble())
         inputBuffer.pushTail();
-
-    /** Perform DPE predictions */
-    dpe.perform_window_predictions();
 }
 
 void
@@ -333,6 +342,8 @@ Fetch2::flush(){
     dumpAllInput();
     fetchInfo.havePC = false;
     udecoder.flush();
+    cpu.pipeline->lh.flush_fetch();
+
 }
 
 bool

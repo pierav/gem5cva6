@@ -261,7 +261,6 @@ class DTLBRequest :
       uint64_t *res_, // For Store
       AtomicOpFunctorPtr amo_op, // For AMO
       BaseMMU::Mode mode_) :
-
       SenderState(),
       cpu(cpu_),
       fault(NoFault),
@@ -400,16 +399,22 @@ class DTLBRequest :
     uint64_t getDWVaddr(){ return req->getVaddr() & ~0b111; }
     uint16_t getDWSize(){ return 8; }
 
+    bool is_prefetch_mode = false;
+    bool prefetch_mode_failed = false;
+    void setPrefetchMode(){
+      assert(state == Translated);
+      is_prefetch_mode = true;
+    }
     bool isBufferable(){
-    // assert(req->hasPaddr()); // No fault VP HIT !
-    return !req->isUncacheable() &&
-           !req->isAtomic() &&
-           !req->isLLSC() &&
-           !req->isSwap()&&
-           !req->isCacheInvalidate() &&
-           !req->isCacheClean() &&
-           !req->isLockedRMW();
-  }
+      // assert(req->hasPaddr()); // No fault VP HIT !
+      return !req->isUncacheable() &&
+            !req->isAtomic() &&
+            !req->isLLSC() &&
+            !req->isSwap()&&
+            !req->isCacheInvalidate() &&
+            !req->isCacheClean() &&
+            !req->isLockedRMW();
+    }
 
 };
 

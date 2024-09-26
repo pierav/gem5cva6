@@ -138,8 +138,8 @@ if args.simpoint_profile or args.take_simpoint_checkpoints:
     print("/!\\ Switch to atomic CPU for simpoint profiling /!\\")
     CONFIG_USE_ATOMIC = True
 
-
 CONFIG_USE_CACHES = 1
+CONFIG_USE_CACHE_L2 = 1
 CONFIG_USE_PTW_CACHES = True # Needed only for buzybox ?!
 CONFIG_USE_DDR = True
 
@@ -148,6 +148,10 @@ if CONFIG_USE_ATOMIC:
     CONFIG_USE_CACHES = False
     CONFIG_USE_PTW_CACHES = False
     CONFIG_USE_DDR = False
+
+CONFIG_USE_PTW_CACHES = False
+CONFIG_USE_DDR = False
+CONFIG_USE_CACHE_L2 = False
 
 # Memory mapping
 BASE_ADDR_BOOTROM = 0x10000
@@ -528,7 +532,7 @@ def createHiFivePlatform(system):
             # Connect the instruction and data caches to the CPU
             cpu.icache.connectCPU(cpu)
             cpu.dcache.connectCPU(cpu)
-            if 1: # L2
+            if CONFIG_USE_CACHE_L2: # L2
                 # create L2
                 system.l2bus = L2XBar()
                 system.l2cache = L2Cache()

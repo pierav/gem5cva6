@@ -171,9 +171,7 @@ class FUPipelines : public Named
 
     FUPipelines(const std::string &name,
                 Cva6CPU &cpu_,
-                const BaseCva6CPUParams &params,
-                Scoreboard &scoreboard,
-                Minicache &mc):
+                const BaseCva6CPUParams &params):
       Named(name),
       cpu(cpu_)
     {
@@ -267,7 +265,7 @@ class FUPipelines : public Named
       // TODO: Fusion and &  variable latency !!
       fpu_divsqrt = new FUPipeline(name + ".fpudiv", fpu2_set,18, false);
       simd = new FUPipeline(name + ".simd", simd_set, 4);
-      lsu = new FULSU(name + ".lsu", lsu_set, cpu, params, scoreboard, mc);
+      lsu = new FULSU(name + ".lsu", lsu_set, cpu, params);
       misc = new FUPipeline(name + ".misc", misc_set, 1);
       FUBase *fuunimp = new FUUnimp(name + ".unimp", vec_set);
 

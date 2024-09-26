@@ -67,7 +67,7 @@ class FUBase : public virtual ReadyValidIntf, /* Ready valid interface */
 
 class Cva6DynInstChunk : public Named
 {
-  using ContainerT = std::list<Cva6DynInstPtr>;
+  using ContainerT = std::deque<Cva6DynInstPtr>;
 
   protected:
     ContainerT chunk;

@@ -301,10 +301,6 @@ Scoreboard::getCommitInst(size_t index){
     }
 
     Cva6DynInstPtr inst = issue_queue[index];
-    if (!inst->execute_completed){
-        DPRINTF(Cva6Scoreboard, "commit stall: not executed %s \n", *inst);
-        return Cva6DynInst::bubble();
-    }
     return inst;
 }
 
@@ -317,7 +313,6 @@ Scoreboard::commitInst(Cva6DynInstPtr inst){
 
 void
 Scoreboard::tick(){
-    dump();
     /* For all instructions to commit */
     while (!issue_queue.empty() &&
           issue_queue.front()->commit_completed) {
@@ -503,6 +498,7 @@ void
 Scoreboard::dump(){
     int i = 0;
     char hit[2] = {' ', 'x'};
+    DPRINTF(Cva6Scoreboard, "Scoreboard [I][E][C]\n");
     for (Cva6DynInstPtr inst: issue_queue){
         if (!inst->isBubble()){
             DPRINTF(Cva6Scoreboard, "sbe#%d [%c][%c][%c] %s\n",

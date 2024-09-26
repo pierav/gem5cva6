@@ -183,9 +183,6 @@ protected:
       }
       return issue_queue.front();
     }
-    bool isCommitInst(Cva6DynInstPtr inst){
-      return issue_queue.front() == inst;
-    }
 
     void dump();
 

@@ -24,6 +24,8 @@
 namespace gem5 {
 namespace cva6 {
 
+enum iq_enum_t { FAST_IQ = 0, LAMBDA_IQ = 1 };
+
 /** The constructed pipeline. */
 class Pipeline : public Ticked
 {
@@ -32,12 +34,18 @@ class Pipeline : public Ticked
 
   public:
     /** Pipeline shared elements */
-    Scoreboard scoreboard; /** The scoreboard tracks all dependancies */
     VP &vp;                /** Value predictor for load insts */
     VPDPE &dpe;            /** Delayed Prediction Unit */
-    Minicache mc;          /** Minicache for LSU */
     FUPipelines fus;       /** All functional units */
+    RegDeadAnayser rda;
+
+    /* New components */
     LambdaHandler lh;      /** Lambda handler */
+    IssueUnit iq0;
+    IssueUnit iq1;
+    Cva6DynInstChunk rob;
+
+    IssueUnit &getIq(bool inLambda){ return inLambda ? iq1 : iq0; }
 
   protected:
     /** Pipeline registers */
@@ -61,12 +69,14 @@ class Pipeline : public Ticked
   Pipeline(Cva6CPU &cpu_, const BaseCva6CPUParams &p) :
       Ticked(cpu_, &(cpu_.BaseCPU::baseStats.numCycles)),
       cpu(cpu_),
-      scoreboard(cpu.name() + ".scoreboard", cpu, p.sbSize),
       vp(*vpinit(p.vpType, cpu.name() + ".vp", cpu, p.vpSize)),
       dpe(*new VPDPE(cpu.name() + ".dpe", cpu, p, vp)),
-      mc(cpu.name() + ".mc", cpu, p.minicacheSize),
-      fus(cpu.name() + ".fus", cpu, p, scoreboard, mc),
+      fus(cpu.name() + ".fus", cpu, p),
+      rda(cpu.name(), cpu_, p),
       lh(cpu.name() + ".lh", cpu, p),
+      iq0(cpu.name() + ".iq0", cpu, p, fus),
+      iq1(cpu.name() + ".iq1", cpu, p, fus),
+      rob(cpu.name() + ".rob"),
       f1ToF2(cpu.name() + ".f1ToF2", "lines"),
       f2ToD(p.issueWidth),
       dToIssue(p.issueWidth),
@@ -77,15 +87,12 @@ class Pipeline : public Ticked
               IssueToE,
               resolved_branch, // Ex -> Commit and Commit -> Ex
               fus,
-              scoreboard,
-              dpe,
-              mc),
+              dpe),
       issue   (cpu.name() + ".issue", cpu, p,
               dToIssue,
               resolved_branch,
               IssueToE,                   // issue -> exe
               fus,
-              scoreboard,
               dpe),
       decode  (cpu.name() + ".decode", cpu, p,
               f2ToD,

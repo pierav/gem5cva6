@@ -38,16 +38,11 @@ class Execute : public Named
     /** Pointer back to the containing CPU */
     Cva6CPU &cpu;
 
-    /** Pointer to the scoreboard */
-    Scoreboard &scoreboard;
-
     /** Pointer to the execution functional units */
     FUPipelines &fus;
 
     /** Pointer to the value predictor */
     VPDPE &dpe;
-    /** Pointer to the minicache */
-    Minicache &mc;
 
     /** Plugins */
     std::list<Plugin*> plugins;
@@ -57,7 +52,6 @@ class Execute : public Named
 
     /* Checker */
     InfiniteMemory64 memcheck;
-    RegDeadAnayser rda;
 
   protected:
 
@@ -83,21 +77,16 @@ class Execute : public Named
         ForwardInstDataPopIntf &inp_,
         BranchData& resolved_branch_,
         FUPipelines &fus_,
-        Scoreboard &scoreboard_,
-        VPDPE &dpe_,
-        Minicache &mc_) :
+        VPDPE &dpe_) :
         Named(name_),
         inp(inp_),
         resolved_branch(resolved_branch_),
         cpu(cpu_),
-        scoreboard(scoreboard_),
         fus(fus_),
         dpe(dpe_),
-        mc(mc_),
         commitWidth(params.commitWidth),
         vpFlush(params.vpFlush),
-        memcheck("memcheck", cpu_),
-        rda(name_, cpu_, params)
+        memcheck("memcheck", cpu_)
     {
       if (params.plugin_memtrace_path != ""){
         plugins.push_back(new PluginMemtrace(

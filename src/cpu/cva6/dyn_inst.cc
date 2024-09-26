@@ -93,6 +93,28 @@ void dump64breg(uint64_t val, bool valid, std::ostream &ss){
     }
 }
 
+
+#define RST  "\x1B[0m"
+#define KRED  "\x1B[31m"
+#define KGRN  "\x1B[32m"
+#define KYEL  "\x1B[33m"
+#define KBLU  "\x1B[34m"
+#define KMAG  "\x1B[35m"
+#define KCYN  "\x1B[36m"
+#define KWHT  "\x1B[37m"
+
+#ifdef XXX
+#define PIPE_START "\xCB"
+#define PIPE_END "\xCA"
+#define PIPE "\xBA"
+#define PIPENO "."
+#else
+#define PIPE_START "S"
+#define PIPE_END "E"
+#define PIPE "|"
+#define PIPENO "."
+#endif
+
 std::ostream&
 Cva6DynInst::basedump(std::ostream &os) const {
     if (isBubble()){
@@ -102,6 +124,19 @@ Cva6DynInst::basedump(std::ostream &os) const {
         if (isFault()){
             os << "F: " << getFault()->name();
         } else if (staticInst) {
+            #define COLOR "\x1B[1;36m"
+            /* CUSTOM */
+            if (l_data.is_predicted_first){
+                os << COLOR PIPE_START " " RST;
+            } else if (l_data.is_predicted_last){
+                os << COLOR PIPE_END " " RST;
+            } else if (l_data.is_predicted){
+                os << COLOR PIPE " " RST;
+            } else {
+                os << PIPENO " " ;
+            }
+
+
             os << std::setw(30) << std::left
             << staticInst->disassemble(pc->instAddr());
             //   << "Flags=";
