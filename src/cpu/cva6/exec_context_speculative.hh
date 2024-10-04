@@ -165,10 +165,13 @@ class ExecContextSpeculative : public gem5::ExecContext
         panic("setMiscRegOperand cannot be speculative !\n");
     }
 
-    ThreadContext *tcBase() const override {
-        panic("tcBase cannot be called on %s\n", *inst);
-        return NULL;
-    }
+    /* TODO: CARE data leak */
+    ThreadContext *tcBase() const override { return inst->tcBase(); }
+
+    // ThreadContext *tcBase() const override {
+    //     panic("tcBase cannot be called on %s\n", *inst);
+    //     return NULL;
+    // }
 
     unsigned int readStCondFailures() const override {
         panic("Unimplemented\n");

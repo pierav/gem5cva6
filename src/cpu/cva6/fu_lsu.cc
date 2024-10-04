@@ -56,19 +56,6 @@ bool LSUStoreBuffer::isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask){
 }
 
 bool
-LSUStoreBuffer::isPageOffsetMatches(Cva6DynInstPtr inst){
-    return isMaskMatchVaddr(inst, 0b111111111000);
-}
-
-bool
-LSUStoreBuffer::isClMatch(Cva6DynInstPtr inst, uint64_t clsize){
-    uint64_t mask = ((1 << 12) - 1); // 0b111111111111;
-    mask &= ~(clsize - 1); // 0b111111110000
-    // assert(mask == 0b111111110000);
-    return isMaskMatchVaddr(inst, mask);
-}
-
-bool
 LSUStoreBuffer::canPush(Cva6DynInstPtr inst_){
     return speculative_queue.size() < depth_spec;
 }
@@ -254,15 +241,26 @@ LSUAmoBuffer::advance(){
     return !amo_buffer->isBubble();
 }
 
+
+bool
+LSUAmoBuffer::isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask){
+    if (amo_buffer->isBubble()){
+        return false;
+    }
+    Addr t0 = inst->dreq->req->getVaddr() & mask;
+    Addr t1 = amo_buffer->dreq->req->getVaddr() & mask;
+    return t1 == t0; // Return if addr masked match
+}
+
 /************************************************************************
  * Load Unit
  ***********************************************************************/
 
 bool
 LSULoadUnit::canPush(Cva6DynInstPtr inst_){
-    /** Note we must have empty store buffer */
+    /** Check collision with store unit (SQ and amo buffer) */
     return loadqueue.size() < 8 &&
-        !store_buffer->isPageOffsetMatches(inst_);
+        !su->isPageOffsetMatches(inst_);
 }
 
 void
@@ -272,7 +270,7 @@ LSULoadUnit::push(Cva6DynInstPtr inst_){
     DPRINTF(Cva6LSU, PUSH_STR "%s %s\n", *inst_, inst_->dreq->name());
     loadqueue.push(inst_);
     /* Annotate scheduling */
-    inst_->dreq->is_cl_req_inorder = !store_buffer->isClMatch(inst_,
+    inst_->dreq->is_cl_req_inorder = !su->isClMatch(inst_,
         DTLBRequest::BASESIZE);
     stats.req += 1;
     stats.oooreq += !inst_->dreq->is_cl_req_inorder;
@@ -444,7 +442,21 @@ LSUBaseChecker::canPop(Cva6DynInstPtr inst){
 
 void
 LSUBaseChecker::pop(Cva6DynInstPtr inst){
-    // Nothing to do
+    /* Perform checks */
+    if (inst->dreq->fault != NoFault){
+        return; /* Nothing to do */
+    }
+    assert(inst->dreq->is_prefetch_mode);
+    if (!inst->staticInst->isLoad()){
+        uint64_t prefetch_data = inst->dreq->getData();
+        // FUCK ME !!!!!!!!! Addr is 0 !!!
+        uint64_t data = inst->getSrcRegOperand(1); // Data or addr ?
+        uint16_t size = inst->dreq->getSize();
+        bool misspred = memcmp(&data, &prefetch_data, size) != 0;
+        if (inst->dreq->prefetch_mode_failed || misspred){
+            inst->dreq->prefetch_mode_failed = true;
+        }
+    }
 }
 
 void
@@ -501,10 +513,8 @@ LSUBaseChecker::advance(){
             break;
         }
 
-        /* Switch store to load */
-        if (inst->staticInst->isStore()){
-           inst->dreq->setPrefetchMode();
-        }
+        /* Switch store to load and load to valid loads */
+        inst->dreq->setPrefetchMode();
         /* When all conditions are met, send data */
         inst->dreq->sendData();
         // Also move instructuction to allow new space

@@ -4,6 +4,9 @@
 #include <functional>
 #include <iomanip>
 
+#include "arch/generic/isa.hh"
+#include "arch/riscv/pcstate.hh"
+#include "arch/riscv/regs/misc.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/exec_context.hh"
 #include "cpu/op_class.hh"
@@ -113,7 +116,13 @@ Execute::commitInst(Cva6DynInstPtr inst, BranchData &branch){
         if ((cpt++ % 100000) == 0){
             DPRINTF(Cva6CommitCpt, "LLL: %s\n", instDump(inst, thread));
         }
-        DPRINTF(Cva6Commit, "commit: %s\n", instDump(inst, thread));
+        inst->exec_data.pmode = inst->readMiscReg(RiscvISA::MISCREG_PRV);
+        char priv_c[] = {'U', 'S', '-', 'M'};
+        //     PRV_U = 0,
+        // PRV_S = 1,
+        // PRV_M = 3
+        DPRINTF(Cva6Commit, "commit: [%c] %s\n", priv_c[inst->exec_data.pmode],
+            instDump(inst, thread));
         doInstCommitAccounting(inst);
         tryToBranch(inst, fault, branch);
         /*
@@ -196,29 +205,21 @@ Execute::evaluate() {
         }
 
         /* Can deadlock !*/
-        if (inLambda && !inst->isFault() && inst->staticInst->isStore()) {
-            /* 1) check silent store */
-            assert(inst->dreq->is_prefetch_mode);
-            uint64_t prefetch_data = inst->dreq->getData();
-            uint64_t data = inst->getSrcRegOperand(0); // Data or addr ?
-            uint16_t size = inst->dreq->getSize();
-            bool misspred = memcmp(&data, &prefetch_data, size) != 0;
-            if (inst->dreq->prefetch_mode_failed || misspred){
-                DPRINTF(Cva6Commit, "MISSPRED STORE SILENT : %s\n", *inst);
-                cpu.pipeline->lh.on_noisy_store(inst);
-                std::unique_ptr<PCStateBase> target(
-                    cpu.getContext()->pcState().clone());
-                InstSeqNum num = 0;
-                resolved_branch = BranchData(
-                    false, /* Is predicted : need update */
-                    true, /* Need squash */
-                    num, /* sn:0 Squash everything */
-                    *target,
-                    true // Unused
-                );
-                flush();
-                return; /* EARLY FLUSH : do not commit */
-            }
+        if (inLambda && inst->isMemRef() && inst->dreq->prefetch_mode_failed) {
+            DPRINTF(Cva6Execute, "MISSPRED DATA LEAK : %s\n", *inst);
+            cpu.pipeline->lh.on_noisy_store(inst);
+            std::unique_ptr<PCStateBase> target(
+                cpu.getContext()->pcState().clone());
+            InstSeqNum num = 0;
+            resolved_branch = BranchData(
+                false, /* Is predicted : need update */
+                true, /* Need squash */
+                num, /* sn:0 Squash everything */
+                *target,
+                true // Unused
+            );
+            flush();
+            return; /* EARLY FLUSH : do not commit */
         }
 
         commitInst(inst, resolved_branch);
@@ -228,7 +229,7 @@ Execute::evaluate() {
         /* Check lambda misspred */
         bool misspred = !cpu.pipeline->lh.on_commit(inst);
         if (misspred){
-            DPRINTF(Cva6Commit, "MISSPRED LAMBDA: %s\n", *inst);
+            DPRINTF(Cva6Execute, "MISSPRED LAMBDA: %s\n", *inst);
             std::unique_ptr<PCStateBase> target(
                 cpu.getContext()->pcState().clone());
             InstSeqNum num = 0;
@@ -261,6 +262,9 @@ Execute::evaluate() {
             }
         }
 
+        bool is_store_dead =
+            cpu.pipeline->rda.check_reg_dead_at_commit(inst);
+
         /* Checker */
         if (!inst->isFault() && inst->staticInst->isMemRef()){
             /* Request values */
@@ -276,6 +280,9 @@ Execute::evaluate() {
                     inst->exec_data.is_silent_store = indempotant;
                 }
             } else { /* Not bufferable */
+                memcheck.invalidate(addr);
+            }
+            if (is_store_dead){ // drop entry when store dead !
                 memcheck.invalidate(addr);
             }
         }

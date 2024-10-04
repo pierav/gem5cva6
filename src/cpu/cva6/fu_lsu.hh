@@ -22,10 +22,26 @@
 namespace gem5 {
 namespace cva6 {
 
+
+class MatchAddrIntf
+{
+  public:
+  virtual bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) = 0;
+  bool isPageOffsetMatches(Cva6DynInstPtr inst){
+      return isMaskMatchVaddr(inst, 0b111111111000);
+  }
+  bool isClMatch(Cva6DynInstPtr inst, uint64_t clsize){
+      uint64_t mask = ((1 << 12) - 1); // 0b111111111111;
+      mask &= ~(clsize - 1); // 0b111111110000
+      // assert(mask == 0b111111110000);
+      return isMaskMatchVaddr(inst, mask);
+  }
+};
+
 // Store queue persists store requests and pushes them to memory
 // if they are no longer speculative
 class LSUStoreBuffer
-    : public Named, public ReadyValidIntf
+    : public Named, public ReadyValidIntf, public MatchAddrIntf
 {
   protected:
       Cva6CPU &cpu;
@@ -63,11 +79,7 @@ class LSUStoreBuffer
     //
     // checks if the requested load is in the store buffer
     // page offsets are virtually and physically the same
-  protected:
-    bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask);
-  public:
-    bool isPageOffsetMatches(Cva6DynInstPtr inst);
-    bool isClMatch(Cva6DynInstPtr inst, uint64_t clsize);
+    bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) override;
 
     /* Ready Valid interface */
     bool canPush(Cva6DynInstPtr inst_);
@@ -79,7 +91,7 @@ class LSUStoreBuffer
 };
 
 class LSUAmoBuffer
-    : public Named, public ReadyValidIntf
+    : public Named, public ReadyValidIntf, public MatchAddrIntf
 {
   public:
     Cva6CPU &cpu;
@@ -102,10 +114,12 @@ class LSUAmoBuffer
     void pop(Cva6DynInstPtr inst_);
     void flushfrom(Cva6DynInstPtr inst_);
     bool advance();
+
+    bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) override;
 };
 
 class LSUStoreUnit
-    : public Named, public ReadyValidIntf
+    : public Named, public ReadyValidIntf, public MatchAddrIntf
 {
   protected:
     Cva6CPU &cpu;
@@ -173,8 +187,12 @@ class LSUStoreUnit
         return store_buffer.advance() |
                amo_buffer.advance();
     }
-};
 
+    bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) override {
+      return store_buffer.isMaskMatchVaddr(inst, mask) ||
+             amo_buffer.isMaskMatchVaddr(inst, mask);
+    }
+};
 
 class LSULoadUnit
     : public Named, public ReadyValidIntf
@@ -182,7 +200,7 @@ class LSULoadUnit
   protected:
     Cva6DynInstChunk loadqueue;       /** Instructions in Load unit */
     Cva6DynInstChunk insts_in_memory; /** instructions in memory */
-    LSUStoreBuffer *store_buffer;     /** Pointer back to store buffer */
+    LSUStoreUnit *su;                 /** Pointer back to store unit */
     Cva6CPU &cpu;                     /** Pointer back to CPU */
     struct LSULoadUnitStats : public statistics::Group
     {
@@ -198,12 +216,12 @@ class LSULoadUnit
 
   public:
     LSULoadUnit(const std::string &name,
-                LSUStoreBuffer *store_buffer_,
+                LSUStoreUnit *su_,
                 Cva6CPU &cpu_) :
         Named(name),
         loadqueue(name + ".LQ"),
         insts_in_memory(name + ".LQF"),
-        store_buffer(store_buffer_),
+        su(su_),
         cpu(cpu_),
         stats(cpu) { }
 
@@ -231,8 +249,7 @@ class LSUBase
         Named(name),
         cpu(cpu_),
         store_unit(name + ".store_unit", cpu),
-        load_unit(name + ".load_unit", &store_unit.store_buffer,
-          cpu),
+        load_unit(name + ".load_unit", &store_unit, cpu),
         lsu_fifo(name + ".LSQ") { }
 
   protected:

@@ -159,6 +159,9 @@ bool isInstLamdable(Cva6DynInstPtr inst){
          !inst->staticInst->isNonSpeculative() &&  /* CSR */
          /* No CSR, break, *fence*, ecall, wfi */
          inst->staticInst->opClass() != No_OpClass &&
+         /* No atomics */
+         !inst->staticInst->isAtomic() &&
+         !inst->staticInst->isStoreConditional() &&
          // inst->exec_data.is_const_load &&
          /* Const load is not mandatory as K->1 Produce the same result */
          inst->exec_data.is_silent_store;
@@ -199,9 +202,7 @@ LambdaAlgoLLT::predict(uint64_t pc){
   return { 0 };
 }
 void
-LambdaAlgoLLT::evict(Cva6DynInstPtr inst){
-  assert(inst->l_data.is_predicted);
-  uint64_t pc = inst->pc->instAddr();
+LambdaAlgoLLT::evict(uint64_t pc){
   llt[pc].conf.invalidate();
 }
 void
@@ -396,7 +397,9 @@ LambdaAlgoLLT::dump(){
 
 void
 LambdaHandler::on_fetch(Cva6DynInstPtr inst){
-
+  if (!lltSize){
+    return;
+  }
   uint64_t pc = inst->pc->instAddr();
   if (!in_lambda){ /* Try to perform prediction */
     prediction = algo.predict(pc);
@@ -433,8 +436,12 @@ LambdaHandler::on_fetch(Cva6DynInstPtr inst){
 
 void
 LambdaHandler::on_noisy_store(Cva6DynInstPtr inst){
+  if (!lltSize){
+    return;
+  }
   assert(inst->l_data.is_predicted);
-  algo.evict(inst);
+  uint64_t bad_pc = inst->l_data.lambda.pc_start;
+  algo.evict(bad_pc);
 }
 
 /*
@@ -449,6 +456,9 @@ LambdaHandler::on_noisy_store(Cva6DynInstPtr inst){
  * */
 bool
 LambdaHandler::on_commit(Cva6DynInstPtr inst){
+  if (!lltSize){
+    return true;
+  }
   bool valid = true;
   /* (0) : maintain indempotence counter */
   bool isLambdable = isInstLamdable(inst);
@@ -475,6 +485,12 @@ LambdaHandler::on_commit(Cva6DynInstPtr inst){
     stats.miss_pc += !inst->l_data.is_check_pc;
     if (valid){
       stats.hitLsize.sample(inst->l_data.lambda.size);
+    }
+    if (!valid){
+      // Drop prediction
+      assert(inst->l_data.is_predicted);
+      uint64_t bad_pc = inst->l_data.lambda.pc_start;
+      algo.evict(bad_pc);
     }
   }
   return valid;

@@ -156,7 +156,8 @@ Cva6DynInst::basedump(std::ostream &os) const {
                 for (unsigned int i = 0; i < numSrcRegs(); i++) {
                     RegId reg = srcRegIdx(i);
                     if (reg.classValue() != InvalidRegClass){
-                         os << ' ';
+                        os << ' ';
+                        os << (exec_data.is_reg_dead[i] ? '*' : ' ');
                         RegVal regval = reg_src_val[i];
                         regDump(reg, os);
                         os << ':';

@@ -30,7 +30,7 @@ class LambdaAlgo
   public:
   virtual lambdakto1_t predict(uint64_t pc) = 0;
   virtual void commit(Cva6DynInstPtr inst) = 0;
-  virtual void evict(Cva6DynInstPtr inst) = 0;
+  virtual void evict(uint64_t pc) = 0;
 };
 
 class LambdaAlgoLLT : public LambdaAlgo
@@ -106,7 +106,7 @@ class LambdaAlgoLLT : public LambdaAlgo
   LambdaAlgoLLT(Cva6CPU &cpu_) : cpu(cpu_), stats(cpu_) {}
   lambdakto1_t predict(uint64_t pc) override;
   void commit(Cva6DynInstPtr inst) override;
-  void evict(Cva6DynInstPtr inst) override;
+  void evict(uint64_t pc) override;
 };
 
 class LambdaHandler : public Named
@@ -157,6 +157,7 @@ class LambdaHandler : public Named
       return *new LambdaAlgoLLT(cpu_);
   }
 
+  uint64_t lltSize;
   public:
   LambdaHandler(
       const std::string &name,
@@ -165,7 +166,7 @@ class LambdaHandler : public Named
     Named(name),
     cpu(cpu_),
     algo(selectAlgo(cpu_, params)),
-    stats(cpu_) {}
+    stats(cpu_), lltSize(params.lltSize) {}
 
   void on_fetch(Cva6DynInstPtr inst);
 

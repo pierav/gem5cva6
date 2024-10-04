@@ -54,6 +54,7 @@ class BaseCva6CPU(BaseCPU):
 
     # Lambda
     userelf = Param.String("", "Main user elf")
+    lltSize = Param.Unsigned(0, "Last Lamdba Table Size")
 
     def addCheckerCpu(self):
         print("Checker not yet supported by Cva6CPU")

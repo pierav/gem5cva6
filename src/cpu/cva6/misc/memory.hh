@@ -24,7 +24,7 @@ struct entry_t
   uint64_t _bw_wbs; /* bw Write by store */
   uint64_t _bw_constant; /* bw Nostore < Constant */
 
-  entry_t() : _tag(0), bw(0), _bw_wbs(0), _bw_constant(0) { }
+  entry_t() : _tag(0), line{}, bw(0), _bw_wbs(0), _bw_constant(0) { }
 
   uint64_t getoffset(uint64_t addr){
     return addr & (LINE_SIZE - 1);
@@ -76,7 +76,7 @@ struct entry_t
     } else {
         _bw_constant |= mask_bw;
     }
-    return missmatch; // Is access updated cache
+    return missmatch || !match_bw; // Is access updated cache
   }
 };
 

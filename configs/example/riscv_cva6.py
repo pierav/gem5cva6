@@ -59,6 +59,27 @@ parser.add_argument("--vpFlush", action='store_true')
 # Scoreboard size
 parser.add_argument("--sbSize", action='store', type=int, default=32)
 
+xxx = """
+              @@@@@@
+             @@@@@@@@
+            @@    @@@
+            @      @@@
+            v       @@
+                    @@@
+                     @@
+                    @@@@
+                   @@@@@
+                  @@@@@@@
+                 @@@@@ @@
+                @@@@@  @@@
+               @@@@@    @@
+              @@@@@     @@@       ^
+             @@@@@       @@       @
+            @@@@@        @@@     @@
+           @@@@@          @@@@@@@@
+          @@@@@            @@@@@@
+"""
+parser.add_argument("--lltSize", default=0)
 
 
 
@@ -114,6 +135,8 @@ parser.add_argument("--SQEntries", action="store", type=int, default=32)
 
 args = parser.parse_args()
 
+
+print(f"{xxx}\nUse Lambda LLT : ", args.lltSize)
 
 CONFIG_USE_O3 = False
 CONFIG_USE_CVA6 = False
@@ -744,7 +767,7 @@ if not CONFIG_USE_ATOMIC:
         cpuConfig["commitWidth"] = pipewidth
         cpuConfig["userelf"] = args.userelf
         cpuConfig["sbSize"] = args.sbSize
-
+        cpuConfig["lltSize"] = args.lltSize
         if args.plugmemtrace:
             cpuConfig["plugin_memtrace_path"] = \
                 path.join(m5.options.outdir, 'memtrace.bin')

@@ -15,6 +15,8 @@
 
 #include <cstdio>
 
+#include "debug/Cva6LambdaRDA.hh"
+
 namespace gem5 {
 namespace cva6 {
 
@@ -62,7 +64,7 @@ RegDeadAnayser::init_rdmap(const char *elfpath){
         }
         RegId reg;
         if (reverseRegisterName(cpu, base, reg)){
-          // DPRINTF(Cva6LambdaRDA, "REG_DEAD: %x : %s\n", addr, reg);
+          DPRINTF(Cva6LambdaRDA, "REG_DEAD: %x : %s\n", addr, reg);
         } else {
           fatal("No register valid in : %s\n", symname);
         }
@@ -71,6 +73,59 @@ RegDeadAnayser::init_rdmap(const char *elfpath){
     }
     elf_end(elf);
     close(fd);
+}
+
+
+
+bool
+RegDeadAnayser::check_reg_dead_at_commit(Cva6DynInstPtr inst){
+  /* Check reg dead */
+  if (inst->isFault()){
+    return false;
+  }
+  if (inst->staticInst->isStore()){
+    stats.stores += 1;
+  }
+  bool ret = false;
+  // Check all src regs
+  for (unsigned int i = 0; i < inst->staticInst->numSrcRegs(); i++) {
+    RegId reg = inst->staticInst->srcRegIdx(i);
+    if (reg.classValue() != InvalidRegClass){
+      if (inst->exec_data.pmode == 0){// USER
+        if (!rf_used.isSet(reg)){
+          Cva6DynInstPtr guilty = rf_freeer.get(reg);
+          if (guilty){
+            if (!inst->staticInst->isStore()){
+                warn("RaRD %s from: %s to: %s\n",
+                  reg, *guilty, *inst);
+            } else {
+                stats.stores_dead += 1;
+                ret = true;
+                // TODO check SP
+                // warn("Store uses DEAD REG : %s\n", *inst);
+            }
+              //cpu.pipeline->rda.clear(guilty->pc->instAddr(), reg);
+          }
+        }
+      }
+    }
+  }
+  // free reg dead
+  for (unsigned int i = 0; i < inst->staticInst->numSrcRegs(); i++) {
+    RegId reg = inst->staticInst->srcRegIdx(i);
+    if (inst->exec_data.is_reg_dead[i]){
+      rf_used.clear(reg);
+      rf_freeer.set(reg, inst);
+    }
+  }
+  // Set all dest regs
+  for (unsigned int i = 0; i < inst->staticInst->numDestRegs(); i++) {
+    RegId reg = inst->staticInst->destRegIdx(i);
+    if (reg.classValue() != InvalidRegClass){
+      rf_used.set(reg);
+    }
+  }
+  return ret;
 }
 
 }

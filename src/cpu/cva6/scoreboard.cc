@@ -85,19 +85,20 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, RegId reg, RegVal &val){
         return FREE;
     }
 
-
     int pos = -1;
     // Find instruction position in sb
     for (int i = 0; i < issue_queue.size(); i++){
         assert(!issue_queue[i]->isBubble());
-        if (issue_queue[i] == inst_in){
+        if (issue_queue[i]->isAfterOrEqual(inst_in)){
+            assert(issue_queue[i] == inst_in);
             pos = i;
+            break;
         }
     }
     // dump();
     fatal_if(pos == -1, "Instruction %s not in scoreboard\n", *inst_in);
 
-     /*
+    /*
      * sbe0: addi x5, x0, 1 <-- commit head
      * sbe1: addi x0, x5, 1
      * sbe2: addi x5, x5, 1                 // depends on sbe0
@@ -109,6 +110,9 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, RegId reg, RegVal &val){
         assert(inst->issue_completed);
         if (!inst->issue_completed){
             continue;
+        }
+        if (inst->isFault()){ // Stall after fault
+            return IN_USE;
         }
         StaticInstPtr si = inst->staticInst;
         for (uint8_t i = 0; i < si->numDestRegs(); i++) {

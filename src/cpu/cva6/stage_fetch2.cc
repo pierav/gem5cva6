@@ -176,15 +176,19 @@ Fetch2::predictBranch(Cva6DynInstPtr inst, BranchData &branch){
         DPRINTF(Branch, "Trying to predict for inst: %s\n", *inst);
         inst->triedToPredict = true;
 
-        if (0 && si->isUncondCtrl() && si->isDirectCtrl()){
+        inst->predictedTaken = branchPredictor.predict(
+            si, inst->id.fetchSeqNum, *inst_pc, 0);
+
+        /* Force a valid branch if Uncond Direct */
+        if (si->isUncondCtrl() && si->isDirectCtrl()){
             /* BUG JAL ! Must use RAS !*/
             inst->predictedTaken = true;
-            si->branchTarget(*inst_pc);
-            // si->advancePC(*inst_pc);
-        } else {
-            inst->predictedTaken = branchPredictor.predict(
-                    si, inst->id.fetchSeqNum, *inst_pc, 0);
+            // set(inst_pc, inst->pc);
+            set(inst_pc, si->branchTarget(*inst->pc));
+            DPRINTF(Branch, "Force prediction for %s : %lx\n",
+                *inst, inst_pc->instAddr());
         }
+
         set(inst->predictedTarget, inst_pc);
 
         if (inst->predictedTaken){

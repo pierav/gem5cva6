@@ -226,7 +226,10 @@ DTLBRequest::name(){
     std::ostringstream oss;
     assert((int)state < (int)DTLBRequest::DTLBRequestState::End);
     char key = mode == BaseMMU::Read ? 'R' :
-                    is_prefetch_mode ? 'C' : 'W';
+                     req->isAtomic() ? 'A' : 'W';
+    if (is_prefetch_mode){
+        key = 'C';
+    }
     oss << "<...>.DTLBreq("
         << DTLBRequestStateName[(int)state]
         << std::hex

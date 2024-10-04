@@ -197,6 +197,7 @@ class Cva6DynInst : public RefCounted
       bool is_silent_store = true;
       bool is_const_load = true;
       bool is_reg_dead[3] = { false };
+      uint8_t pmode;
     } exec_data;
 
     /************ MetaData ******************/
@@ -451,6 +452,9 @@ class Cva6DynInst : public RefCounted
       cpu->thread->setMiscReg(misc_reg, val);
       // ex_csrs[misc_reg] = val;
     }
+
+    ThreadContext *tcBase(){ return cpu->thread->getTC(); }
+
     /*
      * 3 steps execution:
      *  *INITIATE()*  |     *COMPLETE()*      |   *COMMIT()*

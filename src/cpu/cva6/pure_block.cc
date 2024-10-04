@@ -17,7 +17,6 @@
 #include "debug/Cva6LambdaCommit.hh"
 #include "debug/Cva6LambdaDump.hh"
 #include "debug/Cva6LambdaLearn.hh"
-#include "debug/Cva6LambdaRDA.hh"
 
 namespace gem5 {
 namespace cva6 {
