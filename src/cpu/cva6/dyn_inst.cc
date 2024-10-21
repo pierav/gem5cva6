@@ -236,12 +236,14 @@ void
 Cva6DynInst::executeInitiate(){
     DPRINTF(Cva6X, "executeInitiate... %s\n", *this);
     if (isFault()) { // Nothing to do
+        DPRINTF(Cva6X, "isFault... %s\n", *this);
         return;
     }
     // Setup default next pc. Jump instructions modify this value.
     set(pc_next, pc);
     // Initate memory references
     if (staticInst->isMemRef()){
+        DPRINTF(Cva6X, "isMemRef... %s\n", *this);
         ExecContextSpeculative context(this);
         Fault fault = staticInst->initiateAcc(&context, traceData);
         if (fault != NoFault){

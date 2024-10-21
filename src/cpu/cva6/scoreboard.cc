@@ -78,6 +78,38 @@ Scoreboard::pushInst(Cva6DynInstPtr inst){
 }
 
 
+
+bool
+Scoreboard::isUnissedStoreBefore(Cva6DynInstPtr inst_in){
+    int pos = issue_queue.size(); // Default is outside sb
+    // Find instruction position in sb
+    for (int i = 0; i < issue_queue.size(); i++){
+        assert(!issue_queue[i]->isBubble());
+        if (issue_queue[i]->isAfterOrEqual(inst_in)){
+            #ifdef NO_LAMBDA_PROBE
+            assert(issue_queue[i] == inst_in);
+            #endif
+            pos = i;
+            break;
+        }
+    }
+
+    for (int i = pos - 1; i >= 0; i--){
+        Cva6DynInstPtr inst = issue_queue[i];
+        if (inst->isFault()){ // Stall after fault
+            return true;
+        }
+        StaticInstPtr si = inst->staticInst;
+        if (si->isStore()){
+            if (!inst->issue_completed){ /* Cannot match addr in LSU */
+                return true;
+            }
+            /* Otherwise, let the lsu decide */
+        }
+    }
+    return false;
+}
+
 Scoreboard::DestRegState
 Scoreboard::getRegState(Cva6DynInstPtr inst_in, RegId reg, RegVal &val){
     Index index;
@@ -85,18 +117,20 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, RegId reg, RegVal &val){
         return FREE;
     }
 
-    int pos = -1;
+    int pos = issue_queue.size(); // Default is outside sb
     // Find instruction position in sb
     for (int i = 0; i < issue_queue.size(); i++){
         assert(!issue_queue[i]->isBubble());
         if (issue_queue[i]->isAfterOrEqual(inst_in)){
+            #ifdef NO_LAMBDA_PROBE
             assert(issue_queue[i] == inst_in);
+            #endif
             pos = i;
             break;
         }
     }
     // dump();
-    fatal_if(pos == -1, "Instruction %s not in scoreboard\n", *inst_in);
+    // fatal_if(pos == -1, "Instruction %s not in scoreboard\n", *inst_in);
 
     /*
      * sbe0: addi x5, x0, 1 <-- commit head
@@ -107,10 +141,12 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, RegId reg, RegVal &val){
     // From oldest to newest try to find register
     for (int i = pos - 1; i >= 0; i--){
         Cva6DynInstPtr inst = issue_queue[i];
+        #ifdef NO_LAMBDA_PROBE
         assert(inst->issue_completed);
         if (!inst->issue_completed){
             continue;
         }
+        #endif
         if (inst->isFault()){ // Stall after fault
             return IN_USE;
         }
@@ -179,6 +215,7 @@ Scoreboard::canInstIssue(Cva6DynInstPtr inst) {
                     fwval = cpu.thread->getReg(reg);
                 }
                 DPRINTF(Cva6Scoreboard, "RaW RR reg %s %lx\n", reg, fwval);
+                inst->reg_src_val_fromrf[src_index] = true;
             } break;
         }
         inst->setSrcRegOperand(src_index, fwval);

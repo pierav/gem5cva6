@@ -57,6 +57,9 @@ class InstId
      *  post-micro-op decomposed instructions. */
     InstSeqNum execSeqNum;
 
+    /* Annotate extra uOp inserted on flight */
+    uint64_t uop_extra = 0;
+
   public:
     /** Very boring default constructor */
     InstId(
@@ -107,6 +110,9 @@ class Cva6DynInst : public RefCounted
       assert(!isBubble());
       if (inst_->isBubble()){
         return true;
+      }
+      if (id.fetchSeqNum == inst_->id.fetchSeqNum){
+        return id.uop_extra >= inst_->id.uop_extra;
       }
       return id.fetchSeqNum >= inst_->id.fetchSeqNum;
     }
@@ -168,6 +174,8 @@ class Cva6DynInst : public RefCounted
     /** Source registers values */
     uint64_t reg_src_val[3] = { 0 }; // TODO Generic N
     bool reg_src_val_valid[3] = { 0 }; // For assertions
+    bool reg_src_val_fromrf[3] = { 0 }; // For assertions
+
     /** memory request generated when load/store */
     DTLBRequestPtr dreq = nullptr;
 
@@ -306,11 +314,11 @@ class Cva6DynInst : public RefCounted
       issue_start_ts = 0;
       issue_ts = 0;
       issue_completed = false;
-      reg_src_val_valid[0] = false;
-      reg_src_val_valid[1] = false;
-      reg_src_val_valid[2] = false;
+      for (int i = 0; i < 3; i++){
+        reg_src_val_valid[i] = false;
+        reg_src_val_fromrf[i] = false;
+      }
       untrackDreq();
-
       // Reset Execute
       execute_completed = false;
       reg_dst_val_valid[0] = false;

@@ -32,6 +32,11 @@ namespace cva6 {
  * Store buffer
  ***********************************************************************/
 
+bool maskMatchVaddrInst(Cva6DynInstPtr i1, Cva6DynInstPtr i2, uint64_t mask){
+    return (i1->dreq->req->getVaddr() & mask) ==
+           (i2->dreq->req->getVaddr() & mask);
+}
+
 bool
 LSUStoreBuffer::isEmpty(){
     return (speculative_queue.size() == 0) && (commit_queue.size() == 0);
@@ -41,14 +46,20 @@ bool LSUStoreBuffer::isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask){
     Addr addr_masked = inst->dreq->req->getVaddr() & mask;
     // Check if the page offset matches and whether the entry is valid,
     // for the commit queue
-    for (Cva6DynInstPtr isnt: commit_queue){
-        if ((isnt->dreq->req->getVaddr() & mask) == addr_masked){
+    for (Cva6DynInstPtr i2: commit_queue){
+        if (i2->isAfterOrEqual(inst)){
+            continue;
+        }
+        if ((i2->dreq->req->getVaddr() & mask) == addr_masked){
             return 1;
         }
     }
     // do the same for the speculative queue
-    for (Cva6DynInstPtr isnt: speculative_queue){
-        if ((isnt->dreq->req->getVaddr() & mask) == addr_masked){
+    for (Cva6DynInstPtr i2: speculative_queue){
+        if (i2->isAfterOrEqual(inst)){
+            continue;
+        }
+        if ((i2->dreq->req->getVaddr() & mask) == addr_masked){
             return 1;
         }
     }
@@ -245,6 +256,9 @@ LSUAmoBuffer::advance(){
 bool
 LSUAmoBuffer::isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask){
     if (amo_buffer->isBubble()){
+        return false;
+    }
+    if (amo_buffer->isAfterOrEqual(inst)){
         return false;
     }
     Addr t0 = inst->dreq->req->getVaddr() & mask;
@@ -478,8 +492,6 @@ LSUBaseChecker::advance(){
     /* */
     while (!lsu_fifo.empty()){
         Cva6DynInstPtr inst = lsu_fifo.front();
-        DPRINTF(Cva6LSU, "Select lsu_fifo : %s : %s\n", *inst,
-            inst->dreq->name());
         if (!inst->dreq->isTranslated()){
             break;
         }
@@ -501,15 +513,23 @@ LSUBaseChecker::advance(){
     /* Try to send instruction to memory */
     while (!cqueue.empty()){
         Cva6DynInstPtr inst = cqueue.front();
-        DPRINTF(Cva6LSU, "Select cqueue : %s : %s\n", *inst,
-            inst->dreq->name());
-
         /* Instruction is translated */
         if (!inst->dreq->isTranslated()){
+            DPRINTF(Cva6LSU, "Stall : Not Translated : %s : %s\n", *inst,
+                inst->dreq->name());
+            break;
+        }
+
+        /* Check order correctness */
+        if (su->isPageOffsetMatches(inst)){
+            DPRINTF(Cva6LSU, "Stall : SU match ......: %s : %s\n", *inst,
+                inst->dreq->name());
             break;
         }
 
         if (cpu.dcache->isBlocked()){
+            DPRINTF(Cva6LSU, "Stall : Cache blocked .: %s : %s\n", *inst,
+                inst->dreq->name());
             break;
         }
 
@@ -517,7 +537,7 @@ LSUBaseChecker::advance(){
         inst->dreq->setPrefetchMode();
         /* When all conditions are met, send data */
         inst->dreq->sendData();
-        // Also move instructuction to allow new space
+        /* Also move instructuction to allow new space */
         cqueue.pop(inst);
         break;
     }

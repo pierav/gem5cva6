@@ -231,8 +231,6 @@ LambdaAlgoLLT::commit(Cva6DynInstPtr inst){
   }
 }
 
-
-
 void
 LambdaAlgoLLT::pushLambda(){
   if (window.size() == 0){
@@ -511,7 +509,9 @@ LambdaHandler::newPredInst(Cva6DynInstPtr inst){
   assert(si);
   /* Create the compound Dynamic instruction */
   Cva6DynInstPtr i2 = new Cva6DynInst(&cpu, si, &inst->pc);
-  i2->id.fetchSeqNum = 1; // Setup fake sequence number
+  /* Increment sequence number */
+  i2->id.fetchSeqNum = inst->id.fetchSeqNum;
+  i2->id.uop_extra = inst->id.uop_extra + 1;
   assert(i2->staticInst);
   /* Annotate i2 */
   i2->l_data.is_uop_lambda_pred = true;

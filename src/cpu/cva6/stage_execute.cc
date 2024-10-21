@@ -124,6 +124,9 @@ Execute::commitInst(Cva6DynInstPtr inst, BranchData &branch){
         DPRINTF(Cva6Commit, "commit: [%c] %s\n", priv_c[inst->exec_data.pmode],
             instDump(inst, thread));
         doInstCommitAccounting(inst);
+        if (inst->traceData){
+            inst->traceData->dump();
+        }
         tryToBranch(inst, fault, branch);
         /*
         static bool linuxTrace = false;
@@ -306,9 +309,7 @@ Execute::evaluate() {
         for (Plugin *plugin: plugins){
             plugin->commit(inst);
         }
-        if (inst->traceData){
-            inst->traceData->dump();
-        }
+
     }
     // Flush in the cycle
     if (resolved_branch.isStreamChange()){

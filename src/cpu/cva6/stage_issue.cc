@@ -10,11 +10,106 @@
 
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/exec_context.hh"
+#include "cpu/cva6/pipeline.hh"
 #include "cpu/op_class.hh"
 #include "debug/Cva6Issue.hh"
 
 namespace gem5 {
 namespace cva6 {
+
+bool
+IssueUnit::robGetRegFunctionnal(uint64_t pos, RegId reg_src, RegVal &fwval){
+    /* Skip unforwardable registers */
+    if (reg_src.classValue() == MiscRegClass ||
+        reg_src.classValue() == InvalidRegClass){
+        fwval = 0;
+        return true;
+    }
+    for (int i = pos - 1; i >= 0; i--){
+        Cva6DynInstPtr i2 = cpu.pipeline->rob[i];
+        if (i2->isFault()){ // Stall after fault
+            return false;
+        }
+        for (uint8_t i = 0; i < i2->numDstRegs(); i++) {
+            if (i2->dstRegIdx(i) == reg_src){ // Hit register
+                //DPRINTF(Cva6Scoreboard, "Match FW %s\n", *inst);
+                if (i2->reg_dst_val_valid[i]){ /* Ready -> Forward */
+                    fwval = i2->getDstRegOperand(i);
+                    return true;
+                } else { /* In use */
+                    return false;
+                }
+            }
+        }
+    }
+    /* Register is not in flight, use reg file */
+    fwval = cpu.thread->getReg(reg_src);
+    return true;
+}
+
+bool
+IssueUnit::isLamdbaOrderOk(Cva6DynInstPtr inst){
+    #if 0
+    /* Only the first lambda in IQ if present can be issued
+    * | OK
+    * E OK
+    * S !OK
+    * | !OK
+    * E !OK
+    */
+    for (Cva6DynInstPtr i2 : scoreboard.getIssueQueue()){
+        if (i2 == inst){
+            return true;
+        }
+        if (i2->l_data.is_predicted_last){
+            return false;
+        }
+    }
+    return true;
+    #endif
+
+    /* Fault does not have register dependancies */
+    if (inst->isFault()){
+        return true;
+    }
+
+    /* If fast IQ, there is no deps */
+    if (&cpu.pipeline->getIq(FAST_IQ) == this){
+        return true;
+    }
+
+    /* Check if there is no non-issued stores */
+    Scoreboard &fast_sb = cpu.pipeline->getIq(FAST_IQ).scoreboard;
+    if (fast_sb.isUnissedStoreBefore(inst)){
+        DPRINTF(Cva6Issue, "LAMBDA unresolved mem dep\n");
+        return false;
+    }
+
+    // Find instruction position in rob
+    int pos = cpu.pipeline->rob.size(); // Default is outside sb
+    for (int i = 0; i < cpu.pipeline->rob.size(); i++){
+        assert(!cpu.pipeline->rob[i]->isBubble());
+        if (cpu.pipeline->rob[i]->isAfterOrEqual(inst)){
+            pos = i;
+            break;
+        }
+    }
+
+    /* Check and Forward register from the other iq */
+    uint8_t num_srcs = inst->staticInst->numSrcRegs();
+    for (uint8_t src_index = 0; src_index < num_srcs; src_index++){
+        RegId reg_src = inst->staticInst->srcRegIdx(src_index);
+        RegVal fwval;
+        if (robGetRegFunctionnal(pos, reg_src, fwval)){
+            inst->setSrcRegOperand(src_index, fwval);
+            continue;
+        } else {
+            return false;
+        }
+    }
+    /* Finally all conditions are met ! */
+    return true;
+}
 
 void
 IssueUnit::evaluate(){
@@ -138,15 +233,10 @@ Issue::evaluate() {
         bool inlambda = inst->l_data.is_predicted;
         IssueUnit &iq = cpu.pipeline->getIq(inlambda);
         if (iq.canPush()){
-            /* Insert uOp in IQ when lambda start ! */
-            if (inst->l_data.is_predicted_first){
-                if (!cpu.pipeline->getIq(FAST_IQ).canPush()){
-                    break;
-                }
-                // uOp insertion in fast IQ
-                assert(pinst->isBubble()); // No lambda overlap !
-                pinst = cpu.pipeline->lh.newPredInst(inst);
-                cpu.pipeline->getIq(FAST_IQ).push(pinst);
+            /* have 1 slot remaining for uOp */
+            if (inst->l_data.is_predicted_last &&
+                !cpu.pipeline->getIq(FAST_IQ).canPush()){
+                break;
             }
             inp.pop();
             iq.push(inst);
@@ -155,11 +245,14 @@ Issue::evaluate() {
             break;
         }
 
-        /* Insert uOp in ROB when lambda end */
+        /* Insert uOp in ROB / IQ when lambda end */
         if (inst->l_data.is_predicted_last){
-            assert(!pinst->isBubble());
+            assert(cpu.pipeline->getIq(FAST_IQ).canPush());
+            // uOp insertion in fast IQ
+            pinst = cpu.pipeline->lh.newPredInst(inst);
+            pinst->id.fetchSeqNum = inst->id.fetchSeqNum;
+            cpu.pipeline->getIq(FAST_IQ).push(pinst);
             cpu.pipeline->rob.push(pinst);
-            pinst = Cva6DynInst::bubble();
         }
     }
 
@@ -185,7 +278,6 @@ Issue::flush(){
     cpu.pipeline->iq0.flush();
     cpu.pipeline->iq1.flush();
     inp.flush();
-    pinst = Cva6DynInst::bubble();
 }
 
 

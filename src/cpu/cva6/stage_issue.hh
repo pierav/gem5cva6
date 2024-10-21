@@ -229,27 +229,13 @@ class IssueUnit : public Named
 
     /* The 2 IQ have to synchronize ! */
     BinaryRegisterFile rfsynchro;
-
-    bool isLamdbaOrderOk(Cva6DynInstPtr inst){ /* Functionnal */
-      /* Only the first lambda in IQ if present can be issued
-       * | OK
-       * E OK
-       * S !OK
-       * | !OK
-       * E !OK
-       */
-      for (Cva6DynInstPtr i2 : scoreboard.getIssueQueue()){
-        if (i2 == inst){
-          return true;
-        }
-        if (i2->l_data.is_predicted_last){
-          return false;
-        }
-      }
-      return true;
-    }
+    bool robGetRegFunctionnal(uint64_t pos, RegId reg_src, RegVal &fwval);
+    bool isLamdbaOrderOk(Cva6DynInstPtr inst);
     bool allowLambdaIq(){
+      #if 0
       return scoreboard.getHeadInst()->l_data.is_uop_lambda_pred;
+      #endif
+      return true;
     }
 };
 

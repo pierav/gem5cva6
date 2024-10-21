@@ -67,6 +67,7 @@ class Scoreboard : public Named
     /* number of entries un issue queue*/
     const unsigned nr_entries;
 
+  public:
     /* destination reg usage in issue_queue */
     enum DestRegState
     {
@@ -109,11 +110,11 @@ protected:
      *  is in the scoreboard and false if it isn't */
     bool findIndex(const RegId& reg, Index &scoreboard_index);
 
-
-    DestRegState getRegStateOld(RegId reg, RegVal &val);
-
+  public:
+    bool isUnissedStoreBefore(Cva6DynInstPtr inst_in);
     /** Returns the register state with associated value */
     DestRegState getRegState(Cva6DynInstPtr inst_in, RegId reg, RegVal &val);
+  protected:
 
     /** Forward a register. If register is in the scoreboard it must
      * be forwardable. */

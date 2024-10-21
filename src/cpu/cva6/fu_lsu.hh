@@ -22,6 +22,7 @@
 namespace gem5 {
 namespace cva6 {
 
+bool maskMatchVaddrInst(Cva6DynInstPtr i1, Cva6DynInstPtr i2, uint64_t mask);
 
 class MatchAddrIntf
 {
@@ -234,7 +235,7 @@ class LSULoadUnit
 };
 
 class LSUBase
-    : public Named, public virtual ReadyValidIntf
+    : public Named, public virtual ReadyValidIntf, public MatchAddrIntf
 {
   protected:
     Cva6CPU &cpu;
@@ -269,8 +270,27 @@ class LSUBase
     void pop(Cva6DynInstPtr inst);
     void flushfrom(Cva6DynInstPtr inst_);
     bool advance();
-};
 
+    bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) override {
+      /* First check lsu_fifo */
+      /* Used only in DUAL LSU */
+      for (auto &i2: lsu_fifo){
+        if (i2->isAfterOrEqual(inst)){ /* Ignore past instructions */
+          continue;
+        }
+        if (i2->isFault()){ /* Stall if fault before */
+          return true;
+        }
+        if (i2->staticInst->isLoad()){ /* Ignore loads */
+          continue;
+        }
+        if (maskMatchVaddrInst(inst, i2, mask)){ /* */
+          return true;
+        }
+      }
+      return store_unit.isMaskMatchVaddr(inst, mask);
+    }
+};
 
 class LSUBaseChecker
     : public Named, public virtual ReadyValidIntf
@@ -279,14 +299,19 @@ class LSUBaseChecker
     Cva6CPU &cpu;
     Cva6DynInstChunk cqueue;  /** CheckQueue */
     Cva6DynInstChunk lsu_fifo; /** Lsu bypass buffer */
+
+    /* Pointer to the stores buffer */
+    MatchAddrIntf *su;
   public:
     LSUBaseChecker(const std::string &name,
             Cva6CPU &cpu_,
-            const BaseCva6CPUParams &params) :
+            const BaseCva6CPUParams &params,
+            MatchAddrIntf *su_) :
         Named(name),
         cpu(cpu_),
         cqueue(name + ".CQ"),
-        lsu_fifo(name + ".LSQ")
+        lsu_fifo(name + ".LSQ"),
+        su(su_)
         { }
     bool canPush(Cva6DynInstPtr inst);
     void push(Cva6DynInstPtr inst);
@@ -305,7 +330,7 @@ class LSUWithCheckerLQ : public virtual ReadyValidIntf
             Cva6CPU &cpu_,
             const BaseCva6CPUParams &params):
             base(name, cpu_, params),
-            checker(name, cpu_, params) {}
+            checker(name, cpu_, params, &base) {}
   ReadyValidIntf *du(Cva6DynInstPtr inst){
     if (inst->l_data.is_predicted){
       return &checker;
