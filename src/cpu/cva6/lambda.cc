@@ -13,9 +13,85 @@
 #include "debug/Cva6LambdaDump.hh"
 #include "debug/Cva6LambdaLearn.hh"
 
+#include "debug/Cva6Partition.hh"
+
 namespace gem5 {
 namespace cva6 {
 
+
+class SerialInstructionPartitionner : public Named
+{
+  std::deque<Cva6DynInstPtr> fifo;
+
+  struct Stats : public statistics::Group
+  {
+    /** Stats */
+    statistics::Scalar commit;
+    statistics::Scalar branch;
+    statistics::Distribution BB;
+    statistics::Distribution BBPart;
+    Stats(Cva6CPU &cpu) :
+      statistics::Group(&cpu, "partition"),
+      ADD_STAT(commit, "commit instructions"),
+      ADD_STAT(branch, "branch instructions"),
+      ADD_STAT(BB, "BB sizes"),
+      ADD_STAT(BBPart, "BB parties sizes")
+    {
+      BB
+        .init(0,32,1)
+        .flags(statistics::pdf);
+      BBPart
+        .init(0,32,1)
+        .flags(statistics::pdf);
+    }
+  } stats;
+
+  public:
+
+  SerialInstructionPartitionner(const std::string &name, Cva6CPU &cpu) :
+    Named(name), stats(cpu) {}
+
+  void commit(Cva6DynInstPtr inst){
+    stats.commit += 1;
+    if (inst->isFault() || inst->staticInst->isControl()){
+      DPRINTF(Cva6Partition, "----[  ] : %s\n", *inst);
+      stats.branch += 1;
+      if (fifo.size()){
+        onBB();
+      }
+      return;
+    } else {
+      fifo.push_back(inst);
+    }
+  }
+
+  void onBB(){
+    /* Compute partition (todo linear) */
+    int cpt = 0;
+    int count = 0;
+    stats.BB.sample(fifo.size());
+    for (int start = 0; start < fifo.size();){
+      uint64_t iter_best_end = 0;
+      BinaryLambdaRegFile rf;
+      for (int end = start; end < fifo.size(); end++){
+        rf.push(fifo[end]);
+        if (rf.isKto1()){
+          iter_best_end = end;
+        }
+      }
+      count += iter_best_end - start + 1;
+      stats.BBPart.sample(iter_best_end - start + 1);
+      for (int i = start; i < iter_best_end + 1; i++){
+        DPRINTF(Cva6Partition, "fifo[%d/%d](%d) : %s\n",
+          i, fifo.size(), cpt, *fifo[i]);
+      }
+      cpt++;
+      start = iter_best_end + 1;
+    }
+    assert(count == fifo.size());
+    fifo.clear();
+  }
+};
 
 #define RST  "\x1B[0m"
 #define KRED  "\x1B[31m"
@@ -224,7 +300,14 @@ LambdaAlgoLLT::commit(Cva6DynInstPtr inst){
   /* Annotate if instruction is const */
   inst->l_data.is_const = lvt.check_and_insert(inst);
   if (!isInstLamdable(inst) || !inst->l_data.is_const) {
-    pushLambda();
+    if (window.size()){
+      learnLambdaOnWindow();
+      /* Finally dump delayed display */
+      for (int i = 0; i < window.size(); i++){
+        inst_lambda_dump(window[i]);
+      }
+      window.clear();
+    }
     inst_lambda_dump(inst);
   } else {
     window.push_back(inst);
@@ -232,10 +315,46 @@ LambdaAlgoLLT::commit(Cva6DynInstPtr inst){
 }
 
 void
-LambdaAlgoLLT::pushLambda(){
-  if (window.size() == 0){
-    return;
+LambdaAlgoLLTLoadSlice::learnLambdaOnWindow(){
+  for (int iload = 0; iload < window.size(); iload++){
+    if (!window[iload]->staticInst->isLoad()){ // Skip all non loads
+      continue;
+    }
+    /* For all loads, find best lambda */
+    int load_best_back = iload;
+    int load_best_front = iload;
+    for (int back = iload; back >= std::max<int>(0, iload-16); back--){
+      /* Insert backward slice */
+      int iter_best_end = -1;
+      int i = back;
+      BinaryLambdaRegFile rf;
+      for (; i <= iload; i++){
+        rf.push(window[i]);
+      }
+      /* Insert and check frontward slice */
+      for (; i < std::min<int>(window.size(), iload+16); i++){
+        rf.push(window[i]);
+        if (rf.isKto1()){
+          iter_best_end = i;
+        }
+      }
+      /* Is best lambda ? */
+      int delta = iter_best_end - back;
+      int delta_max = load_best_front - load_best_back + 1;
+      if (delta > delta_max){
+        load_best_back = back;
+        load_best_front = iter_best_end;
+      }
+    }
+
+    /* Insert lambda */
+    pushLambda(load_best_back, load_best_front,
+               load_best_front - load_best_back + 1);
   }
+}
+
+void
+LambdaAlgoLLT::learnLambdaOnWindow(){
   /* Compute best score in window */
   uint64_t best_start = 0;
   uint64_t best_delta = 0;
@@ -269,112 +388,112 @@ LambdaAlgoLLT::pushLambda(){
       best_delta = 0;
     }
   }
-  /* Push lambda if found one */
   if (best_delta){
-    /* Compute Window to get register rd value */
-    static LambdaRegFile rf(cpu);   /* Compute real register file */
-    rf.clear();
-    // DPRINTF(Cva6LambdaLearn, "*** learn on:\n");
-    for (int i = best_start; i <= best_end; i++){
-      rf.push(window[i]);
+    pushLambda(best_start, best_end, best_delta);
+  }
+}
+
+void
+LambdaAlgoLLT::pushLambda(
+  uint64_t best_start, uint64_t best_end, uint64_t best_delta){
+  assert(best_delta == (best_end-best_start+1));
+  /* Push lambda if found one */
+  /* Compute Window to get register rd value */
+  static LambdaRegFile rf(cpu);   /* Compute real register file */
+  rf.clear();
+  // DPRINTF(Cva6LambdaLearn, "*** learn on:\n");
+  for (int i = best_start; i <= best_end; i++){
+    rf.push(window[i]);
+  }
+  fatal_if(!rf.isKto1(), "Must be k->1\n");
+  std::pair<RegId, uint64_t> pair =
+    rf.isRdSingle() ? rf.getSingle()
+    : std::pair<RegId, uint64_t>(RiscvISA::intRegClass[0], 0); // Always true
+  uint64_t id = id2i(pair.first);
+
+  /* Create Lambda */
+  lambdakto1_t lambda = {
+    .pc_start = window[best_start]->pc->instAddr(),
+    .pc_end = window[best_end]->pc->instAddr(),
+    .pc_end_next = window[best_end]->pc_next->instAddr(),
+    .size = best_delta,
+    .rd = id,
+    .rd_val = pair.second
+  };
+
+  /* Update metadata */
+  for (int i = 0; i < window.size(); i++){
+    bool inWindow = i >= best_start && i <= best_end;
+    if (inWindow){
+      window[i]->l_data.is_learned_first = i == best_start;
+      window[i]->l_data.is_learned_last = i == best_end;
+      window[i]->l_data.is_learned = inWindow;
+      window[i]->l_data.lambdalearn = lambda;
     }
-    fatal_if(!rf.isKto1(), "Must be k->1\n");
-    std::pair<RegId, uint64_t> pair =
-      rf.isRdSingle() ? rf.getSingle()
-      : std::pair<RegId, uint64_t>(RiscvISA::intRegClass[0], 0); // Always true
-    uint64_t id = id2i(pair.first);
+    window[i]->l_data.is_in_trace_region = i+1;
+  }
+  window[window.size()-1]->l_data.is_in_trace_region = -1;
 
-    /* Create Lambda */
-    lambdakto1_t lambda = {
-      .pc_start = window[best_start]->pc->instAddr(),
-      .pc_end = window[best_end]->pc->instAddr(),
-      .pc_end_next = window[best_end]->pc_next->instAddr(),
-      .size = best_delta,
-      .rd = id,
-      .rd_val = pair.second
-    };
+  /* Insert lambda in LLT */
+  llt[lambda.pc_start] = LLTEntry_t(lambda);
 
-    /* Update metadata */
-    for (int i = 0; i < window.size(); i++){
-      bool inWindow = i >= best_start && i <= best_end;
-      if (inWindow){
-        window[i]->l_data.is_learned_first = i == best_start;
-        window[i]->l_data.is_learned_last = i == best_end;
-        window[i]->l_data.is_learned = inWindow;
-        window[i]->l_data.lambdalearn = lambda;
+  // Append Lambda for statistics
+  if (lambdaBtb.count(lambda) > 0){
+    stats.replayL += lambda.size;
+    stats.Lsize.sample(lambda.size);
+  }
+  lambdaBtb[lambda] += 1; // Increment
+  int score =  lambdaBtb[lambda] * lambda.size;
+  if (saves.count(lambda)){ /* Simply update */
+    /* Check instruction flows */
+    std::vector<Cva6DynInstPtr> &vec = *saves[lambda];
+    if (0){
+      for (int i = 0; i < lambda.size; i++){
+        Cva6DynInstPtr inew = window[best_start + i];
+        Cva6DynInstPtr iold = vec[i];
+        DPRINTF(Cva6LambdaLearn, "%d == %s ?\n", *inew, *iold);
+        // assert(state_t(inew) == state_t(iold)); // Compare inst states
+        /* Not True
+        * Load may read same values at different address.
+        *
+        */
       }
-      window[i]->l_data.is_in_trace_region = i+1;
     }
-    window[window.size()-1]->l_data.is_in_trace_region = -1;
-
-    /* Insert lambda in LLT */
-    llt[lambda.pc_start] = LLTEntry_t(lambda);
-
-    // Append Lambda for statistics
-    if (lambdaBtb.count(lambda) > 0){
-      stats.replayL += lambda.size;
-      stats.Lsize.sample(lambda.size);
+    /* Set
+      minscore = score;new score */
+    savesscores[lambda] = score;
+    if (score > minscore){
     }
-    lambdaBtb[lambda] += 1; // Increment
-    int score =  lambdaBtb[lambda] * lambda.size;
-    if (saves.count(lambda)){ /* Simply update */
-      /* Check instruction flows */
-      std::vector<Cva6DynInstPtr> &vec = *saves[lambda];
-      if (0){
-        for (int i = 0; i < lambda.size; i++){
-          Cva6DynInstPtr inew = window[best_start + i];
-          Cva6DynInstPtr iold = vec[i];
-          DPRINTF(Cva6LambdaLearn, "%d == %s ?\n", *inew, *iold);
-          // assert(state_t(inew) == state_t(iold)); // Compare inst states
-          /* Not True
-          * Load may read same values at different address.
-          *
-          */
-        }
-      }
-      /* Set
-        minscore = score;new score */
+  } else { /* */
+    bool need_update = false;
+    if (savesscores.size() < PQSIZE) {
+      need_update = true;
+    } else if (score > minscore) {
+      need_update = true;
+      auto it = std::min_element(
+                  std::begin(savesscores),
+                  std::end(savesscores),
+                  [](const auto& l, const auto& r) {
+                    return l.second < r.second; });
+      delete saves[it->first]; // Delete vector
+      saves.erase(it->first); // erase vector entry
+      savesscores.erase(it->first); // erase score entry
+    }
+    if (need_update){
       savesscores[lambda] = score;
       if (score > minscore){
+        minscore = score;
       }
-    } else { /* */
-      bool need_update = false;
-      if (savesscores.size() < PQSIZE) {
-        need_update = true;
-      } else if (score > minscore) {
-        need_update = true;
-        auto it = std::min_element(
-                    std::begin(savesscores),
-                    std::end(savesscores),
-                    [](const auto& l, const auto& r) {
-                      return l.second < r.second; });
-        delete saves[it->first]; // Delete vector
-        saves.erase(it->first); // erase vector entry
-        savesscores.erase(it->first); // erase score entry
-      }
-      if (need_update){
-        savesscores[lambda] = score;
-        if (score > minscore){
-          minscore = score;
-        }
-        /* Copy insts */
-        auto vec = new std::vector<Cva6DynInstPtr>(
-          window.begin() + best_start,
-          window.begin() + best_end + 1);
-        /* Insert vector */
-        saves[lambda] = vec;
-      }
+      /* Copy insts */
+      auto vec = new std::vector<Cva6DynInstPtr>(
+        window.begin() + best_start,
+        window.begin() + best_end + 1);
+      /* Insert vector */
+      saves[lambda] = vec;
     }
   }
-
   // DPRINTF(Cva6LambdaLearn, "push Lambda [%d]: %s\n",
   //             lambdaBtb[lambda], lambda.str());
-
-  /* Finally dump delayed display */
-  for (int i = 0; i < window.size(); i++){
-    inst_lambda_dump(window[i]);
-  }
-  window.clear();
 }
 
 void
@@ -498,6 +617,10 @@ void
 LambdaHandler::on_post_commit(Cva6DynInstPtr inst){
   /* Learn new lambdas ... */
   algo.commit(inst);
+
+
+  static SerialInstructionPartitionner x("part", cpu);
+  x.commit(inst);
 }
 
 

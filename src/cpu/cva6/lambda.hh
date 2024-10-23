@@ -73,7 +73,7 @@ class LambdaAlgoLLT : public LambdaAlgo
   };
   std::map<uint64_t, LLTEntry_t> llt;
   /* Insert a lambda in LT */
-  void pushLambda();
+  void pushLambda(uint64_t best_start, uint64_t best_end, uint64_t best_delta);
   /* Statistics */
   std::map<struct lambdakto1_t, size_t> lambdaBtb;
   /* Debug only to track sequence of instructions */
@@ -107,6 +107,16 @@ class LambdaAlgoLLT : public LambdaAlgo
   lambdakto1_t predict(uint64_t pc) override;
   void commit(Cva6DynInstPtr inst) override;
   void evict(uint64_t pc) override;
+
+  /* Learnign functions */
+  virtual void learnLambdaOnWindow();
+};
+
+class LambdaAlgoLLTLoadSlice : public LambdaAlgoLLT
+{
+  public:
+  LambdaAlgoLLTLoadSlice(Cva6CPU &cpu_) : LambdaAlgoLLT(cpu_) {}
+  void learnLambdaOnWindow() override;
 };
 
 class LambdaHandler : public Named
@@ -152,9 +162,10 @@ class LambdaHandler : public Named
     }
   } stats;
 
-  static LambdaAlgo &selectAlgo(Cva6CPU &cpu_,
+  static LambdaAlgo &selectAlgo(Cva6CPU &cpu,
     const BaseCva6CPUParams &params){
-      return *new LambdaAlgoLLT(cpu_);
+      // return *new LambdaAlgoLLT(cpu_);
+      return *new LambdaAlgoLLTLoadSlice(cpu);
   }
 
   uint64_t lltSize;
