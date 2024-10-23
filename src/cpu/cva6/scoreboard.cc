@@ -100,7 +100,7 @@ Scoreboard::isUnissedStoreBefore(Cva6DynInstPtr inst_in){
             return true;
         }
         StaticInstPtr si = inst->staticInst;
-        if (si->isStore()){
+        if (si->isStore() || si->isAtomic()){
             if (!inst->issue_completed){ /* Cannot match addr in LSU */
                 return true;
             }
