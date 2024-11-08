@@ -75,8 +75,20 @@ class BinaryLambdaRegFile
     return rfdst.popcount() <= 1;
   }
 
+  bool isKto0(){
+    return rfdst.popcount() == 0;
+  }
+
   bool isRdSingle(){
     return rfdst.isSingle();
+  }
+
+  RegId getSingle(){
+    assert(isKto1());
+    if (isKto0()){
+      return i2id(0);
+    }
+    return rfdst.getSingle();
   }
 
   std::string dump(){

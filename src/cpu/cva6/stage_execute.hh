@@ -99,6 +99,7 @@ class Execute : public Named
 
       plugins.push_back(new PluginLambda(name_ + "lambda", cpu, params));
       // plugins.push_back(new PluginMemConst(name_ + "memc", cpu, params));
+      plugins.push_back(new PluginScheduler(name_ + ".sched", cpu, params));
     }
 
     ~Execute() {}

@@ -28,8 +28,55 @@
 #include "sim/faults.hh"
 #include "sim/insttracer.hh"
 
+
 namespace gem5 {
 namespace cva6 {
+
+struct PhysicalReg
+{
+  int classValue = 0; /* If 0 : invalid */
+  bool isRenammed = false;
+  uint64_t virt_reg_idx = 0; // Virtual reg index
+  uint64_t phys_reg_idx = 0; // Physical reg index
+  bool isLastRename = false; // Mark the deallocation of the register
+  bool is_reg_dead = false; /* Is this one dead */
+  PhysicalReg() {}
+  PhysicalReg(uint64_t idx) {
+    classValue = 1;
+    virt_reg_idx = idx;
+  }
+  bool doRenameIfMatchVreg(PhysicalReg &reg, uint64_t phyidx){
+    if (!classValue){
+      return false;
+    }
+    if (reg.virt_reg_idx == virt_reg_idx){
+      assert(!isRenammed);
+      isRenammed = true;
+      phys_reg_idx = phyidx;
+      return true;
+    }
+    return false;
+  }
+  bool operator==(const PhysicalReg& rhs) const {
+    return isRenammed == rhs.isRenammed &&
+           virt_reg_idx == rhs.virt_reg_idx &&
+           phys_reg_idx == rhs.phys_reg_idx;
+  }
+
+  std::string str(){
+    std::ostringstream ss;
+    if (is_reg_dead){
+      ss << '*';
+    }
+    ss << registerName(virt_reg_idx);
+    if (isRenammed){
+      ss << "\033[38;5;" << (phys_reg_idx * 97) % 256 << 'm';
+      ss << ":%" << phys_reg_idx;
+      ss << "\x1B[0m";
+    }
+    return ss.str();
+  }
+};
 
 class Cva6DynInst;
 
@@ -185,6 +232,12 @@ class Cva6DynInst : public RefCounted
     /** Destination registers values */
     uint64_t reg_dst_val[2] = { 0 }; // TODO Generic
     bool reg_dst_val_valid[2] = { 0 };
+
+
+    std::vector<PhysicalReg> regs_dst_phy;
+    std::vector<PhysicalReg> regs_src_phy;
+    uint64_t bb_idx;
+
     // True when a valid reg is overwrite with a different value
     bool reg_dst_overwrite_invalid = false;
     /** Next pc */

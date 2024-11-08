@@ -91,14 +91,14 @@ struct lambda_inst_metadata_t
     check_cpt_indempotance = cpt;
     is_check_val = lambda.rd_val == check_val;
     is_check_indempotance = check_cpt_indempotance >= lambda.size;
-    return is_check_pc &&
+    return // is_check_pc &&
            is_check_val &&
            is_check_indempotance &&
            is_check_regalloc;
   }
 
   bool is_valid(){
-    return is_check_pc &&
+    return // is_check_pc &&
            is_check_val &&
            is_check_indempotance &&
            is_check_regalloc;

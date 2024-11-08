@@ -52,12 +52,16 @@ class SerialInstructionPartitionner : public Named
     Named(name), stats(cpu) {}
 
   void commit(Cva6DynInstPtr inst){
+    return;
     stats.commit += 1;
     if (inst->isFault() || inst->staticInst->isControl()){
       DPRINTF(Cva6Partition, "----[  ] : %s\n", *inst);
       stats.branch += 1;
       if (fifo.size()){
         onBB();
+        fifo.push_back(inst);
+        onBBwithBranch();
+        fifo.clear();
       }
       return;
     } else {
@@ -89,7 +93,10 @@ class SerialInstructionPartitionner : public Named
       start = iter_best_end + 1;
     }
     assert(count == fifo.size());
-    fifo.clear();
+  }
+
+  void onBBwithBranch(){
+
   }
 };
 
@@ -313,6 +320,55 @@ LambdaAlgoLLT::commit(Cva6DynInstPtr inst){
     window.push_back(inst);
   }
 }
+
+void
+LambdaAlgoLLTKTo0::commit(Cva6DynInstPtr inst){
+  if (!isInstLamdable(inst)){
+    for (int i = 0; i < window.size(); i++){
+      inst_lambda_dump(window[i]);
+    }
+    window.clear();
+  } else {
+    window.push_back(inst);
+    if (window.size() > 32){
+      inst_lambda_dump(window.front());
+      window.pop_front();
+    }
+    if (isTrigger(inst)){
+      learnLambdaOnWindow();
+    }
+  }
+}
+
+void
+LambdaAlgoLLTKTo0::learnLambdaOnWindow(){
+  uint64_t start;
+  for (start = 0; start < window.size(); start++){
+    /* Compute best end for iteration start */
+    BinaryLambdaRegFile rf;
+    for (int end = start; end < window.size(); end++){
+      rf.push(window[end]);
+    }
+    if (rf.isKto0()){
+      // DPRINTF(Cva6LambdaLearn, "Hit lambda [%d: %d] #%d\n",
+      //   start, window.size()-1, window.size() - start);
+      pushLambda(start, window.size()-1, window.size() - start);
+      return;
+    }
+  }
+
+}
+
+
+void
+LambdaAlgoLLTInstAlone::commit(Cva6DynInstPtr inst){
+  if (isInstLamdable(inst) && isTrigger(inst)){
+    window.push_back(inst);
+    pushLambda(0, 0, 1);
+    window.clear();
+  }
+}
+
 
 void
 LambdaAlgoLLTLoadSlice::learnLambdaOnWindow(){
@@ -547,7 +603,8 @@ LambdaHandler::on_fetch(Cva6DynInstPtr inst){
   }
   /* Somewehere between fetch and commit */
   if (inst->l_data.is_predicted_last){/* If we reach end of lambda */
-    inst->l_data.do_ckeck_k1(rf.isKto1());
+    bool ok = rf.isKto1() && inst->l_data.lambda.rd == id2i(rf.getSingle());
+    inst->l_data.do_ckeck_k1(ok);
   }
 }
 

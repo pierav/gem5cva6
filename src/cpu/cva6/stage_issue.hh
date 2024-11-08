@@ -22,6 +22,32 @@
 namespace gem5 {
 namespace cva6 {
 
+enum OCS { NoOp = 0, Alu, Fpu, Control, Read, Write, NumOCS };
+extern const char* OCSNames[];
+
+inline OCS getOcs(Cva6DynInstPtr &inst){
+  if (inst->isFault()){
+    return OCS::NoOp;
+  }
+  if (inst->staticInst->isControl()){
+    return OCS::Control;
+  }
+  if (inst->staticInst->isMemRef()){
+    if (inst->staticInst->isLoad()){
+      return OCS::Read;
+    } else {
+      return OCS::Write;
+    }
+  }
+  if (inst->staticInst->isFloating()){
+    return OCS::Fpu;
+  }
+  if (inst->staticInst->isInteger()){
+    return OCS::Alu;
+  }
+  return OCS::NoOp;
+}
+
 class IssueUnit : public Named
 {
     private:
@@ -46,32 +72,34 @@ class IssueUnit : public Named
 
       statistics::Distribution issue_stall_raw;
 
+      statistics::Vector2d typeStallOnLoad;
+
+
       IssueStats(const std::string &name, BaseCPU &cpu,
         const BaseCva6CPUParams &params) :
         statistics::Group(&cpu, name.c_str()),
-        ADD_STAT(numIssued, statistics::units::Count::get(),
-          "Number of insts issued each cycle"),
-        ADD_STAT(typeIssued, statistics::units::Count::get(),
-          "Number of instructions issued per FU type"),
-        ADD_STAT(issue_stall_front, statistics::units::Count::get(),
-                 "Frontend stalls issue"),
+        ADD_STAT(numIssued, "Number of insts issued each cycle"),
+        ADD_STAT(typeIssued, "Number of instructions issued per FU type"),
+        ADD_STAT(issue_stall_front, "Frontend stalls issue"),
         ADD_STAT(issue_stall_lambdaorder, "Issue stall : lambda order"),
-        ADD_STAT(issue_stall_iro, statistics::units::Count::get(),
-                 "Issue read operands stall"),
-        ADD_STAT(issue_stall_fu, statistics::units::Count::get(),
-                 "Issue functional unit stall"),
-        ADD_STAT(issue_pass, statistics::units::Count::get(),
-                 "Nothing stall issue"),
-         ADD_STAT(issue_stall_raw, statistics::units::Count::get(),
-                "Delta Cycles between sb enter and issue"){
+        ADD_STAT(issue_stall_iro, "Issue read operands stall"),
+        ADD_STAT(issue_stall_fu, "Issue functional unit stall"),
+        ADD_STAT(issue_pass, "Nothing stall issue"),
+        ADD_STAT(issue_stall_raw, "Delta Cycles between sb enter and issue"),
+        ADD_STAT(typeStallOnLoad, "typeStallOnLoad"){
         numIssued
           .init(0,params.issueWidth,1)
           .flags(statistics::pdf);
 
         typeIssued
-          .init(1, enums::Num_OpClass)
+          .init(1, OCS::NumOCS)
           .flags(statistics::total | statistics::pdf | statistics::dist);
-        typeIssued.ysubnames(enums::OpClassStrings);
+        typeIssued.ysubnames(OCSNames);
+
+        typeStallOnLoad
+          .init(1, OCS::NumOCS)
+          .flags(statistics::total | statistics::pdf | statistics::dist);
+        typeStallOnLoad.ysubnames(OCSNames);
 
         issue_stall_raw
           .init(0,16,1)
@@ -229,7 +257,8 @@ class IssueUnit : public Named
 
     /* The 2 IQ have to synchronize ! */
     BinaryRegisterFile rfsynchro;
-    bool robGetRegFunctionnal(uint64_t pos, RegId reg_src, RegVal &fwval);
+    bool robGetRegFunctionnal(uint64_t pos, RegId reg_src, RegVal &fwval,
+      Cva6DynInstPtr &instfw);
     bool isLamdbaOrderOk(Cva6DynInstPtr inst);
     bool allowLambdaIq(){
       #if 0

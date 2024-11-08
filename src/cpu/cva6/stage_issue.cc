@@ -17,8 +17,11 @@
 namespace gem5 {
 namespace cva6 {
 
+const char* OCSNames[] = {"NoOp", "Alu", "Fpu", "Control", "Read", "Write"};
+
 bool
-IssueUnit::robGetRegFunctionnal(uint64_t pos, RegId reg_src, RegVal &fwval){
+IssueUnit::robGetRegFunctionnal(uint64_t pos, RegId reg_src, RegVal &fwval,
+    Cva6DynInstPtr &instfw){
     /* Skip unforwardable registers */
     if (reg_src.classValue() == MiscRegClass ||
         reg_src.classValue() == InvalidRegClass){
@@ -27,6 +30,7 @@ IssueUnit::robGetRegFunctionnal(uint64_t pos, RegId reg_src, RegVal &fwval){
     }
     for (int i = pos - 1; i >= 0; i--){
         Cva6DynInstPtr i2 = cpu.pipeline->rob[i];
+        instfw = i2;
         if (i2->isFault()){ // Stall after fault
             return false;
         }
@@ -73,14 +77,16 @@ IssueUnit::isLamdbaOrderOk(Cva6DynInstPtr inst){
         return true;
     }
 
-    /* If fast IQ, there is no deps */
-    if (&cpu.pipeline->getIq(FAST_IQ) == this){
-        return true;
-    }
+    // /* If fast IQ, there is no deps */
+    // if (&cpu.pipeline->getIq(FAST_IQ) == this){
+    //     return true;
+    // }
 
     /* Check if there is no non-issued stores */
     Scoreboard &fast_sb = cpu.pipeline->getIq(FAST_IQ).scoreboard;
-    if (fast_sb.isUnissedStoreBefore(inst)){
+    if (!inst->isFault() &&
+        inst->isMemRef() &&
+        fast_sb.isUnissedStoreBefore(inst)){
         DPRINTF(Cva6Issue, "LAMBDA unresolved mem dep\n");
         return false;
     }
@@ -100,10 +106,17 @@ IssueUnit::isLamdbaOrderOk(Cva6DynInstPtr inst){
     for (uint8_t src_index = 0; src_index < num_srcs; src_index++){
         RegId reg_src = inst->staticInst->srcRegIdx(src_index);
         RegVal fwval;
-        if (robGetRegFunctionnal(pos, reg_src, fwval)){
+        Cva6DynInstPtr instfw = Cva6DynInst::bubble();
+        if (robGetRegFunctionnal(pos, reg_src, fwval, instfw)){
             inst->setSrcRegOperand(src_index, fwval);
             continue;
         } else {
+            if (!inst->isFault() &&
+               !instfw->isBubble() &&
+               !instfw->isFault() &&
+               instfw->staticInst->isLoad()){
+                stats.typeStallOnLoad[0][getOcs(inst)]++;
+            }
             return false;
         }
     }
@@ -200,6 +213,16 @@ IssueUnit::evaluate(){
         inst->executeInitiate();
 
         bool need_execution = true;
+
+        /* If fast IQ, there is no deps */
+        if (&cpu.pipeline->getIq(LAMBDA_IQ) == this){
+            if (!inst->isFault() &&
+               inst->isMemRef() &&
+               !inst->dreq->isBufferable()){
+                need_execution = false;
+                inst->dreq->prefetch_mode_failed = true;
+            }
+        }
         if (need_execution){
             /* Push in fu */
             fus.push(inst);
@@ -210,7 +233,7 @@ IssueUnit::evaluate(){
 
         /* Some statistics */
         if (!inst->isFault()){
-            stats.typeIssued[0][inst->staticInst->opClass()]++;
+            stats.typeIssued[0][getOcs(inst)]++;
         }
         nb_issued += 1;
     }

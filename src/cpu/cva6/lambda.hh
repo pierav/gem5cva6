@@ -119,6 +119,57 @@ class LambdaAlgoLLTLoadSlice : public LambdaAlgoLLT
   void learnLambdaOnWindow() override;
 };
 
+class LambdaAlgoLLTKTo0 : public LambdaAlgoLLT
+{
+  public:
+  LambdaAlgoLLTKTo0(Cva6CPU &cpu) : LambdaAlgoLLT(cpu) {}
+  void commit(Cva6DynInstPtr inst) override;
+  void learnLambdaOnWindow() override;
+  virtual bool isTrigger(Cva6DynInstPtr inst){
+    return inst->staticInst->isControl();
+  }
+};
+
+class LambdaAlgoLLTSilentStorek0 : public LambdaAlgoLLTKTo0
+{
+  public:
+  LambdaAlgoLLTSilentStorek0(Cva6CPU &cpu) : LambdaAlgoLLTKTo0(cpu) {}
+  bool isTrigger(Cva6DynInstPtr inst) override {
+    return inst->staticInst->isStore();
+  }
+};
+
+class LambdaAlgoLLTInstAlone : public LambdaAlgoLLT
+{
+  public:
+  LambdaAlgoLLTInstAlone(Cva6CPU &cpu_) : LambdaAlgoLLT(cpu_) {}
+  void commit(Cva6DynInstPtr inst) override;
+  virtual bool isTrigger(Cva6DynInstPtr inst) {
+    return inst->staticInst->isControl();
+  }
+};
+
+class LambdaAlgoLLTSilentStoreAlone : public LambdaAlgoLLTInstAlone
+{
+  public:
+  LambdaAlgoLLTSilentStoreAlone(Cva6CPU &cpu_) :
+    LambdaAlgoLLTInstAlone(cpu_) {}
+  bool isTrigger(Cva6DynInstPtr inst) override {
+    return inst->staticInst->isStore();
+  }
+};
+
+class LambdaAlgoLLTLoadConstAlone : public LambdaAlgoLLTInstAlone
+{
+  public:
+  LambdaAlgoLLTLoadConstAlone(Cva6CPU &cpu_) :
+    LambdaAlgoLLTInstAlone(cpu_) {}
+  bool isTrigger(Cva6DynInstPtr inst) override {
+    inst->l_data.is_const = lvt.check_and_insert(inst);
+    return inst->staticInst->isLoad() && inst->l_data.is_const;
+  }
+};
+
 class LambdaHandler : public Named
 {
   /* */
@@ -164,8 +215,13 @@ class LambdaHandler : public Named
 
   static LambdaAlgo &selectAlgo(Cva6CPU &cpu,
     const BaseCva6CPUParams &params){
-      // return *new LambdaAlgoLLT(cpu_);
-      return *new LambdaAlgoLLTLoadSlice(cpu);
+      // return *new LambdaAlgoLLT(cpu);
+      // return *new LambdaAlgoLLTLoadSlice(cpu);
+      // return *new LambdaAlgoLLTbranchAlone(cpu);
+      // return *new LambdaAlgoLLTKTo0(cpu);
+      return *new LambdaAlgoLLTSilentStoreAlone(cpu);
+      // return *new LambdaAlgoLLTSilentStorek0(cpu);
+      // return *new LambdaAlgoLLTLoadConstAlone(cpu);
   }
 
   uint64_t lltSize;

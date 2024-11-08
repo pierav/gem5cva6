@@ -65,6 +65,8 @@ if env['CONF']['BUILD_ISA']:
     DebugFlag('Cva6LambdaLearn', 'Lambda: learning from commit')
     DebugFlag('Cva6LambdaDump', 'Lambda: Dump everything at end')
 
+    DebugFlag("Cva6Sched", 'Cva6Sched')
+    DebugFlag("Cva6SchedSched", 'Cva6Sched scheduled instructions')
 
     DebugFlag('Cva6Partition', 'Instruction BB sub k1 partition')
     CompoundFlag('Cva6Lambda', ['Cva6LambdaCommit',

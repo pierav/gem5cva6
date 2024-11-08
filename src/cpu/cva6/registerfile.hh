@@ -148,6 +148,13 @@ class RegisterFile
         return count;
     }
 
+    T& operator[](const RegId& reg){
+        if (index(reg) == -1){
+            panic("Invalid register class: %d", reg.classValue());
+        }
+        return rf[index(reg)];
+    }
+
 };
 
 } // namespace cva6
