@@ -33,7 +33,7 @@ if env['CONF']['BUILD_ISA']:
     Source('vp.cc')
     Source('vp_dpe.cc')
     Source('lambda.cc')
-
+    Source('scheduler.cc')
     # Utils
     Source('registerfile.cc')
 

@@ -144,7 +144,7 @@ LSUStoreBuffer::advance(){
         // if (pop_lat == 3){
         //     pop_lat = 0;
             DPRINTF(Cva6LSU, POP_STR "%s %s\n", *inst, dreq->name());
-            inst->untrackDreq();
+            // inst->untrackDreq();
             commit_queue.pop(inst);
         }
     }

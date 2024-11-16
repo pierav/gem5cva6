@@ -45,14 +45,18 @@ struct PhysicalReg
     classValue = 1;
     virt_reg_idx = idx;
   }
+
+  void doRename(uint64_t phyidx){
+    assert(!isRenammed);
+    isRenammed = true;
+    phys_reg_idx = phyidx;
+  }
   bool doRenameIfMatchVreg(PhysicalReg &reg, uint64_t phyidx){
     if (!classValue){
       return false;
     }
     if (reg.virt_reg_idx == virt_reg_idx){
-      assert(!isRenammed);
-      isRenammed = true;
-      phys_reg_idx = phyidx;
+      doRename(phyidx);
       return true;
     }
     return false;
@@ -63,8 +67,7 @@ struct PhysicalReg
            phys_reg_idx == rhs.phys_reg_idx;
   }
 
-  std::string str(){
-    std::ostringstream ss;
+  std::ostream& str(std::ostream &ss) const {
     if (is_reg_dead){
       ss << '*';
     }
@@ -74,9 +77,15 @@ struct PhysicalReg
       ss << ":%" << phys_reg_idx;
       ss << "\x1B[0m";
     }
-    return ss.str();
+    return ss;
   }
 };
+
+inline std::ostream &operator <<(std::ostream &os,
+  const PhysicalReg &reg) {
+    return reg.str(os);
+}
+
 
 class Cva6DynInst;
 
@@ -237,6 +246,7 @@ class Cva6DynInst : public RefCounted
     std::vector<PhysicalReg> regs_dst_phy;
     std::vector<PhysicalReg> regs_src_phy;
     uint64_t bb_idx;
+    uint64_t delta; // DELME LATER, annotate each register
 
     // True when a valid reg is overwrite with a different value
     bool reg_dst_overwrite_invalid = false;
