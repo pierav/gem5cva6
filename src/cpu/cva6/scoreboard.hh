@@ -45,37 +45,9 @@ class Scoreboard : public Named
 {
   public:
     Cva6CPU &cpu;
-    const BaseISA::RegClasses regClasses;
-
-    const unsigned intRegOffset;
-    const unsigned floatRegOffset;
-    const unsigned ccRegOffset;
-    const unsigned vecRegOffset;
-    const unsigned vecPredRegOffset;
-
-    /** The number of registers in the Scoreboard.  These
-     *  are just the integer, CC and float registers packed
-     *  together with integer regs in the range [0,NumIntRegs-1],
-     *  CC regs in the range [NumIntRegs, NumIntRegs+NumCCRegs-1]
-     *  and float regs in the range
-     *  [NumIntRegs+NumCCRegs, NumFloatRegs+NumIntRegs+NumCCRegs-1] */
-    const unsigned numRegs;
-
-    /** Type to use when indexing numResults */
-    typedef unsigned short int Index;
 
     /* number of entries un issue queue*/
     const unsigned nr_entries;
-
-  public:
-    /* destination reg usage in issue_queue */
-    enum DestRegState
-    {
-      FREE,     // Nothing
-      IN_USE,   // In EX state
-      FWABLE,   // Finished EX stage but not comitted
-      COMMIT,   // Finished EX stage and comitted
-    };
 
 protected:
     /* this is the FIFO struct of the issue queue  */
@@ -89,43 +61,20 @@ protected:
                Cva6CPU &cpu_, uint64_t size) :
         Named(name),
         cpu(cpu_),
-        regClasses(cpu.thread->getIsaPtr()->regClasses()),
-        intRegOffset(0),
-        floatRegOffset(intRegOffset + regClasses.at(IntRegClass)->numRegs()),
-        ccRegOffset(floatRegOffset + regClasses.at(FloatRegClass)->numRegs()),
-        vecRegOffset(ccRegOffset + regClasses.at(CCRegClass)->numRegs()),
-        vecPredRegOffset(vecRegOffset +
-                regClasses.at(VecElemClass)->numRegs()),
-        numRegs(vecPredRegOffset + regClasses.at(VecPredRegClass)->numRegs()),
-        nr_entries(size),
-        issue_queue()
-   { }
+        nr_entries(size) { }
 
   protected:
-    /** Flatten a RegId, irrespective of what reg type it's pointing to */
-    RegId flattenRegIndex(const RegId& reg);
-
-    /** Sets scoreboard_index to the index into numResults of the
-     *  given register index.  Returns true if the given register
-     *  is in the scoreboard and false if it isn't */
-    bool findIndex(const RegId& reg, Index &scoreboard_index);
 
   public:
     bool isUnissedStoreBefore(Cva6DynInstPtr inst_in);
     /** Returns the register state with associated value */
-    DestRegState getRegState(Cva6DynInstPtr inst_in, RegId reg, RegVal &val);
+    bool getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg);
   protected:
-
-    /** Forward a register. If register is in the scoreboard it must
-     * be forwardable. */
-    bool forward(Cva6DynInstPtr inst_in, RegId reg, RegVal &val);
-
     /** Can this instruction be issued.  Are any of its source registers
      *  due to be written by other marked-up instructions in flight */
     bool canInstIssue(Cva6DynInstPtr inst);
 
   public:
-
     /** Is Available space in scoreboard */
     bool canPush();
     /** push inst in the scoreboard */
@@ -135,16 +84,25 @@ protected:
     Cva6DynInstPtr getIssueInst(size_t index, bool &is_over_serialise,
       bool &is_ready);
 
-    /** Issue the instruction */
-    void issueInst(Cva6DynInstPtr inst, SimpleThread &thread);
+    /** Issue the instruction (notify instruction is issued) */
+    void issueInst(Cva6DynInstPtr inst){
+      assert(!inst->issue_completed);
+      inst->issue_completed = true;
+    }
 
     /** Notify scoreboard functional unit finished */
-    void completeInst(Cva6DynInstPtr inst);
+    void completeInst(Cva6DynInstPtr inst) {
+      assert(!inst->execute_completed); // not already commplete
+      inst->execute_completed = true; // Finished execution
+    }
 
     /** Return the instruction to commit. Bubble is none. */
     Cva6DynInstPtr getCommitInst(size_t index=0);
     /** Commit the instruction */
-    void commitInst(Cva6DynInstPtr inst);
+    void commitInst(Cva6DynInstPtr inst) {
+      assert(!inst->commit_completed); // Already commited
+      inst->commit_completed = true;
+    }
 
     /** Tick the scoreboard: evaluate flip flops*/
     void tick();
@@ -153,8 +111,8 @@ protected:
 
     /* Misspredict inst_error: reset scoreboard.
      * Backend must flush from returned instruction */
-    Cva6DynInstPtr flush_value_from(Cva6DynInstPtr inst_error,
-       bool force=false);
+    // Cva6DynInstPtr flush_value_from(Cva6DynInstPtr inst_error,
+    //    bool force=false);
 
     bool is_fence_issued(){
       for (Cva6DynInstPtr inst: issue_queue){
@@ -176,13 +134,6 @@ protected:
 
     bool isInstInFu(Cva6DynInstPtr inst){
       return !inst->execute_completed && inst->issue_completed;
-    }
-
-    Cva6DynInstPtr getHeadInst(){
-      if (issue_queue.empty()){
-        return Cva6DynInst::bubble();
-      }
-      return issue_queue.front();
     }
 
     void dump();

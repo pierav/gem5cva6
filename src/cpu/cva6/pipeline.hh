@@ -12,6 +12,7 @@
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/func_unit.hh"
 #include "cpu/cva6/lambda.hh"
+#include "cpu/cva6/scheduler_handler.hh"
 #include "cpu/cva6/stage_decode.hh"
 #include "cpu/cva6/stage_execute.hh"
 #include "cpu/cva6/stage_fetch1.hh"
@@ -40,12 +41,9 @@ class Pipeline : public Ticked
     RegDeadAnayser rda;
 
     /* New components */
-    LambdaHandler lh;      /** Lambda handler */
-    IssueUnit iq0;
-    IssueUnit iq1;
+    SA sa;
+    IssueUnit iq;
     Cva6DynInstChunk rob;
-
-    IssueUnit &getIq(bool inLambda){ return inLambda ? iq1 : iq0; }
 
   protected:
     /** Pipeline registers */
@@ -73,9 +71,8 @@ class Pipeline : public Ticked
       dpe(*new VPDPE(cpu.name() + ".dpe", cpu, p, vp)),
       fus(cpu.name() + ".fus", cpu, p),
       rda(cpu.name(), cpu_, p),
-      lh(cpu.name() + ".lh", cpu, p),
-      iq0(cpu.name() + ".iq0", cpu, p, fus),
-      iq1(cpu.name() + ".iq1", cpu, p, fus),
+      sa(cpu.name() + ".sa", cpu, p),
+      iq(cpu.name() + ".iq", cpu, p, fus),
       rob(cpu.name() + ".rob"),
       f1ToF2(cpu.name() + ".f1ToF2", "lines"),
       f2ToD(p.issueWidth),

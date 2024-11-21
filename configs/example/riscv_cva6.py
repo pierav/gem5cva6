@@ -685,7 +685,7 @@ def good_bad_trap(elfname):
     except:
         pass
     try:
-        print("Try pass/fail...")
+        # print("Try pass/fail...")
         return {
             "passAddr": binary.get_symbol("pass").value,
             "failAddr": binary.get_symbol("fail").value
@@ -693,7 +693,7 @@ def good_bad_trap(elfname):
     except:
         pass
     try:
-        print("Try shutdown/panic...") # TODO multiple elf
+        # print("Try shutdown/panic...") # TODO multiple elf
         return {
             "passAddr": 0,
             "failAddr": binary.get_function_address("panic")

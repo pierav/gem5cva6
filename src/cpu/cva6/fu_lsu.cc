@@ -239,7 +239,7 @@ LSUAmoBuffer::advance(){
     /* Need to send memory request ? */
     if (!amo_buffer->isBubble() && /* Data to transfer */
         store_buffer->isEmpty() && /* All stores have drained */
-        cpu.pipeline->getIq(FAST_IQ).isCommitInst(amo_buffer) &&
+        cpu.pipeline->iq.isCommitInst(amo_buffer) &&
         /* The AMO is in the commit stage */
         amo_buffer->dreq->isTranslated() && /* Not already sent*/
         !cpu.dcache->isBlocked() /* Cache ready */
@@ -331,7 +331,7 @@ LSULoadUnit::advance(){
         }
         /* If inst is uncacheable, wait inst until commit head */
         if (inst->dreq->req->isUncacheable()){
-            if (!cpu.pipeline->getIq(FAST_IQ).isCommitInst(inst)){
+            if (!cpu.pipeline->iq.isCommitInst(inst)){
                 break;
             }
         }

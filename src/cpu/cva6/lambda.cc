@@ -261,13 +261,13 @@ LambdaLVTConst::check_and_insert(Cva6DynInstPtr inst){
       * (2) Copy the destination register of the instruction. */
     if (inst->staticInst->isControl()){
       rdval = inst->pc_next->instAddr();
-    } else if (inst->numDstRegs()){ /* */
-      RegId reg = inst->dstRegIdx(0);
+    } else if (inst->staticInst->numDestRegs()){ /* */
+      RegId reg = inst->staticInst->destRegIdx(0);
       if (reg.classValue() != InvalidRegClass){ /* No x0 */
         rdval = inst->getDstRegOperand(0);
       }
     }
-    if (inst->numDstRegs() == 2){
+    if (inst->staticInst->numDestRegs() == 2){
       std::cout << "H2H2 " << *inst << std::endl;
     }
   }

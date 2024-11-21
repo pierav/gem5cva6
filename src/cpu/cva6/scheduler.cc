@@ -241,6 +241,7 @@ SchedulerPierreMichaud::getScheduleLineForLoadAddr(uint64_t addr,
 
 void
 SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
+  inflight_insts_count += 1;
   /* Mdp things */
   uint64_t addr;
   if (isMemWrite(inst, addr)){
@@ -257,6 +258,7 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
 
 Cva6DynInstPtr
 SchedulerPierreMichaud::pop() {
+  inflight_insts_count -= 1;
   /* Pop entry in scheduler */
   assert(s2d.size());
   scheduler_entry_t &se = s2d.front();

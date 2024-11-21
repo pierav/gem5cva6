@@ -14,58 +14,6 @@
 namespace gem5 {
 namespace cva6 {
 
-static const std::string stateStr[] = {
-    "FREE", "IN_USE", "FWABLE", "COMMIT"
-};
-
-bool
-Scoreboard::findIndex(const RegId& reg, Index &scoreboard_index)
-{
-    bool ret = false;
-
-    switch (reg.classValue()) {
-      case IntRegClass:
-        scoreboard_index = reg.index();
-        ret = true;
-        break;
-      case FloatRegClass:
-        scoreboard_index = floatRegOffset + reg.index();
-        ret = true;
-        break;
-      case VecRegClass:
-      case VecElemClass:
-        scoreboard_index = vecRegOffset + reg.index();
-        ret = true;
-        break;
-      case VecPredRegClass:
-        scoreboard_index = vecPredRegOffset + reg.index();
-        ret = true;
-        break;
-      case CCRegClass:
-        scoreboard_index = ccRegOffset + reg.index();
-        ret = true;
-        break;
-      case MiscRegClass:
-          /* Don't bother with Misc registers */
-        ret = false;
-        break;
-      case InvalidRegClass:
-        ret = false;
-        break;
-      default:
-        panic("Unknown register class: %d", reg.classValue());
-    }
-
-    return ret;
-}
-
-RegId
-Scoreboard::flattenRegIndex(const RegId& reg)
-{
-    return reg;
-    // return cpu.getContext()->flattenRegId(reg);
-}
-
 bool
 Scoreboard::canPush(){
     return issue_queue.size() < nr_entries;
@@ -110,21 +58,13 @@ Scoreboard::isUnissedStoreBefore(Cva6DynInstPtr inst_in){
     return false;
 }
 
-Scoreboard::DestRegState
-Scoreboard::getRegState(Cva6DynInstPtr inst_in, RegId reg, RegVal &val){
-    Index index;
-    if (!findIndex(reg, index)){
-        return FREE;
-    }
-
+bool
+Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg){
     int pos = issue_queue.size(); // Default is outside sb
     // Find instruction position in sb
     for (int i = 0; i < issue_queue.size(); i++){
         assert(!issue_queue[i]->isBubble());
         if (issue_queue[i]->isAfterOrEqual(inst_in)){
-            #ifdef NO_LAMBDA_PROBE
-            assert(issue_queue[i] == inst_in);
-            #endif
             pos = i;
             break;
         }
@@ -141,35 +81,22 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, RegId reg, RegVal &val){
     // From oldest to newest try to find register
     for (int i = pos - 1; i >= 0; i--){
         Cva6DynInstPtr inst = issue_queue[i];
-        #ifdef NO_LAMBDA_PROBE
-        assert(inst->issue_completed);
-        if (!inst->issue_completed){
-            continue;
-        }
-        #endif
         if (inst->isFault()){ // Stall after fault
-            return IN_USE;
+            return false;
         }
         StaticInstPtr si = inst->staticInst;
-        for (uint8_t i = 0; i < si->numDestRegs(); i++) {
-            RegId reg_dst = flattenRegIndex(si->destRegIdx(i));
-            Index index_dst;
-            if (findIndex(reg_dst, index_dst)) {
-                if (index_dst == index){ // Hit register
-                    //DPRINTF(Cva6Scoreboard, "Match FW %s\n", *inst);
-                    if (inst->reg_dst_val_valid[i]){
-                        val = inst->getDstRegOperand(i);
-                        // DPRINTF(Cva6Scoreboard, "Hit FW ready %s\n", *inst);
-                        return FWABLE;
-                    } else {
-                        // DPRINTF(Cva6Scoreboard, "Hit FW busy %s\n", *inst);
-                        return IN_USE;
-                    }
-                }
+        for (PhysicalReg& ireg: inst->regs_dst_phy){
+            if (reg == ireg){
+                reg.value = ireg.value;
+                reg.valid = ireg.valid;
+                return reg.valid;
             }
         }
     }
-    return FREE;
+    /* No forwarding, read RF */
+    reg.set(cpu.thread->getReg(reg.regid));
+    reg.fromrf = true;
+    return reg.valid;
 }
 
 bool
@@ -179,62 +106,16 @@ Scoreboard::canInstIssue(Cva6DynInstPtr inst) {
     if (inst->isFault())
         return true;
 
-    StaticInstPtr staticInst = inst->staticInst;
-
-
     /* Available source registers */
     // RaW dependencies
-    uint8_t num_srcs = staticInst->numSrcRegs();
-    for (uint8_t src_index = 0; src_index < num_srcs; src_index++)
-    {
-        RegId reg = flattenRegIndex(staticInst->srcRegIdx(src_index));
-        RegVal fwval;
-        // inst->vp_data.addr_taken = false;
-        switch(getRegState(inst, reg, fwval)){
-            case IN_USE: {
-                /* Load Address prediction */
-                // if (inst->vp_data.isPredAddr()){
-                //     fwval = inst->vp_data.getPredAddr();
-                //     inst->vp_data.addr_taken = true;
-                //     DPRINTF(Cva6Scoreboard, "RaW @P reg %s %lx\n",
-                    //  reg, fwval);
-                // } else {
-                DPRINTF(Cva6Scoreboard, "RaW reg %s is already used\n", reg);
-                return false;
-                // }
-            } break;
-            case FWABLE: {
-                DPRINTF(Cva6Scoreboard, "RaW FW reg %s %lx\n", reg, fwval);
-                inst->setSrcRegOperand(src_index, fwval);
-            } break;
-            case COMMIT:
-            case FREE: {
-                if (reg.is(InvalidRegClass)) {
-                    fwval = 0;
-                } else {
-                    fwval = cpu.thread->getReg(reg);
-                }
-                DPRINTF(Cva6Scoreboard, "RaW RR reg %s %lx\n", reg, fwval);
-                inst->reg_src_val_fromrf[src_index] = true;
-            } break;
-        }
-        inst->setSrcRegOperand(src_index, fwval);
+    int ok = 1;
+    for (PhysicalReg &reg: inst->regs_src_phy){
+        ok &= getRegState(inst, reg);
     }
-
+    if (!ok){ return false; }
 
     /* Available destination registers */
     // WaW dependencies
-    const bool enable_waw = false;
-    if (enable_waw){
-        for (uint8_t i = 0; i < staticInst->numDestRegs(); i++) {
-            RegId reg = flattenRegIndex(staticInst->destRegIdx(i));
-            RegVal fwval;
-            if (getRegState(inst, reg, fwval) != FREE){
-                DPRINTF(Cva6Scoreboard, "WaW reg %s is already used\n", reg);
-                return false;
-            }
-        }
-    }
 
     // WaR dependencies
     // Nothing to do
@@ -243,61 +124,6 @@ Scoreboard::canInstIssue(Cva6DynInstPtr inst) {
     // Nothing to do
 
     return true;
-}
-
-/**
- * @brief Forward a register. If register is in the scoreboard it must
- * be forwardable.
- *
- * @param reg. The target register
- * @param val. The returned value
- * @return true when register is in the scoreboard.
- * @return false when register is not in the scoreborad.
- */
-bool
-Scoreboard::forward(Cva6DynInstPtr inst, RegId reg, RegVal &val){
-    return getRegState(inst, reg, val) == FWABLE;
-}
-
-void
-Scoreboard::issueInst(Cva6DynInstPtr inst, SimpleThread &thread){
-
-    // if (inst->isFault()){
-    //     // In case of fault there is no reg deps
-    // } else {
-    //     /** Forward src registers */
-    //     StaticInstPtr si = inst->staticInst;
-    //     uint8_t num_src = si->numSrcRegs();
-    //     for (uint8_t i_src = 0; i_src < num_src; i_src++) {
-    //         /* Get latest register value */
-    //         RegId reg = flattenRegIndex(si->srcRegIdx(i_src));
-    //         // DPRINTF(Cva6Scoreboard, "setup reg %s\n", reg);
-    //         RegVal regv;
-    //         if (inst->vp_data.isPredAddr()){
-    //             assert(inst->staticInst->isLoad());
-    //             regv = inst->vp_data.getPredAddr(); // base addr
-    //         } else {
-    //             if (forward(inst, reg, regv)) { // Forwarding
-    //                 DPRINTF(Cva6Scoreboard, "FW reg %s %x\n", reg, regv);
-    //             } else { // Read Register
-    //                 if (reg.is(InvalidRegClass)) {
-    //                     regv = 0;
-    //                 } else {
-    //                     regv = thread.getReg(reg);
-    //                 }
-    //                 DPRINTF(Cva6Scoreboard, "RR reg %s %x\n", reg, regv);
-    //             }
-    //         }
-    //         /* Set src register */
-    //         inst->setSrcRegOperand(i_src, regv);
-    //     }
-    // }if (inst->vp_data.isPredAddr()){
-    //     ret = true;
-    // }
-
-
-    /** Finally notify instruction is issued */
-    inst->issue_completed = true;
 }
 
 Cva6DynInstPtr
@@ -326,13 +152,6 @@ Scoreboard::getIssueInst(
     return inst;
 }
 
-void
-Scoreboard::completeInst(Cva6DynInstPtr inst){
-    // Forward operands
-    assert(!inst->execute_completed); // not already commplete
-    inst->execute_completed = true; // Finished execution
-}
-
 Cva6DynInstPtr
 Scoreboard::getCommitInst(size_t index){
     if (index >= issue_queue.size()){
@@ -343,13 +162,6 @@ Scoreboard::getCommitInst(size_t index){
 
     Cva6DynInstPtr inst = issue_queue[index];
     return inst;
-}
-
-void
-Scoreboard::commitInst(Cva6DynInstPtr inst){
-    // Simply marks instruction
-    assert(!inst->commit_completed); // Already commited
-    inst->commit_completed = true;
 }
 
 void
@@ -371,6 +183,7 @@ Scoreboard::flush(){
     issue_queue.clear();
 }
 
+#if 0
 Cva6DynInstPtr
 Scoreboard::flush_value_from(Cva6DynInstPtr inst_error, bool force){
     DPRINTF(Cva6Scoreboard, "flush_value\n");
@@ -382,7 +195,7 @@ Scoreboard::flush_value_from(Cva6DynInstPtr inst_error, bool force){
     assert(inst_error->staticInst);
     assert(inst_error->staticInst->isLoad());
     assert(inst_error->staticInst->numDestRegs() == 1);
-    RegId reg_error = flattenRegIndex(inst_error->staticInst->destRegIdx(0));
+    RegId reg_error = inst_error->staticInst->destRegIdx(0);
 
     /* Find instruction error position */
     size_t inst_index = -1;
@@ -534,6 +347,8 @@ Scoreboard::flush_value_from(Cva6DynInstPtr inst_error, bool force){
 
     return vilain;
 }
+
+#endif
 
 void
 Scoreboard::dump(){

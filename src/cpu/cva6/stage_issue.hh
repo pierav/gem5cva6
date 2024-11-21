@@ -119,78 +119,15 @@ class IssueUnit : public Named
         nb_issue_port(params.issueWidth),
         stats(name_, cpu_, params) {}
 
-    private:
-    uint64_t lambda_ready = 0;
-
     public:
     bool canPush(){
       return scoreboard.canPush();
     }
 
     void push(Cva6DynInstPtr inst){
-      if (inst->l_data.is_predicted_last){
-        lambda_ready += 1;
-      }
       inst->stage_issue_enter = true;
       scoreboard.pushInst(inst);
     }
-
-#if 0
-    bool isCommitLambdaReady(){
-      assert(scoreboard.getIssueQueue().size());
-      assert(scoreboard.getIssueQueue().front()->l_data.is_predicted_first);
-      for (Cva6DynInstPtr inst: scoreboard.getIssueQueue()){
-        if (inst->isFault() ||
-           inst->staticInst->isNonSpeculative() ||
-           inst->staticInst->opClass() == No_OpClass){
-          return true;
-        }
-        if (!inst->execute_completed){
-          break;
-        }
-        if (inst->l_data.is_predicted_last){
-          return true;
-        }
-      }
-      return false;
-    }
-
-    bool commitLambda(){
-      Fault fault = NoFault;
-      bool misspred = false;
-
-      BinaryLambdaRegFile rf;
-      /* The destination register to maintain alive */
-      uint64_t rd_val = 0xdeadbeef;
-      for (Cva6DynInstPtr inst: scoreboard.getIssueQueue()){
-        /* Not a lamdable inst */
-        if (inst->isFault() || /* Fault contains store not silent */
-           inst->staticInst->isNonSpeculative() ||
-           inst->staticInst->opClass() == No_OpClass){
-          misspred = true;
-          break;
-        }
-        /* updates rd */
-        if (inst->l_data.lambda.rd != 0 && inst->numDstRegs()){
-          if (id2i(inst->dstRegIdx(0)) == inst->l_data.lambda.rd){
-            rd_val = inst->getDstRegOperand(0);
-          }
-        }
-
-        fatal_if(!inst->execute_completed, "Must be exec");
-        if (inst->l_data.is_predicted_last){
-          misspred = !inst->l_data.do_check_pc_next(inst->pc_next->instAddr());
-          misspred |= rd_val != inst->l_data.lambda.rd_val;
-          break;
-        }
-      }
-      if (misspred){
-        /* Let the execute stage decide to flush or replay */
-      } else {}
-        /* Let the commit stage commit instructions */
-      }
-      return misspred;
-#endif
 
     void evaluate();
 
@@ -202,7 +139,6 @@ class IssueUnit : public Named
             fus.pop(inst);                  /* Compute FU and pop */
             inst->executeComplete();        /* Complete FU result */
             scoreboard.completeInst(inst);  /* Notify scoreboard */
-            // TODO commit & flush ???
           }
         }
       }
@@ -216,10 +152,6 @@ class IssueUnit : public Named
       return scoreboard.getCommitInst(index);
     }
 
-    Cva6DynInstPtr getHeadInst(){
-      return scoreboard.getHeadInst();
-    }
-
     void commit(Cva6DynInstPtr inst){
       scoreboard.commitInst(inst);
     }
@@ -229,7 +161,7 @@ class IssueUnit : public Named
     }
 
     bool canInterrupts(){
-      Cva6DynInstPtr inst = scoreboard.getHeadInst();
+      Cva6DynInstPtr inst = scoreboard.getCommitInst();
 
       if (!inst->isBubble()){
         if (inst->isFault()){
@@ -253,18 +185,6 @@ class IssueUnit : public Named
 
     void tick(){
       scoreboard.tick();
-    }
-
-    /* The 2 IQ have to synchronize ! */
-    BinaryRegisterFile rfsynchro;
-    bool robGetRegFunctionnal(uint64_t pos, RegId reg_src, RegVal &fwval,
-      Cva6DynInstPtr &instfw);
-    bool isLamdbaOrderOk(Cva6DynInstPtr inst);
-    bool allowLambdaIq(){
-      #if 0
-      return scoreboard.getHeadInst()->l_data.is_uop_lambda_pred;
-      #endif
-      return true;
     }
 };
 

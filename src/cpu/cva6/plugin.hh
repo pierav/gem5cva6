@@ -228,17 +228,11 @@ class PluginScheduler : public Plugin
   } stats;
 
   /* Statistics only */
-  uint64_t bbcnt = 0;
   StreamAnalyser instats;
   StreamAnalyser instatsnobr;
   StreamAnalyser outstats;
   std::deque<Cva6DynInstPtr> fifo;
-
-  /* The scheduler */
-  BaseScheduler &scheduler;
-
-  /* Renamming */
-  PhysicalRegAllocator regalloc;
+  // SA sa;
 
   public:
   PluginScheduler(const std::string &name,
@@ -248,47 +242,13 @@ class PluginScheduler : public Plugin
     stats(cpu),
     instats(cpu, "stream.in", false),
     instatsnobr(cpu, "stream.innobr", true),
-    outstats(cpu, "stream.out", SCHED_IGNORE_BRANCH),
-    scheduler(*new SchedulerPierreMichaud(name, cpu, p)),
-    regalloc(64) { }
+    outstats(cpu, "stream.out", SCHED_IGNORE_BRANCH) { }
 
   /* Insert instruction in scheduler */
   void push(Cva6DynInstPtr inst){
-    inst->bb_idx = bbcnt;
-    bbcnt += !inst->isFault() && inst->staticInst->isControl();
-
-    /* Rename instruction : default is no renamming */
-    BinaryRegisterFile rf;
-    for (uint8_t i = 0; i < inst->numSrcRegs(); i++) {
-      RegId regid = inst->srcRegIdx(i);
-      if ((regid.classValue() != InvalidRegClass) && !rf.isSet(regid)){
-        PhysicalReg reg(id2i(regid));
-        reg.is_reg_dead = inst->exec_data.is_reg_dead[i];
-        inst->regs_src_phy.push_back(reg);
-        rf.set(regid);
-      }
-    }
-    rf.clear();
-    for (uint8_t i = 0; i < inst->numDstRegs(); i++) {
-      RegId regid = inst->dstRegIdx(i);
-      if ((regid.classValue() != InvalidRegClass) && !rf.isSet(regid)){
-        inst->regs_dst_phy.push_back(PhysicalReg(id2i(regid)));
-        rf.set(regid);
-      }
-    }
-    /* Annotate missing Reg Dead */
-    for (auto& reg: inst->regs_src_phy){
-      if (rf.isSetRaw(reg.virt_reg_idx)){ /* Rf contains rd regs */
-        reg.is_reg_dead = true;
-      }
-    }
-
-    /* Rename */
-    regalloc.rename(inst);
-
     /* Push in scheduler */
     // DPRINTF(Cva6SchedSched, "Push: %s\n", dumpInstPreg(inst));
-    scheduler.push(inst);
+    // sa.push(inst);
   }
 
   void commit(Cva6DynInstPtr inst){
@@ -297,16 +257,14 @@ class PluginScheduler : public Plugin
     push(inst); // Push Inst in scheduler
     if (fifo.size() > NB_INFLIGHTS){
       Cva6DynInstPtr unschedisnt = fifo.front();
-      fifo.pop_front();
-      Cva6DynInstPtr schedinst = scheduler.pop(); // Pop inst from scheduler
-
       instats.commit(unschedisnt);
       instatsnobr.commit(unschedisnt);
+      fifo.pop_front();
 
-      schedinst->delta = outstats.commit(schedinst);
-
-      DPRINTF(Cva6SchedSched, "Schedule: %s (+%d)\n",
-        dumpInstPreg(schedinst), schedinst->delta);
+      // Cva6DynInstPtr schedinst = sa.pop(); // Pop inst from scheduler
+      // schedinst->delta = outstats.commit(schedinst);
+      // DPRINTF(Cva6SchedSched, "Schedule: %s (+%d)\n",
+      //   dumpInstPreg(schedinst), schedinst->delta);
 
     }
   }

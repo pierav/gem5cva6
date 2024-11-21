@@ -376,6 +376,7 @@ class BaseScheduler
 {
   public:
   virtual void push(Cva6DynInstPtr inst) = 0;
+  virtual bool canPop() = 0;
   virtual Cva6DynInstPtr pop() = 0;
 };
 
@@ -415,6 +416,7 @@ class SchedulerBB : public BaseScheduler
   /* Interface */
   void push(Cva6DynInstPtr inst) override;
   Cva6DynInstPtr pop() override;
+  bool canPop() override { return true; /* TODO */}
   private:
   Cva6DynInstPtr internal_pop();
 };
@@ -503,6 +505,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
 
   /* The main containers */
   std::deque<scheduler_entry_t> s2d; // 2D array Scheduler
+  uint64_t inflight_insts_count = 0;
 
   StoreSet<Cva6DynInstPtr> mdp;
   // DEBUG: delme !
@@ -519,6 +522,8 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   /* Interface */
   void push(Cva6DynInstPtr inst) override;
   Cva6DynInstPtr pop() override;
+  bool canPop() override { return inflight_insts_count; }
+
   /* Constructor */
   SchedulerPierreMichaud(
     const std::string &name,

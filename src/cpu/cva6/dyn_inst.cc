@@ -50,30 +50,24 @@ Cva6DynInst::inststate_t::inststate_t(const Cva6DynInstPtr inst){
   }
 
   // First arg is PC
-  fatal_if(inst->numSrcRegs() > 3, "Too mush src\n");
-  fatal_if(inst->numDstRegs() > 1, "Too mush dst\n");
+  fatal_if(inst->regs_src_phy.size() > 3, "Too mush src\n");
+  fatal_if(inst->regs_dst_phy.size() > 1, "Too mush dst\n");
 
   int k = 0;
   regs[k++] = inst->pc->instAddr();
 
-  for (unsigned int i = 0; i < inst->numSrcRegs(); i++) {
-    RegId reg = inst->staticInst->srcRegIdx(i);
-    if (reg.classValue() != InvalidRegClass){
-      regs[k++] = inst->reg_src_val[i];
-    }
+  for (auto &reg: inst->regs_src_phy){
+    regs[k++] = reg.value;
   }
-  for (unsigned int i = 0; i < inst->numDstRegs(); i++) {
-    RegId reg = inst->staticInst->destRegIdx(i);
-    if (reg.classValue() != InvalidRegClass){
-      regs[k++] = inst->reg_dst_val[i];
-    }
+  for (auto &reg: inst->regs_dst_phy){
+    regs[k++] = reg.value;
   }
 }
 
 
 #include <iomanip>
 
-
+#if 0
 void regDump(RegId reg, std::ostream &ss){
     if (reg.classValue() == IntRegClass){
         ss << " x";
@@ -84,14 +78,7 @@ void regDump(RegId reg, std::ostream &ss){
     }
     ss << std::dec << std::setfill('0') << std::setw(2) << reg.index();
 }
-
-void dump64breg(uint64_t val, bool valid, std::ostream &ss){
-    if (valid){
-        ss << std::right << std::hex << std::setw(16) << val;
-    } else {
-        ss << "uuuuuuuuuuuuuuuu";
-    }
-}
+#endif
 
 
 #define RST  "\x1B[0m"
@@ -117,57 +104,42 @@ void dump64breg(uint64_t val, bool valid, std::ostream &ss){
 
 std::ostream&
 Cva6DynInst::basedump(std::ostream &os) const {
-    if (isBubble()){
-        os << "bubble";
-    } else {
-        os << "0x" << std::hex << pc->instAddr() << std::dec << ": ";
-        if (isFault()){
-            os << "F: " << getFault()->name();
-        } else if (staticInst) {
-            #define COLOR "\x1B[1;36m"
-            /* CUSTOM */
-            if (l_data.is_predicted_first){
-                os << COLOR PIPE_START " " RST;
-            } else if (l_data.is_predicted_last){
-                os << COLOR PIPE_END " " RST;
-            } else if (l_data.is_predicted){
-                os << COLOR PIPE " " RST;
-            } else {
-                os << PIPENO " " ;
-            }
-
-
-            os << std::setw(30) << std::left
-            << staticInst->disassemble(pc->instAddr());
-            //   << "Flags=";
-            // staticInst->printFlags(os, ",");
-            //   ->getName();
-            if (issue_start_ts){
-                for (unsigned int i = 0; i < numDstRegs(); i++) {
-                    RegId reg = dstRegIdx(i);
-                    if (reg.classValue() != InvalidRegClass){
-                        os << ' ';
-                        RegVal regval = reg_dst_val[i];
-                        regDump(reg, os);
-                        os << ':';
-                        dump64breg(regval, reg_dst_val_valid[i], os);
-                    }
-                }
-                for (unsigned int i = 0; i < numSrcRegs(); i++) {
-                    RegId reg = srcRegIdx(i);
-                    if (reg.classValue() != InvalidRegClass){
-                        os << ' ';
-                        os << (exec_data.is_reg_dead[i] ? '*' : ' ');
-                        RegVal regval = reg_src_val[i];
-                        regDump(reg, os);
-                        os << ':';
-                        dump64breg(regval, reg_src_val_valid[i], os);
-                    }
-                }
-            }
+  if (isBubble()){
+    os << "bubble";
+  } else {
+    os << "0x" << std::hex << pc->instAddr() << std::dec << ": ";
+    if (isFault()){
+      os << "F: " << getFault()->name();
+    } else if (staticInst) {
+      #define COLOR "\x1B[1;36m"
+      /* CUSTOM */
+      if (l_data.is_predicted_first){
+          os << COLOR PIPE_START " " RST;
+      } else if (l_data.is_predicted_last){
+          os << COLOR PIPE_END " " RST;
+      } else if (l_data.is_predicted){
+          os << COLOR PIPE " " RST;
+      } else {
+          os << PIPENO " " ;
+      }
+      os << std::setw(30) << std::left
+      << staticInst->disassemble(pc->instAddr());
+      //   << "Flags=";
+      // staticInst->printFlags(os, ",");
+      //   ->getName();
+      if (issue_start_ts){
+        for (auto &reg: regs_dst_phy){
+          reg.dumpWithValue(os);
+          os << ' ';
         }
+        for (auto &reg: regs_src_phy){
+          reg.dumpWithValue(os);
+          os << ' ';
+        }
+      }
     }
-    return os;
+  }
+  return os;
 }
 
 std::ostream &operator <<(std::ostream &os, const Cva6DynInst &inst){

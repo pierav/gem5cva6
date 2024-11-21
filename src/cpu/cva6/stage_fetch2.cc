@@ -220,8 +220,6 @@ Fetch2::output_inst(Cva6DynInstPtr inst){
         }
     }
     out.push(inst);
-    cpu.pipeline->lh.on_fetch(inst);
-
 }
 
 void
@@ -346,8 +344,6 @@ Fetch2::flush(){
     dumpAllInput();
     fetchInfo.havePC = false;
     udecoder.flush();
-    cpu.pipeline->lh.flush_fetch();
-
 }
 
 bool

@@ -28,22 +28,29 @@
 #include "sim/faults.hh"
 #include "sim/insttracer.hh"
 
-
 namespace gem5 {
 namespace cva6 {
 
 struct PhysicalReg
 {
-  int classValue = 0; /* If 0 : invalid */
-  bool isRenammed = false;
-  uint64_t virt_reg_idx = 0; // Virtual reg index
-  uint64_t phys_reg_idx = 0; // Physical reg index
-  bool isLastRename = false; // Mark the deallocation of the register
-  bool is_reg_dead = false; /* Is this one dead */
+  /* Register type */
+  int classValue = 0;         /* If 0 : invalid */
+  bool isRenammed = false;    /* Is register renammed */
+  uint64_t virt_reg_idx = 0;  /* Virtual reg index */
+  uint64_t phys_reg_idx = 0;  /* Physical reg index */
+  bool isLastRename = false;  /* Mark the deallocation of the register */
+  bool is_reg_dead = false;   /* Is this one dead */
+  RegId regid;  /* The gem5 internal register identifier */
+  /* Value */
+  bool valid = false;       /* Is value valid */
+  bool fromrf = false;      /* Is read from register file */
+  uint64_t value = 0xdeaddeaddeaddead;
+
   PhysicalReg() {}
-  PhysicalReg(uint64_t idx) {
+  PhysicalReg(RegId regid_) {
     classValue = 1;
-    virt_reg_idx = idx;
+    virt_reg_idx = id2i(regid_);
+    regid = regid_;
   }
 
   void doRename(uint64_t phyidx){
@@ -67,17 +74,38 @@ struct PhysicalReg
            phys_reg_idx == rhs.phys_reg_idx;
   }
 
-  std::ostream& str(std::ostream &ss) const {
-    if (is_reg_dead){
-      ss << '*';
-    }
-    ss << registerName(virt_reg_idx);
+  std::ostream& str(std::ostream &os) const {
+    std::ios init(NULL);
+    init.copyfmt(os);
+    os << (is_reg_dead ? '*' : ' ');
+    os << registerName(virt_reg_idx);
     if (isRenammed){
-      ss << "\033[38;5;" << (phys_reg_idx * 97) % 256 << 'm';
-      ss << ":%" << phys_reg_idx;
-      ss << "\x1B[0m";
+      os << "\033[38;5;" << (phys_reg_idx * 97) % 256 << 'm';
+      os << ":%" << std::setfill('%') << std::setw(4) << phys_reg_idx;
+      os << "\x1B[0m";
     }
-    return ss;
+    os.copyfmt(init);
+    return os;
+  }
+
+  std::ostream& dumpWithValue(std::ostream &os) const {
+    std::ios init(NULL);
+    init.copyfmt(os);
+    str(os);
+    os << ':';
+    if (valid){
+        os << std::setfill('0') << std::right
+           << std::hex << std::setw(16) << value;
+    } else {
+        os << "uuuuuuuuuuuuuuuu";
+    }
+    os.copyfmt(init);
+    return os;
+  }
+
+  void set(uint64_t value_){
+    value = value_;
+    valid = true;
   }
 };
 
@@ -228,9 +256,6 @@ class Cva6DynInst : public RefCounted
     uint64_t issue_ts = 0;
     bool issue_completed = false;
     /** Source registers values */
-    uint64_t reg_src_val[3] = { 0 }; // TODO Generic N
-    bool reg_src_val_valid[3] = { 0 }; // For assertions
-    bool reg_src_val_fromrf[3] = { 0 }; // For assertions
 
     /** memory request generated when load/store */
     DTLBRequestPtr dreq = nullptr;
@@ -239,17 +264,11 @@ class Cva6DynInst : public RefCounted
     /************ Execute stage ************/
     bool execute_completed = false;
     /** Destination registers values */
-    uint64_t reg_dst_val[2] = { 0 }; // TODO Generic
-    bool reg_dst_val_valid[2] = { 0 };
-
-
     std::vector<PhysicalReg> regs_dst_phy;
     std::vector<PhysicalReg> regs_src_phy;
     uint64_t bb_idx;
     uint64_t delta; // DELME LATER, annotate each register
 
-    // True when a valid reg is overwrite with a different value
-    bool reg_dst_overwrite_invalid = false;
     /** Next pc */
     std::unique_ptr<PCStateBase> pc_next; // Next PC
     bool pc_next_taken = false; // Is next pc taken
@@ -377,16 +396,17 @@ class Cva6DynInst : public RefCounted
       issue_start_ts = 0;
       issue_ts = 0;
       issue_completed = false;
-      for (int i = 0; i < 3; i++){
-        reg_src_val_valid[i] = false;
-        reg_src_val_fromrf[i] = false;
+
+      for (auto &reg: regs_src_phy){
+        reg.valid = false;
+      }
+
+      for (auto &reg: regs_dst_phy){
+        reg.valid = false;
       }
       untrackDreq();
       // Reset Execute
       execute_completed = false;
-      reg_dst_val_valid[0] = false;
-      reg_dst_val_valid[1] = false;
-      reg_dst_overwrite_invalid = false;
       pc_next_taken = false;
       ex_csrs.clear();
       mc_data.reset();
@@ -437,51 +457,54 @@ class Cva6DynInst : public RefCounted
 
 
     /** *** ExecContext Interface *** */
-    uint8_t numSrcRegs() const {
-      assert(staticInst);
-      return staticInst->numSrcRegs();
-    }
+    template<class Src, class Dst>
+    using cv_t = std::conditional_t<std::is_const<Src>{}, Dst const, Dst>;
 
-    const RegId &srcRegIdx(int i) const { return staticInst->srcRegIdx(i); }
+    template<class T>
+    static cv_t<T, PhysicalReg>& id2physical(RegId& regid, T& vec) {
+      for (auto &r: vec){
+        if (r.regid == regid){
+          return r;
+        }
+      }
+      fatal("Unrecheable: reg must exist\n");
+    }
 
     RegVal getSrcRegOperand(int idx) const {
       assert(staticInst);
       assert(idx < staticInst->numSrcRegs());
-      assert(reg_src_val_valid[idx]);
-      return reg_src_val[idx];
+      RegId regid = staticInst->srcRegIdx(idx);
+      if (regid.classValue() == InvalidRegClass){
+        return 0;
+      }
+      const PhysicalReg &reg = id2physical(regid, regs_src_phy);
+      assert(reg.valid);
+      return reg.value;
     }
 
-    void setSrcRegOperand(int idx, RegVal val){
-      assert(staticInst);
-      assert(idx < staticInst->numSrcRegs());
-      reg_src_val_valid[idx] = 1;
-      reg_src_val[idx] = val;
-    }
-
-    uint8_t numDstRegs() const {
-      assert(staticInst);
-      return staticInst->numDestRegs();
-    }
-
-    RegId dstRegIdx(int idx) const {
-      return staticInst->destRegIdx(idx);
-    }
-
+    /* For compatibility */
     RegVal getDstRegOperand(int idx) const {
       assert(staticInst);
       assert(idx < staticInst->numDestRegs());
-      assert(reg_dst_val_valid[idx]);
-      return reg_dst_val[idx];
+      RegId regid = staticInst->destRegIdx(idx);
+      if (regid.classValue() == InvalidRegClass){
+        return 0;
+      }
+      const PhysicalReg &reg = id2physical(regid, regs_dst_phy);
+      assert(reg.valid);
+      return reg.value;
     }
 
     void setDstRegOperand(int idx, RegVal val){
       assert(staticInst);
       assert(idx < staticInst->numDestRegs());
-      if (reg_dst_val_valid[idx] && (reg_dst_val[idx] != val)){
-        reg_dst_overwrite_invalid = true;
+      RegId regid = staticInst->destRegIdx(idx);
+      if (regid.classValue() == InvalidRegClass){
+        return; // Nothing to set
       }
-      reg_dst_val_valid[idx] = 1;
-      reg_dst_val[idx] = val;
+      PhysicalReg &reg = id2physical(regid, regs_dst_phy);
+      reg.valid = true;
+      reg.value = val;
     }
 
     const PCStateBase &pcState() {
@@ -541,11 +564,8 @@ class Cva6DynInst : public RefCounted
     Fault executeCommit(Cva6CPU &cpu, SimpleThread &thread);
 
     bool readPredicate() const { return predicate; }
-
     void setPredicate(bool val) { predicate = val; }
-
     bool readMemAccPredicate() const { return memAccPredicate; }
-
     void setMemAccPredicate(bool val) { memAccPredicate = val; }
 
     void untrackDreq(){

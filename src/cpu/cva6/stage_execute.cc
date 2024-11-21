@@ -86,15 +86,16 @@ Execute::doInstCommitAccounting(Cva6DynInstPtr inst){
 std::string instDump(Cva6DynInstPtr inst, ThreadContext *thread) {
     std::ostringstream ss;
     ss << *inst;
-    if (inst->staticInst->isLoad()){
+    if (inst->staticInst->isMemRef()){
         assert(inst->dreq);
         // assert(inst->dreq->req->hasPaddr());
         assert(inst->dreq->req->hasVaddr());
+        ss << std::hex;
         ss << " VA=" << inst->dreq->req->getVaddr();
         if (inst->dreq->req->hasPaddr()){
             ss << " PA=" << inst->dreq->req->getPaddr();
         }
-        ss << " PTE=" << inst->dreq->req->pte;
+        // ss << " PTE=" << inst->dreq->req->pte;
     }
     return ss.str();
 }
@@ -143,7 +144,7 @@ void
 Execute::evaluate() {
     /* Check interrupts first */
     resolved_branch = BranchData(); // Default is no branch
-    if (checkInterrupts()){
+    if (checkInterrupts()){ // TODO !
         /* Signalling an interrupt this cycle */
         Fault interrupt = cpu.getInterruptController()->getInterrupt();
         assert(interrupt != NoFault);
@@ -175,13 +176,11 @@ Execute::evaluate() {
     // Execution
     fus.advance();
 
-    /** Process result */
-    cpu.pipeline->getIq(true).execute();
-    cpu.pipeline->getIq(false).execute();
+    // /** Process result */
+    cpu.pipeline->iq.execute();
 
     /* Commit stage*/
     Fault fault;
-    uint16_t commitidx[2] = { 0 };
     for (int i = 0; i < commitWidth; i++){ // Dual port commit
         if (!resolved_branch.isBubble()){
             break; // Block if already jump, fault ...
@@ -196,77 +195,17 @@ Execute::evaluate() {
         Cva6DynInstPtr inst = cpu.pipeline->rob.front();
         DPRINTF(Cva6Execute, "rob entry: %s\n", *inst);
 
-        bool inLambda = inst->l_data.is_predicted;
-        IssueUnit &iq = cpu.pipeline->getIq(inLambda);
-        Cva6DynInstPtr inst_check = iq.getCommitInst(commitidx[inLambda]++);
-        DPRINTF(Cva6Execute, " iq entry: %s\n", *inst_check);
-        assert(inst == inst_check);
-
         if (!inst->execute_completed){
             DPRINTF(Cva6Execute, "(port%d) inst is not ex : %s\n", i, *inst);
             break;
         }
 
-        /* Can deadlock !*/
-        if (inLambda && inst->isMemRef() && inst->dreq->prefetch_mode_failed) {
-            DPRINTF(Cva6Execute, "MISSPRED DATA LEAK : %s\n", *inst);
-            cpu.pipeline->lh.on_noisy_store(inst);
-            std::unique_ptr<PCStateBase> target(
-                cpu.getContext()->pcState().clone());
-            InstSeqNum num = 0;
-            resolved_branch = BranchData(
-                false, /* Is predicted : need update */
-                true, /* Need squash */
-                num, /* sn:0 Squash everything */
-                *target,
-                true // Unused
-            );
-            flush();
-            return; /* EARLY FLUSH : do not commit */
-        }
-
         commitInst(inst, resolved_branch);
-        iq.commit(inst);
+        cpu.pipeline->iq.commit(inst);
+        assert(cpu.pipeline->rob.front() == inst);
         cpu.pipeline->rob.pop(inst);
-
-        /* Check lambda misspred */
-        bool misspred = !cpu.pipeline->lh.on_commit(inst);
-        if (misspred){
-            DPRINTF(Cva6Execute, "MISSPRED LAMBDA: %s\n", *inst);
-            std::unique_ptr<PCStateBase> target(
-                cpu.getContext()->pcState().clone());
-            InstSeqNum num = 0;
-            resolved_branch = BranchData(
-                false, //
-                true, // Need squash
-                num,
-                *target,
-                true // Unused
-            );
-        } else {
-            /* Commit also lambda.pred when le lambda is fully commited*/
-            /* This avoid lambda overlap in IQ */
-            if (inst->l_data.is_predicted_last){
-                int idx = commitidx[FAST_IQ]++;
-                Cva6DynInstPtr uopl =
-                    cpu.pipeline->getIq(FAST_IQ).getCommitInst(idx);
-                /* Some assertions about lambda order */
-                assert(!uopl->isBubble());
-                assert(uopl->l_data.is_uop_lambda_pred);
-                assert(cpu.pipeline->rob.front() == uopl);
-                /* We simply have to drop the instriction in the IQ/ROB*/
-                iq.commit(uopl);
-                cpu.pipeline->rob.pop(uopl);
-                /* Also check that the prediction was valid (debug only)*/
-                RegId reg = uopl->dstRegIdx(0);
-                uint64_t prediction = uopl->getDstRegOperand(0);
-                uint64_t value = cpu.thread->getReg(reg);
-                assert(prediction == value);
-            }
-        }
-
-        bool is_store_dead =
-            cpu.pipeline->rda.check_reg_dead_at_commit(inst);
+        // iq.commit(inst);
+        // cpu.pipeline->rob.pop(inst);
 
         /* Checker */
         if (!inst->isFault() && inst->staticInst->isMemRef()){
@@ -285,9 +224,6 @@ Execute::evaluate() {
             } else { /* Not bufferable */
                 memcheck.invalidate(addr);
             }
-            if (is_store_dead){ // drop entry when store dead !
-                memcheck.invalidate(addr);
-            }
         }
 
 #if 0
@@ -304,8 +240,6 @@ Execute::evaluate() {
             }
         }
 #endif
-        cpu.pipeline->lh.on_post_commit(inst);
-
         for (Plugin *plugin: plugins){
             plugin->commit(inst);
         }
@@ -324,6 +258,7 @@ Execute::flushfrom(Cva6DynInstPtr inst){
     fus.flushfrom(inst);
     inp.flushfrom(inst);
     cpu.pipeline->rob.flushfrom(inst);
+    cpu.pipeline->sa.flushfrom(inst);
 }
 
 bool
@@ -334,8 +269,7 @@ Execute::checkInterrupts()
     if (cpu.checkInterrupts() && 1) {
         DPRINTF(Cva6Commit, "IT\n");
         /* lsu chech in memory instruction ! */
-        return cpu.pipeline->iq0.canInterrupts() &&
-               cpu.pipeline->iq1.canInterrupts();
+        return cpu.pipeline->iq.canInterrupts();
     }
 
     return false;
