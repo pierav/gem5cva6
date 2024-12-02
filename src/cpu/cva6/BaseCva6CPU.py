@@ -32,7 +32,7 @@ class BaseCva6CPU(BaseCPU):
         numThreads = Parent.numThreads), "Branch Predictor")
 
 
-    minicacheSize = Param.Unsigned(16, "Minicache size; 0 for disable")
+    mcSize = Param.Unsigned(16, "Minicache size; 0 for disable")
     # VP
     vpSize = Param.Unsigned(2048, "Value prediction size; 0 for disable")
     vpType = Param.Unsigned(0, "Value prediction type")
@@ -55,6 +55,9 @@ class BaseCva6CPU(BaseCPU):
     # Lambda
     userelf = Param.String("", "Main user elf")
     lltSize = Param.Unsigned(0, "Last Lamdba Table Size")
+
+    # Scheduler
+    schedType = Param.Unsigned(0, "Scheduler type. (0 for no scheduler)")
 
     def addCheckerCpu(self):
         print("Checker not yet supported by Cva6CPU")

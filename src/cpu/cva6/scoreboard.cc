@@ -1,5 +1,5 @@
 /**
- * @file scoreboard.hh
+ * @file sb.hh
  * @author Pierre Ravenel (pravenel@kalrayinc.com)
  * @brief
  * @version 0.1
@@ -7,7 +7,7 @@
  */
 
 #include "cpu/cva6/scoreboard.hh"
-
+#include "cpu/cva6/pipeline.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Cva6Scoreboard.hh"
 
@@ -24,8 +24,6 @@ Scoreboard::pushInst(Cva6DynInstPtr inst){
     assert(issue_queue.size() < nr_entries);
     issue_queue.push_back(inst);
 }
-
-
 
 bool
 Scoreboard::isUnissedStoreBefore(Cva6DynInstPtr inst_in){
@@ -60,17 +58,36 @@ Scoreboard::isUnissedStoreBefore(Cva6DynInstPtr inst_in){
 
 bool
 Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg){
-    int pos = issue_queue.size(); // Default is outside sb
-    // Find instruction position in sb
-    for (int i = 0; i < issue_queue.size(); i++){
-        assert(!issue_queue[i]->isBubble());
-        if (issue_queue[i]->isAfterOrEqual(inst_in)){
-            pos = i;
+    switch(sb[reg]){
+        case FREE: {
+            /* Read commited value */
+            reg.set(cpu.thread->getReg(reg.regid));
+            reg.fromrf = true;
+            break;
+        }
+        case IN_USE: {
+            /* We have to wait */
+            break;
+        }
+        case FWABLE: {
+            reg.set(prf[reg]);
             break;
         }
     }
+    return reg.valid;
+    #if 0
+    int pos = issue_queue.size(); // Default is outside sb
+    // Find instruction position in sb
+    // The Order is now not valid
+    // for (int i = 0; i < issue_queue.size(); i++){
+    //     assert(!issue_queue[i]->isBubble());
+    //     if (issue_queue[i]->isAfterOrEqual(inst_in)){
+    //         pos = i;
+    //         break;
+    //     }
+    // }
     // dump();
-    // fatal_if(pos == -1, "Instruction %s not in scoreboard\n", *inst_in);
+    // fatal_if(pos == -1, "Instruction %s not in sb\n", *inst_in);
 
     /*
      * sbe0: addi x5, x0, 1 <-- commit head
@@ -81,9 +98,10 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg){
     // From oldest to newest try to find register
     for (int i = pos - 1; i >= 0; i--){
         Cva6DynInstPtr inst = issue_queue[i];
-        if (inst->isFault()){ // Stall after fault
-            return false;
-        }
+        // No more true !
+        // if (inst->isFault()){ // Stall after fault
+        //     return false;
+        // }
         StaticInstPtr si = inst->staticInst;
         for (PhysicalReg& ireg: inst->regs_dst_phy){
             if (reg == ireg){
@@ -97,6 +115,7 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg){
     reg.set(cpu.thread->getReg(reg.regid));
     reg.fromrf = true;
     return reg.valid;
+    #endif
 }
 
 bool
@@ -135,21 +154,52 @@ Scoreboard::getIssueInst(
     Cva6DynInstPtr inst = Cva6DynInst::bubble();
     is_over_serialise = false;
     is_ready = false;
+    if (!canPush()){
+        return Cva6DynInst::bubble();
+    }
+    /* First check serialisation */
     for (Cva6DynInstPtr dyn: issue_queue){
-        if (!dyn->issue_completed){
-            inst = dyn;
-            break;
-        }
+        // if (!dyn->issue_completed){
+        //     inst = dyn;
+        //     break;
+        // }
         if (dyn->isFault() ||
             dyn->staticInst->isSerializeAfter()){
             is_over_serialise = true;
         }
     }
-    if (inst->isBubble()){
-        return inst;
+    /* Second, retrieve instruction from previous stage */
+    if (!cpu.pipeline->sa.can_pop_scheduled()){
+        return Cva6DynInst::bubble();
     }
+    inst = cpu.pipeline->sa.front_scheduler();
     is_ready = canInstIssue(inst);
     return inst;
+}
+
+void
+Scoreboard::issueInst(Cva6DynInstPtr inst){
+    assert(!inst->issue_completed);
+    inst->issue_completed = true;
+    Cva6DynInstPtr i2 = cpu.pipeline->sa.pop_scheduler();
+    fatal_if(i2 != inst, "Sched inst must be this one\n");
+
+    /* Markup registers */
+    for (PhysicalReg &reg: inst->regs_dst_phy){
+        fatal_if(sb[reg] != FREE, "Reg %s must be freed\n", reg);
+        sb[reg] = IN_USE;
+    }
+}
+
+void
+Scoreboard::completeInst(Cva6DynInstPtr inst) {
+    assert(!inst->execute_completed); // not already commplete
+    inst->execute_completed = true; // Finished execution
+    for (PhysicalReg &reg: inst->regs_dst_phy){
+        assert(sb[reg] == IN_USE);
+        sb[reg] = FWABLE;
+        prf[reg] = reg.value;
+    }
 }
 
 Cva6DynInstPtr
@@ -165,12 +215,23 @@ Scoreboard::getCommitInst(size_t index){
 }
 
 void
+Scoreboard::commitInst(Cva6DynInstPtr inst) {
+    assert(!inst->commit_completed); // Already commited
+    inst->commit_completed = true;
+    /* Free registers  */
+    for (PhysicalReg &reg: inst->regs_dst_phy){
+        assert(sb[reg] == FWABLE);
+        sb[reg] = FREE;
+    }
+}
+
+void
 Scoreboard::tick(){
     /* For all instructions to commit */
     while (!issue_queue.empty() &&
           issue_queue.front()->commit_completed) {
-        /* Remove instruction from scoreboard*/
-        /* Release registers & pop issue queue*/
+        /* Remove instruction from sb*/
+        /* pop issue queue*/
         Cva6DynInstPtr inst = issue_queue.front();
         issue_queue.pop_front();
     }
@@ -181,6 +242,8 @@ Scoreboard::flush(){
     DPRINTF(Cva6Scoreboard, "flush\n");
     // Flush issue queue
     issue_queue.clear();
+    /* Clear inflights registers */
+    sb.setall(FREE);
 }
 
 #if 0
@@ -205,7 +268,7 @@ Scoreboard::flush_value_from(Cva6DynInstPtr inst_error, bool force){
             break;
         }
     }
-    fatal_if(inst_index == -1, "instruction not in scoreboard\n");
+    fatal_if(inst_index == -1, "instruction not in sb\n");
 
     // #if 0
     /** Check if there is a reg dependancy */
@@ -350,6 +413,46 @@ Scoreboard::flush_value_from(Cva6DynInstPtr inst_error, bool force){
 
 #endif
 
+bool
+Scoreboard::markMemoryViolation(Cva6DynInstPtr inst){
+    /*
+     * i1: Store \/ i2: Load
+     * i2: Load  /\ i1: Store
+     */
+    if (inst->isFault() || !inst->staticInst->isStore()){
+        return false;
+    }
+    assert(inst->dreq);
+    uint64_t store_addr = inst->dreq->getDWPaddr();
+    for (Cva6DynInstPtr i2: issue_queue){
+        if (i2->commit_completed){ // Skip committed
+            continue;
+        }
+        if (!i2->issue_completed){ // Reach end
+            break;
+        }
+        /* Is a load */
+        if (i2->isFault() || !i2->staticInst->isLoad()){
+            continue;
+        }
+        /* Is before the store in programme order*/
+        if (i2->isAfterOrEqual(inst)){
+            continue;
+        }
+        /* Is address matches */
+        assert(i2->dreq);
+        uint64_t load_addr = i2->dreq->getDWPaddr();
+        if (store_addr != load_addr){
+            continue;
+        }
+        DPRINTF(Cva6Scoreboard, "BAD DEPS with %s\n", *i2);
+        /* Finnaly we detected a memory hazard : mark the load as invalid */
+        i2->break_memory_order = inst;
+        return true;
+    }
+    return false;
+}
+
 void
 Scoreboard::dump(){
     int i = 0;
@@ -357,9 +460,17 @@ Scoreboard::dump(){
     DPRINTF(Cva6Scoreboard, "Scoreboard [I][E][C]\n");
     for (Cva6DynInstPtr inst: issue_queue){
         if (!inst->isBubble()){
-            DPRINTF(Cva6Scoreboard, "sbe#%d [%c][%c][%c] %s\n",
+            std::ostringstream os;
+            for (int i = 0; i < 4; i++){
+                if ((inst->bb_idx % 4) == i){
+                    os << " " << (inst->bb_idx % 10) << " ";
+                } else {
+                    os << " . ";
+                }
+            }
+            DPRINTF(Cva6Scoreboard, "sbe#%d [%c][%c][%c] %s%s\n",
             i++, hit[inst->issue_completed], hit[inst->execute_completed],
-            hit[inst->commit_completed], *inst);
+            hit[inst->commit_completed], os.str(), *inst);
         }
     }
 }

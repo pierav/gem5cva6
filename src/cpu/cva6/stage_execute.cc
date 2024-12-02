@@ -195,6 +195,25 @@ Execute::evaluate() {
         Cva6DynInstPtr inst = cpu.pipeline->rob.front();
         DPRINTF(Cva6Execute, "rob entry: %s\n", *inst);
 
+        /* Inst produced bad value */
+        if (!inst->break_memory_order->isBubble()){
+            DPRINTF(Cva6Execute, "MISSPRED MEM ORDER : %s\n", *inst);
+            std::unique_ptr<PCStateBase> target(
+                cpu.getContext()->pcState().clone());
+            resolved_branch = BranchData(
+                false, /* Is predicted : need update */
+                true, /* Need squash */
+                0, /* sn:0 Squash everything */
+                *target,
+                true // Unused
+            );
+            Cva6DynInstPtr storeinst = inst->break_memory_order;
+            cpu.pipeline->sa.scheduler.violation(storeinst->pc->instAddr(),
+                inst->pc->instAddr());
+            flush();
+            return; /* EARLY FLUSH : do not commit */
+        }
+
         if (!inst->execute_completed){
             DPRINTF(Cva6Execute, "(port%d) inst is not ex : %s\n", i, *inst);
             break;
@@ -204,6 +223,13 @@ Execute::evaluate() {
         cpu.pipeline->iq.commit(inst);
         assert(cpu.pipeline->rob.front() == inst);
         cpu.pipeline->rob.pop(inst);
+
+        cpu.pipeline->sa.commit(inst);
+
+        /* Check if there is memory order is violation */
+        cpu.pipeline->iq.markMemoryViolation(inst);
+        // TODO: replay from load !
+
         // iq.commit(inst);
         // cpu.pipeline->rob.pop(inst);
 

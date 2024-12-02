@@ -108,8 +108,7 @@ UDecoder::decodeInst(Cva6DynInstPtr inst,
     /** Add the tracing data to an instruction. */
     output_inst->traceData = cpu.getTracer()->getInstRecord(curTick(),
         cpu.getContext(),
-        output_inst->staticInst, *inst->pc,
-        inst->staticInst);
+        output_inst->staticInst, *output_inst->pc, inst->staticInst);
     if (inst->traceData){
         inst->traceData->setFetchSeq(inst->id.execSeqNum);
     }

@@ -53,6 +53,15 @@ protected:
     /* this is the FIFO struct of the issue queue  */
     std::deque<Cva6DynInstPtr> issue_queue;
 
+    enum reg_state_t
+    {
+      FREE,
+      IN_USE,
+      FWABLE
+    };
+    PhysicalRegFile<reg_state_t> sb;
+    PhysicalRegFile<uint64_t> prf;
+
     // RAW valid <=> state in {FREE, FWABLE}
     // WAW valid <=> state in {FREE}
 
@@ -80,29 +89,19 @@ protected:
     /** push inst in the scoreboard */
     void pushInst(Cva6DynInstPtr inst);
 
+    /** Issue Stage */
     /* Return the instruction to issue. Bubble if none. */
-    Cva6DynInstPtr getIssueInst(size_t index, bool &is_over_serialise,
-      bool &is_ready);
-
+    Cva6DynInstPtr getIssueInst(size_t index, bool &is_oser, bool &is_ready);
     /** Issue the instruction (notify instruction is issued) */
-    void issueInst(Cva6DynInstPtr inst){
-      assert(!inst->issue_completed);
-      inst->issue_completed = true;
-    }
+    void issueInst(Cva6DynInstPtr inst);
 
     /** Notify scoreboard functional unit finished */
-    void completeInst(Cva6DynInstPtr inst) {
-      assert(!inst->execute_completed); // not already commplete
-      inst->execute_completed = true; // Finished execution
-    }
+    void completeInst(Cva6DynInstPtr inst);
 
     /** Return the instruction to commit. Bubble is none. */
     Cva6DynInstPtr getCommitInst(size_t index=0);
     /** Commit the instruction */
-    void commitInst(Cva6DynInstPtr inst) {
-      assert(!inst->commit_completed); // Already commited
-      inst->commit_completed = true;
-    }
+    void commitInst(Cva6DynInstPtr inst);
 
     /** Tick the scoreboard: evaluate flip flops*/
     void tick();
@@ -131,6 +130,8 @@ protected:
     std::deque<Cva6DynInstPtr> &getIssueQueue(){
       return issue_queue;
     }
+
+    bool markMemoryViolation(Cva6DynInstPtr inst);
 
     bool isInstInFu(Cva6DynInstPtr inst){
       return !inst->execute_completed && inst->issue_completed;

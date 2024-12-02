@@ -186,6 +186,10 @@ class IssueUnit : public Named
     void tick(){
       scoreboard.tick();
     }
+
+    bool markMemoryViolation(Cva6DynInstPtr inst){
+      return scoreboard.markMemoryViolation(inst);
+    }
 };
 
 /** Issue stage. */

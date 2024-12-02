@@ -22,10 +22,28 @@
 namespace gem5 {
 namespace cva6 {
 
+
+
+inline BaseScheduler& initSched(
+  const std::string &name,
+  Cva6CPU &cpu,
+  const BaseCva6CPUParams &p) {
+  switch (p.schedType){
+    case 0:
+      return *new NoScheduler();
+    case 2:
+      return *new SchedulerPierreMichaud(name, cpu, p);
+  }
+  fatal("Invalid Scheduler type: %d\n", p.schedType);
+  return *new NoScheduler();
+}
+
 class SA
 {
+  public:
   /* The scheduler */
   BaseScheduler &scheduler;
+  private:
   /* Renamming */
   PhysicalRegAllocator regalloc;
   uint64_t bbcnt = 0;
@@ -34,10 +52,10 @@ class SA
   SA(const std::string &name,
     Cva6CPU &cpu,
     const BaseCva6CPUParams &p) :
-  scheduler(*new SchedulerPierreMichaud(name, cpu, p)),
-  regalloc(64)
- { }
-
+  scheduler(initSched(name, cpu, p)),
+  regalloc(4096)
+  { }
+  private:
   void rename(Cva6DynInstPtr inst){
     inst->bb_idx = bbcnt;
     bbcnt += isBBend(inst);
@@ -72,24 +90,26 @@ class SA
     /* Rename */
     regalloc.rename(inst);
   }
-  void push_at_decode(Cva6DynInstPtr inst){
-    /* Push in scheduler */
+
+  public:
+  bool can_push_scheduler(){ return regalloc.canRename(); }
+  void push_scheduler(Cva6DynInstPtr inst){
+    rename(inst);
     scheduler.push(inst);
   }
+  bool can_pop_scheduled(){ return scheduler.canPop(); }
+  Cva6DynInstPtr front_scheduler() { return scheduler.front(); }
+  Cva6DynInstPtr pop_scheduler(){ return scheduler.pop(); }
 
-  bool can_push_at_decode(){
-    return true;
+  void commit(Cva6DynInstPtr inst){
+    regalloc.commit(inst);
   }
-  bool can_pop_at_decode(){
-    return scheduler.canPop();
-  }
-
-  Cva6DynInstPtr pop_at_decode(){
-    return scheduler.pop();
-  }
-
   void flushfrom(Cva6DynInstPtr inst){
-    // fatal("Must implem\n");
+    if (!inst->isBubble()){
+      fatal("Must implem\n");
+    }
+    scheduler.flush();
+    regalloc.flush();
   }
 
   bool canInterrupts(){

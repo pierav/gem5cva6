@@ -48,49 +48,41 @@ parser = argparse.ArgumentParser()
 Options.addCommonOptions(parser)
 # Options.addFSOptions(parser)
 parser.add_argument("--kernel", action="store", type=str)
-parser.add_argument("--mcsize", action="store", type=int,
-    default=0, help="MC Size")
-parser.add_argument("--vpsize", action="store", type=int,
-    default=0, help="VP Size")
-parser.add_argument("--vptype", action="store", type=int,
-default=0, help="VP Type")
-parser.add_argument("--vpFlush", action='store_true')
-
-# Scoreboard size
-parser.add_argument("--sbSize", action='store', type=int, default=32)
-
-xxx = """
-              @@@@@@
-             @@@@@@@@
-            @@    @@@
-            @      @@@
-            v       @@
-                    @@@
-                     @@
-                    @@@@
-                   @@@@@
-                  @@@@@@@
-                 @@@@@ @@
-                @@@@@  @@@
-               @@@@@    @@
-              @@@@@     @@@       ^
-             @@@@@       @@       @
-            @@@@@        @@@     @@
-           @@@@@          @@@@@@@@
-          @@@@@            @@@@@@
-"""
-parser.add_argument("--lltSize", default=0)
-
-
 
 parser.add_argument("--issueWidth", action="store", type=int, default=4)
+
+# Prefetcher size
 parser.add_argument("--pfSize", action='store', type=str, default='64')
 parser.add_argument("--pf2Size", action='store', type=str, default='256')
 
+STORE_TRUE = { "action": "store_true" }
+DEFAULT = lambda x : { "default":x }
+cva6_config = {
+    "mcSize" : DEFAULT(0), # The minicache size
+    "vpSize" : DEFAULT(0), # The Value Predictor Size
+    "vpType" : DEFAULT(0), # The Value Predictor Type
+    "vpFlush" :  STORE_TRUE, # Flush on missprediction
+    "dpeTestMode" : STORE_TRUE,
+    "dpeIgnore" : STORE_TRUE,
+    "lltSize" : DEFAULT(0), # Enable lambda things ...
+    "sbSize" : DEFAULT(32), # Scoreboard size
+    "schedType" : DEFAULT(0), # The type of scheduler used in frontend
+    "userelf": DEFAULT("") # User elf for symbols only
+}
+o3_config = {
+    "numIQEntries": DEFAULT(32),
+    "numROBEntries": DEFAULT(64),
+    "numPhysIntRegs": DEFAULT(180),
+    "numPhysFloatRegs": DEFAULT(168),
+    "numPhysVecRegs": DEFAULT(168),
+    "LQEntries": DEFAULT(32),
+    "SQEntries": DEFAULT(32)
+}
 
-# DPE
-parser.add_argument("--dpeTestMode", action='store_true')
-parser.add_argument("--dpeIgnore", action='store_true')
+parser.add_argument("--plugmemtrace", action="store_true")
+
+for k, v in {**cva6_config, **o3_config}.items():
+    parser.add_argument("--" + k, **v)
 
 # CPU
 parser.add_argument("--cpu", action="store", type=str,
@@ -106,10 +98,6 @@ parser.add_argument("--exitOnCpt", action='store_true')
 # IO
 parser.add_argument("--disk", action="store", type=str, help="Virtio disk")
 
-# Plugins
-parser.add_argument("--plugmemtrace", action='store_true', help="Virtio disk")
-
-
 # L1
 parser.add_argument("--l1dsize", action="store", type=str, default='64kB',
                     help="L1 data cache size. Default: 64kB.")
@@ -117,26 +105,8 @@ parser.add_argument("--l1dlat", action="store", type=int, default=4,
                     help="L1 data latency. Default: 4")
 
 
-# User elf for symbols only
-parser.add_argument("--userelf", action="store", type=str, default="",
-                    help="Virtio disk")
-
-
-parser.add_argument("--numIQEntries", action="store", type=int, default=32)
-parser.add_argument("--numROBEntries", action="store", type=int, default=64)
-parser.add_argument("--numPhysIntRegs", action="store", type=int, default=180)
-parser.add_argument("--numPhysFloatRegs", action="store",
-                    type=int, default=168)
-parser.add_argument("--numPhysVecRegs", action="store", type=int, default=168)
-parser.add_argument("--LQEntries", action="store", type=int, default=32)
-parser.add_argument("--SQEntries", action="store", type=int, default=32)
-
-
-
 args = parser.parse_args()
 
-
-print(f"{xxx}\nUse Lambda LLT : ", args.lltSize)
 
 CONFIG_USE_O3 = False
 CONFIG_USE_CVA6 = False
@@ -733,14 +703,8 @@ if not CONFIG_USE_ATOMIC:
         # cpuConfig["commitToRenameDelay"] = 0
         # cpuConfig["renameToIEWDelay"] = 1
         # cpuConfig["trapLatency"] = 0
-
-        cpuConfig["numPhysIntRegs"] = args.numPhysIntRegs
-        cpuConfig["numPhysFloatRegs"] = args.numPhysFloatRegs
-        cpuConfig["numPhysVecRegs"] = args.numPhysVecRegs
-        cpuConfig["LQEntries"] = args.LQEntries
-        cpuConfig["SQEntries"] = args.SQEntries
-        cpuConfig["numIQEntries"] = args.numIQEntries
-        cpuConfig["numROBEntries"] = args.numROBEntries
+        for k in o3_config:
+            cpuConfig[k] = vars(args)[k]
 
         FUList = [ IntALU(),
                    IntMultDiv(),
@@ -756,21 +720,14 @@ if not CONFIG_USE_ATOMIC:
 
         system.cpu = [RiscvO3CPU(cpu_id=i, **cpuConfig) for i in range(1)]
     else:
+        for k in cva6_config:
+            cpuConfig[k] = vars(args)[k]
         pipewidth = args.issueWidth
-        cpuConfig["minicacheSize"] = args.mcsize
-        cpuConfig["vpSize"]= args.vpsize
-        cpuConfig["vpType"]= args.vptype
-        cpuConfig["vpFlush"] = args.vpFlush
-        cpuConfig["dpeTestMode"] = args.dpeTestMode
-        cpuConfig["dpeIgnore"] = args.dpeIgnore
         cpuConfig["issueWidth"] = pipewidth
         cpuConfig["commitWidth"] = pipewidth
-        cpuConfig["userelf"] = args.userelf
-        cpuConfig["sbSize"] = args.sbSize
-        cpuConfig["lltSize"] = args.lltSize
         if args.plugmemtrace:
-            cpuConfig["plugin_memtrace_path"] = \
-                path.join(m5.options.outdir, 'memtrace.bin')
+            path = path.join(m5.options.outdir, 'memtrace.bin')
+            cpuConfig["plugin_memtrace_path"] = path
         system.cpu = [RiscvCva6CPU(cpu_id=i, **cpuConfig) for i in range(1)]
 
 else:

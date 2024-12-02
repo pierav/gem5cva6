@@ -32,94 +32,53 @@ inline bool isBBend(Cva6DynInstPtr& inst){
   return !inst->isFault() && inst->staticInst->isControl();
 }
 
-inline bool isMemWrite(Cva6DynInstPtr& inst, uint64_t &paddr){
-  if (!inst->isFault()
-     && inst->staticInst->isMemRef()
-     && !inst->staticInst->isLoad()){
-      fatal_if(!inst->dreq, "Must have dreq: %s\n", *inst);
-      paddr = inst->dreq->getPaddr();
-    return true;
-  }
-  return false;
-}
+// inline bool isMemWrite(Cva6DynInstPtr& inst, uint64_t &paddr){
+//   if (!inst->isFault()
+//      && inst->staticInst->isMemRef()
+//      && !inst->staticInst->isLoad()){
+//       fatal_if(!inst->dreq, "Must have dreq: %s\n", *inst);
+//       paddr = inst->dreq->getPaddr();
+//     return true;
+//   }
+//   return false;
+// }
 
-inline bool isMemLoad(Cva6DynInstPtr& inst, uint64_t &paddr){
-  if (!inst->isFault()
-     && inst->staticInst->isLoad()){
-      assert(inst->dreq);
-      paddr = inst->dreq->getPaddr();
-    return true;
-  }
-  return false;
-}
-
-template <class T>
-class PhysicalRegFile
-{
-  class PhysicalRegHash_t
-  {
-  public:
-    size_t operator()(const PhysicalReg &p) const {
-      return p.isRenammed ? p.phys_reg_idx : -p.virt_reg_idx;
-    }
-  };
-
-  std::vector<T> array;
-  // std::unordered_map<PhysicalReg, T, PhysicalRegHash_t> map;
-  public:
-  PhysicalRegFile() {}
-
-  T& operator[](PhysicalReg reg){
-    fatal_if(!reg.isRenammed, "Reg is not Physical : %s\n", reg);
-    fatal_if(!reg.classValue, "Reg is not valid : %s\n", reg);
-    // Fix size;
-    if (array.size() <= reg.phys_reg_idx){
-      array.resize(reg.phys_reg_idx + 1);
-    }
-    return array[reg.phys_reg_idx];
-  }
-};
-
-template <class T>
-class VirtualRegFile
-{
-  class Hash
-  {
-  public:
-    size_t operator()(const PhysicalReg &p) const {
-      return p.virt_reg_idx;
-    }
-  };
-
-  class KeyEqual
-  {
-  public:
-    size_t operator()(const PhysicalReg &p1, const PhysicalReg &p2) const {
-      return p1.virt_reg_idx == p2.virt_reg_idx;
-    }
-  };
-
-  std::unordered_map<PhysicalReg, T, Hash, KeyEqual> map;
-  public:
-  VirtualRegFile() {}
-  T& operator[](PhysicalReg reg){
-    assert(reg.classValue);
-    return map[reg];
-  }
-};
-
+// inline bool isMemLoad(Cva6DynInstPtr& inst, uint64_t &paddr){
+//   if (!inst->isFault()
+//      && inst->staticInst->isLoad()){
+//       assert(inst->dreq);
+//       paddr = inst->dreq->getPaddr();
+//     return true;
+//   }
+//   return false;
+// }
 
 class PhysicalRegAllocator
 {
+  size_t n;
   std::deque<uint64_t> free_list;
-  uint64_t cur_reg = 0;
-  VirtualRegFile<uint64_t> rmt;
+  std::deque<uint64_t> free_list_popped;
+
+  ArchRegFile<uint64_t> rmt;
+  ArchRegFile<uint64_t> rmt_checkpoint;
 
   public:
-  PhysicalRegAllocator(uint64_t nb_regs) {
+  PhysicalRegAllocator(uint64_t nb_regs) : n(nb_regs) {
+    assert(nb_regs >= NB_I2ID);
     for (int i = 0; i < nb_regs; i++){
-      free_list.push_back(i);
+      if (i < NB_I2ID){  /* Initialise all arch regs to physical mapping */
+        RegId regid = i2id(i);
+        PhysicalReg reg(regid);
+        rmt[reg] = i;
+      } else { /* Let the register for future use */
+        free_list.push_back(i);
+      }
     }
+    rmt_checkpoint = rmt; // Default rmt !
+  }
+
+  bool canRename(){
+    return free_list.size();
   }
 
   void rename(Cva6DynInstPtr& inst){
@@ -127,30 +86,61 @@ class PhysicalRegAllocator
     for (PhysicalReg& reg: inst->regs_src_phy){
       reg.doRename(rmt[reg]);
     }
-    /* Allocate destinations regs */
+
+    /* Allocate destinations regs and rename */
     for (PhysicalReg& reg: inst->regs_dst_phy){
-      uint64_t pregidx = (cur_reg % 2048);
-      rmt[reg] = pregidx;
+      /* Keep track of old mapping for reg free */
+      inst->phys_reg_to_free.push_back(rmt[reg]);
+      /* pop register from free list */
+      fatal_if(!free_list.size(), "No more entry in FL\n");
+      uint64_t pregidx = free_list.front();
+      free_list.pop_front();
+      /* Maintain speculative state */
+      free_list_popped.push_back(pregidx);
+      /* Finally rename the register */
       reg.doRename(pregidx);
-      cur_reg++;
+      /* Setup the speculative mapping in RMT */
+      /* Secure check */
+      // std::cout << "renamed " << reg << std::endl;
+      for (int i = 0; i < NB_I2ID; i++){
+        RegId regid = i2id(i);
+        PhysicalReg r2(regid);
+        fatal_if(rmt[r2] == pregidx, "(try rename %s to %d) "
+          "Reg %s already mapped to %s\n", reg, pregidx, r2, pregidx);
+      }
+      rmt[reg] = pregidx;
     }
   }
 
-  // bool can_alloc(){
-  //   return free_list.size();
-  // }
+  /* Free all registers */
+  void commit(Cva6DynInstPtr& inst){
+    /* Free registers */
+    for (uint64_t idx: inst->phys_reg_to_free){
+      // std::cout << "Free " << idx << std::endl;
+      /* Assumme in order commit */
+      free_list.push_back(idx);
+    }
+    /* Update checkpoint with new allocations */
+    for (PhysicalReg& reg: inst->regs_dst_phy){
+      /* Assume InO commit */
+      // std::cout << "ALLOC " << reg << " old was:
+      //  " << rmt_checkpoint[reg] << std::endl;
+      fatal_if(free_list_popped.front() != reg.phys_reg_idx, "Bad Free\n");
+      free_list_popped.pop_front();
+      rmt_checkpoint[reg] = reg.phys_reg_idx;
+    }
+  }
 
-  // uint64_t reg_alloc() {
-  //   assert(free_list.size());
-  //   uint64_t ret = free_list.front();
-  //   free_list.pop_front();
-  //   return ret;
-  // }
-
-  // void reg_free(uint64_t pidx){
-  //   free_list.push_back(pidx);
-  // }
-
+  void flush(){
+    /* Mv rmt_checkpoint to rmt */
+    rmt = rmt_checkpoint;
+    /* Fix free list */
+    /* [...|...|...]FL.front() <- FLP.back()[...|...] */
+    while (free_list_popped.size()){ /* Both revsersed */
+      free_list.push_front(free_list_popped.back());
+      free_list_popped.pop_back();
+    }
+  }
 };
 
 
@@ -377,7 +367,28 @@ class BaseScheduler
   public:
   virtual void push(Cva6DynInstPtr inst) = 0;
   virtual bool canPop() = 0;
+  virtual Cva6DynInstPtr front() = 0;
   virtual Cva6DynInstPtr pop() = 0;
+  virtual void flush() = 0;
+  virtual void violation(uint64_t store_pc, uint64_t load_pc){
+    /* Default: do nothing */
+  }
+};
+
+class NoScheduler : public BaseScheduler
+{
+  std::deque<Cva6DynInstPtr> fifo;
+  public:
+  NoScheduler() {}
+  void push(Cva6DynInstPtr inst) override { fifo.push_back(inst); };
+  bool canPop() override { return fifo.size(); };
+  Cva6DynInstPtr front() override {return fifo.front(); };
+  Cva6DynInstPtr pop() override {
+    Cva6DynInstPtr ret = fifo.front();
+    fifo.pop_front();
+    return ret;
+  };
+  void flush() override { fifo.clear(); };
 };
 
 /**
@@ -416,6 +427,8 @@ class SchedulerBB : public BaseScheduler
   /* Interface */
   void push(Cva6DynInstPtr inst) override;
   Cva6DynInstPtr pop() override;
+  // TODO
+  Cva6DynInstPtr front() override { return Cva6DynInst::bubble(); };
   bool canPop() override { return true; /* TODO */}
   private:
   Cva6DynInstPtr internal_pop();
@@ -451,7 +464,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
     std::deque<Cva6DynInstPtr> slots;
     PhysicalRegFile<unsigned int> holdregs;
     PhysicalRegFile<unsigned int> latencyregs;
-    std::map<uint64_t/* Addr */, uint64_t/* Count */> idealstoremap;
+    // std::map<uint64_t/* Addr */, uint64_t/* Count */> idealstoremap;
     void push(Cva6DynInstPtr inst, uint64_t latency){
       slots.push_back(inst);
       /* Set Regs annotation */
@@ -460,11 +473,15 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
         latencyregs[reg] = latency;
       }
       /* Set Memory annotations */
-      uint64_t addr;
-      if (isMemWrite(inst, addr)){
-        idealstoremap[addr | 0b111] += 1;
-      }
+      // uint64_t addr;
+      // if (isMemWrite(inst, addr)){
+      //   idealstoremap[addr | 0b111] += 1;
+      // }
     }
+
+    Cva6DynInstPtr front(){ return slots.front(); }
+    size_t size(){ return slots.size(); }
+
     Cva6DynInstPtr pop(){
       Cva6DynInstPtr inst = slots.front();
       slots.pop_front();
@@ -473,10 +490,10 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
         holdregs[reg] -= 1;
       }
       /* Unset Memory annotations */
-      uint64_t addr;
-      if (isMemWrite(inst, addr)){
-        idealstoremap[addr | 0b111] -= 1;
-      }
+      // uint64_t addr;
+      // if (isMemWrite(inst, addr)){
+      //   idealstoremap[addr | 0b111] -= 1;
+      // }
       return inst;
     }
     bool contains(Cva6DynInstPtr inst){
@@ -484,6 +501,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
     }
     bool empty(){ return slots.empty(); }
     bool isRaW(PhysicalReg &reg){ return holdregs[reg]; }
+    #if 0
     bool isRaWMem(uint64_t addr, Cva6DynInstPtr *store_inst) {
       bool ret = idealstoremap[addr | 0b111];
       if (ret){
@@ -499,8 +517,8 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
       }
       return ret;
     }
+    #endif
     uint64_t execution_latency(PhysicalReg &reg){ return latencyregs[reg]; }
-
   };
 
   /* The main containers */
@@ -513,7 +531,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   /* Base primitives */
   uint64_t getSourceUseLine(PhysicalReg &reg);
   uint64_t getScheduleLine(Cva6DynInstPtr inst);
-  uint64_t getScheduleLineForLoadAddr(uint64_t addr, Cva6DynInstPtr*inst);
+  // uint64_t getScheduleLineForLoadAddr(uint64_t addr, Cva6DynInstPtr*inst);
   uint64_t latency(Cva6DynInstPtr inst){
     return instructioncoststatic(inst);
   }
@@ -521,9 +539,16 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   public:
   /* Interface */
   void push(Cva6DynInstPtr inst) override;
+  Cva6DynInstPtr front() { return s2d.front().front(); };
   Cva6DynInstPtr pop() override;
   bool canPop() override { return inflight_insts_count; }
-
+  void flush() override {
+    s2d.clear();
+    inflight_insts_count = 0;
+  }
+  void violation(uint64_t store_pc, uint64_t load_pc) override {
+    mdp.violation(store_pc, load_pc);
+  }
   /* Constructor */
   SchedulerPierreMichaud(
     const std::string &name,

@@ -114,6 +114,69 @@ inline std::ostream &operator <<(std::ostream &os,
     return reg.str(os);
 }
 
+template <class T>
+class PhysicalRegFile
+{
+  class PhysicalRegHash_t
+  {
+  public:
+    size_t operator()(const PhysicalReg &p) const {
+      return p.isRenammed ? p.phys_reg_idx : -p.virt_reg_idx;
+    }
+  };
+
+  std::vector<T> array;
+  // std::unordered_map<PhysicalReg, T, PhysicalRegHash_t> map;
+  public:
+  PhysicalRegFile() {}
+
+  T& operator[](PhysicalReg reg){
+    fatal_if(!reg.isRenammed, "Reg is not Physical : %s\n", reg);
+    fatal_if(!reg.classValue, "Reg is not valid : %s\n", reg);
+    // Fix size;
+    if (array.size() <= reg.phys_reg_idx){
+      array.resize(reg.phys_reg_idx + 1);
+    }
+    return array[reg.phys_reg_idx];
+  }
+
+  void setall(T val){
+    for (auto& x: array){
+      x = val;
+    }
+  }
+};
+
+template <class T>
+class ArchRegFile
+{
+  private:
+  using arr_t = std::vector<T>;
+  arr_t array;
+  public:
+  using iterator = typename arr_t::iterator;
+  using const_iterator = typename arr_t::const_iterator;
+
+  ArchRegFile() {}
+  T& operator[](PhysicalReg reg){
+    size_t idx = reg.virt_reg_idx;
+    assert(reg.classValue);
+    // Fix size;
+    if (array.size() <= idx){
+      array.resize(idx + 1);
+    }
+    return array[idx];
+  }
+
+  iterator begin() { return array.begin(); }
+  const_iterator begin() const { return array.begin(); }
+  const_iterator cbegin() const { return array.cbegin(); }
+  iterator end() { return array.end(); }
+  const_iterator end() const { return array.end(); }
+  const_iterator cend() const { return array.cend(); }
+};
+
+
 
 class Cva6DynInst;
 
@@ -259,7 +322,7 @@ class Cva6DynInst : public RefCounted
 
     /** memory request generated when load/store */
     DTLBRequestPtr dreq = nullptr;
-
+    Cva6DynInstPtr break_memory_order = bubble();
 
     /************ Execute stage ************/
     bool execute_completed = false;
@@ -268,6 +331,7 @@ class Cva6DynInst : public RefCounted
     std::vector<PhysicalReg> regs_src_phy;
     uint64_t bb_idx;
     uint64_t delta; // DELME LATER, annotate each register
+    std::vector<uint64_t> phys_reg_to_free;
 
     /** Next pc */
     std::unique_ptr<PCStateBase> pc_next; // Next PC

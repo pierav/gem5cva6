@@ -10,6 +10,9 @@
 namespace gem5 {
 namespace cva6 {
 
+// Care number of arch regs
+#define NB_I2ID 64
+
 /* Some utilities */
 std::string riscvRegisterName(RegId reg);
 bool reverseRegisterName(Cva6CPU &cpu, char* name, RegId &reg);

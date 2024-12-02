@@ -30,7 +30,8 @@ IssueUnit::evaluate(){
             is_over_serialise, is_ready);
 
         /* 0) Is instruction present ?*/
-        if (inst->isBubble() || is_over_serialise){
+        // TODO !!! Over Serialise ,????
+        if (inst->isBubble() /* || is_over_serialise */){
             DPRINTF(Cva6Issue, "(port %d) Frontend stall...\n", i);
             stats.issue_stall_front += 1;
             break;
@@ -85,6 +86,10 @@ IssueUnit::evaluate(){
         }
         stats.issue_pass +=1;
 
+        /* Initiate the instruction (reg src are available)*/
+        /* May create fault ! */
+        inst->executeInitiate();
+
         /* Decorate the inst with FU details */
         inst->fuIndex = fus.getValidFuIndex(inst);
         // if (used_fu[inst->fuIndex] && ){
@@ -96,10 +101,9 @@ IssueUnit::evaluate(){
         /* Can insert the instruction into this FU */
         DPRINTF(Cva6Issue, "(port %d) Issuing %s FU: %d\n", i,
             *inst, inst->fuIndex);
+        push(inst); //
         /* markup dst registers as busy */
         scoreboard.issueInst(inst);
-        /* Initiate the instruction (reg src are available)*/
-        inst->executeInitiate();
 
         bool need_execution = true;
         if (need_execution){
@@ -127,9 +131,11 @@ Issue::evaluate() {
        return;
     }
 
-    while (inp.canPop() && cpu.pipeline->iq.canPush()){
-        cpu.pipeline->iq.push(inp.pop());
-    }
+    // OLD
+    // while (inp.canPop() && cpu.pipeline->iq.canPush()){
+    //     cpu.pipeline->iq.push(inp.pop());
+    // }
+
     cpu.pipeline->iq.evaluate();
     cpu.pipeline->iq.dump();
     cpu.pipeline->iq.tick();

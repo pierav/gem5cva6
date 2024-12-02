@@ -21,39 +21,29 @@ Decode::evaluate(){
     return;
   }
 
-  #define USE_SCHED 0
-
-  if (USE_SCHED){
-    // Decode stage : -> [ DECODE ] ->
-    while (inp.canPop() && cpu.pipeline->sa.can_push_at_decode()){
-      Cva6DynInstPtr inst = inp.pop();
-      inst->stage_decode_enter = true;
-      cpu.pipeline->sa.rename(inst);
-      cpu.pipeline->sa.push_at_decode(inst);
-      /* Push also in rob to keep track of isntruction order */
-      cpu.pipeline->rob.push(inst);
-    }
-
-    // Scheduler stage -> [ SCHED ] ->
-    while (cpu.pipeline->sa.can_pop_at_decode() && out.canPush()){
-      out.push(cpu.pipeline->sa.pop_at_decode());
-    }
-  } else {
-    while (inp.canPop() && out.canPush()){
-      Cva6DynInstPtr inst = inp.pop();
-      cpu.pipeline->sa.rename(inst);
-      out.push(inst);
-      /* Push also in rob to keep track of isntruction order */
-      cpu.pipeline->rob.push(inst);
-    }
+  // Decode stage :
+  while (inp.canPop() && cpu.pipeline->sa.can_push_scheduler()){
+    Cva6DynInstPtr inst = inp.pop();
+    inst->stage_decode_enter = true;
+    cpu.pipeline->sa.push_scheduler(inst);
+    /* Push also in rob to keep track of instruction order */
+    cpu.pipeline->rob.push(inst);
   }
+
+  // while (inp.canPop() && out.canPush()){
+  //   Cva6DynInstPtr inst = inp.pop();
+  //   cpu.pipeline->sa.rename(inst);
+  //   out.push(inst);
+  //   /* Push also in rob to keep track of isntruction order */
+  //   cpu.pipeline->rob.push(inst);
+  // }
+
 }
 
 void
 Decode::flush(){
     DPRINTF(Decode, "Flush inp\n");
     inp.flush();
-    //
 }
 
 

@@ -191,41 +191,43 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst){
   DPRINTF(Cva6Sched, "Schedule : line %d for %s\n",
     schedule_line, dumpInstPreg(inst));
 
-  uint64_t addr_load;
-  if (isMemLoad(inst, addr_load)){
+  // uint64_t addr_load;
+  if (!inst->isFault() && inst->staticInst->isLoad()){
+  // if (isMemLoad(inst, addr_load)){
     /* MDP */
     Cva6DynInstPtr store_inst = Cva6DynInst::bubble();;
     bool is_dep = mdp.checkInst(inst->pc->instAddr(), &store_inst);
     uint64_t mdp_sched_line = is_dep ? find_inst_line(store_inst) : 0;
+    schedule_line = std::max(schedule_line, mdp_sched_line);
 
     /* Ideal MDP */
-    Cva6DynInstPtr real_store_inst = Cva6DynInst::bubble();
-    uint64_t ideal_mdp_sched_line = getScheduleLineForLoadAddr(addr_load,
-      &real_store_inst);
-    stats.mdp_false_positive += mdp_sched_line > ideal_mdp_sched_line;
-    stats.mdp_true_positive += (mdp_sched_line == ideal_mdp_sched_line)
-      && is_dep;
-    stats.mdp_true_negative += (mdp_sched_line == ideal_mdp_sched_line)
-      && !is_dep;
-    stats.mdp_false_negative += mdp_sched_line < ideal_mdp_sched_line;
-    DPRINTF(Cva6Sched, " | REAL memRaW line %d : %s\n",
-      ideal_mdp_sched_line, dumpInstPreg(real_store_inst));
-    DPRINTF(Cva6Sched, " | MDP predict line %d : %s\n",
-          mdp_sched_line, dumpInstPreg(store_inst));
+    // Cva6DynInstPtr real_store_inst = Cva6DynInst::bubble();
+    // uint64_t ideal_mdp_sched_line = getScheduleLineForLoadAddr(addr_load,
+    //   &real_store_inst);
+    // stats.mdp_false_positive += mdp_sched_line > ideal_mdp_sched_line;
+    // stats.mdp_true_positive += (mdp_sched_line == ideal_mdp_sched_line)
+    //   && is_dep;
+    // stats.mdp_true_negative += (mdp_sched_line == ideal_mdp_sched_line)
+    //   && !is_dep;
+    // stats.mdp_false_negative += mdp_sched_line < ideal_mdp_sched_line;
+    // DPRINTF(Cva6Sched, " | REAL memRaW line %d : %s\n",
+    //   ideal_mdp_sched_line, dumpInstPreg(real_store_inst));
+    // DPRINTF(Cva6Sched, " | MDP predict line %d : %s\n",
+    //       mdp_sched_line, dumpInstPreg(store_inst));
 
-    /* Anomaly ! */
-    if (mdp_sched_line < ideal_mdp_sched_line){
-      assert(!real_store_inst->isBubble());
-      // TODO reverse
-      mdp.violation(real_store_inst->pc->instAddr(), inst->pc->instAddr());
-    }
-    /* Schedule with ideal */
-    stats.load_bypass_store += 0; // TODO
-    schedule_line = std::max(schedule_line, ideal_mdp_sched_line);
+    // /* Anomaly ! */
+    // if (mdp_sched_line < ideal_mdp_sched_line){
+    //   assert(!real_store_inst->isBubble());
+    //   // TODO reverse
+    //   mdp.violation(real_store_inst->pc->instAddr(), inst->pc->instAddr());
+    // }
+    // /* Schedule with ideal */
+    // stats.load_bypass_store += 0; // TODO
+    // schedule_line = std::max(schedule_line, ideal_mdp_sched_line);
   }
   return schedule_line;
 }
-
+#if 0
 uint64_t
 SchedulerPierreMichaud::getScheduleLineForLoadAddr(uint64_t addr,
   Cva6DynInstPtr *store_inst){
@@ -238,17 +240,21 @@ SchedulerPierreMichaud::getScheduleLineForLoadAddr(uint64_t addr,
   }
   return 0; // Active line
 }
+#endif
 
 void
 SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
   inflight_insts_count += 1;
   /* Mdp things */
-  uint64_t addr;
-  if (isMemWrite(inst, addr)){
+  if (!inst->isFault() && inst->staticInst->isStore()){
     mdp.pushStore(inst->pc->instAddr(), inst);
   }
 
   uint64_t schedule_line = getScheduleLine(inst);
+  /* Ignore already filled lines */
+  while (schedule_line < s2d.size() && s2d[schedule_line].size() >= 4){
+    schedule_line ++;
+  }
   /* Insert instruction */
   if (schedule_line >= s2d.size()){
     s2d.resize(schedule_line + 1);
@@ -265,12 +271,12 @@ SchedulerPierreMichaud::pop() {
   assert(!se.empty());
   Cva6DynInstPtr inst = se.pop();
   /* Fix scheduler ring buffer */
-  while (s2d.front().empty()){ // active_line ++ : Drop SE if clearred
+  /* active_line ++ : Drop SE if clearred */
+  while (!s2d.empty() && s2d.front().empty()){
     s2d.pop_front();
   }
   /* Mdp things */
-  uint64_t addr;
-  if (isMemWrite(inst, addr)){
+  if (!inst->isFault() && inst->staticInst->isStore()){
     mdp.popStore(inst->pc->instAddr(), inst);
   }
   return inst;
