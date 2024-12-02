@@ -221,6 +221,8 @@ Uart8250::read(PacketPtr pkt)
 
     DPRINTF(Uart, "Read register %#x\n", daddr);
 
+    /* Fill with 0 without read to avoid uninitialised data */
+    memset(pkt->getPtr<void>(), 0, pkt->getSize());
     registers.read(daddr, pkt->getPtr<void>(), size);
 
     pkt->makeAtomicResponse();
