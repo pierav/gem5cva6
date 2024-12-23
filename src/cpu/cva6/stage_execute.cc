@@ -82,7 +82,6 @@ Execute::doInstCommitAccounting(Cva6DynInstPtr inst){
     cpu.probeInstCommit(inst->staticInst, inst->pc->instAddr());
 }
 
-
 std::string instDump(Cva6DynInstPtr inst, ThreadContext *thread) {
     std::ostringstream ss;
     ss << *inst;
@@ -173,11 +172,14 @@ Execute::evaluate() {
     while (inp.canPop()){
         inp.pop(); // Instruction are already pushed in fus
     }
+
     // Execution
     fus.advance();
+    cpu.pipeline->stats.exfus += tictac();
 
     // /** Process result */
     cpu.pipeline->iq.execute();
+    cpu.pipeline->stats.expop += tictac();
 
     /* Commit stage*/
     Fault fault;
@@ -226,7 +228,7 @@ Execute::evaluate() {
 
         cpu.pipeline->sa.commit(inst);
 
-        /* Check if there is memory order is violation */
+        /* Check if there is memory order violation */
         cpu.pipeline->iq.markMemoryViolation(inst);
         // TODO: replay from load !
 
@@ -275,7 +277,7 @@ Execute::evaluate() {
     if (resolved_branch.isStreamChange()){
         flush();
     }
-
+    cpu.pipeline->stats.excommit += tictac();
 }
 
 void

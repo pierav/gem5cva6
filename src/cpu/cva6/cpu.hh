@@ -201,6 +201,38 @@ class SpeculativeFault : public FaultBase
     }
 };
 
+class NeverCommitFault : public FaultBase
+{
+  private:
+  public:
+  /* Singleton */
+  NeverCommitFault() {}
+  // void operator=(NeverCommitFault const&)   = delete;
+  // NeverCommitFault(NeverCommitFault const&) = delete;
+
+  static std::shared_ptr<FaultBase> fault(){
+    static auto s = std::make_shared<NeverCommitFault>();
+    return s;
+  }
+  FaultName name() const override { return "Never Commit Fault"; }
+  void invoke(ThreadContext *tc, const StaticInstPtr &inst =
+              nullStaticInstPtr) override {
+    fatal("%s: must be never executed\n", name());
+  }
+};
+
+class FlushBeforeFault : public FaultBase
+{
+  private:
+  uint64_t pc;
+  public:
+  FlushBeforeFault(uint64_t pc_) : pc(pc_) {}
+  FaultName name() const override { return "Flush Before Fault"; }
+  void invoke(ThreadContext *tc, const StaticInstPtr &inst =
+              nullStaticInstPtr) override {
+    tc->pcState(pc);
+  }
+};
 
 /** Structure to hold SenderState info through
  *  translation and memory accesses. */
@@ -233,6 +265,11 @@ class DTLBRequest :
     uint64_t raw_size;
     RequestPtr req2;
     PacketPtr pkt2 = nullptr;
+
+  public:
+    // Forward data used to emmit mem request before store completion
+    uint64_t fwval = 0;
+    uint64_t fwmask = 0; /* 0b1 means bit is forwarded */
 
     enum DTLBRequestState
     {
@@ -377,6 +414,7 @@ class DTLBRequest :
     uint64_t getPaddr() { return req->getPaddr(); }
     uint16_t getSize() { return req->getSize(); }
     RegVal getData();
+    void setRawData(uint64_t val) { memcpy(data, &val, req->getSize()); }
 
     /* Cacheline getter */
     bool isCl(){ return pkt2 != nullptr; }
@@ -392,7 +430,7 @@ class DTLBRequest :
     /* xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx */
     /* @DW - @CL = offset in line ? */
     uint64_t getDWData(){
-      assert(isCl());
+      /*assert(isCl()); if not cl: invalid data */
       return *(uint64_t*)(raw_data + (getDWPaddr() - getClPaddr()));
     }
     uint64_t getDWPaddr(){ return req->getPaddr() & ~0b111; }

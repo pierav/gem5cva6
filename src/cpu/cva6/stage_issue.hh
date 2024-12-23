@@ -65,6 +65,9 @@ class IssueUnit : public Named
       statistics::Distribution numIssued;
       statistics::Vector2d typeIssued;
       statistics::Scalar issue_stall_front;
+      statistics::Scalar issue_stall_serialise;
+      statistics::Scalar issue_stall_full;
+
       statistics::Scalar issue_stall_lambdaorder;
       statistics::Scalar issue_stall_iro;
       statistics::Scalar issue_stall_fu;
@@ -81,6 +84,8 @@ class IssueUnit : public Named
         ADD_STAT(numIssued, "Number of insts issued each cycle"),
         ADD_STAT(typeIssued, "Number of instructions issued per FU type"),
         ADD_STAT(issue_stall_front, "Frontend stalls issue"),
+        ADD_STAT(issue_stall_serialise, "Cycles spent after serialise"),
+        ADD_STAT(issue_stall_full, "Scoreboard is full"),
         ADD_STAT(issue_stall_lambdaorder, "Issue stall : lambda order"),
         ADD_STAT(issue_stall_iro, "Issue read operands stall"),
         ADD_STAT(issue_stall_fu, "Issue functional unit stall"),

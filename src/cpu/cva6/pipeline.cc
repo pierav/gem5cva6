@@ -8,7 +8,18 @@
  */
 #include "cpu/cva6/pipeline.hh"
 
+#include <chrono>
+
 #include "debug/Cva6X.hh"
+
+uint64_t tictac(){
+    using namespace std::chrono;
+    static auto start = high_resolution_clock::now();
+    auto now = high_resolution_clock::now();
+    uint64_t res = duration_cast<microseconds>(now - start).count();
+    start = now;
+    return res;
+}
 
 namespace gem5 {
 namespace cva6 {
@@ -35,11 +46,18 @@ Pipeline::evaluate(){
 
     /* Note that it's important to evaluate the stages in reverse
        order to avoid instant propagation */
+
+    stats.systemhus += tictac(); /* Non-pipelne elapsed time */
     execute.evaluate();
+    stats.exhus += tictac();
     issue.evaluate();
+    stats.exhus += tictac();
     decode.evaluate();
+    stats.exhus += tictac();
     fetch2.evaluate();
+    stats.exhus += tictac();
     fetch1.evaluate();
+    stats.exhus += tictac();
 
     /* We simulate all cycles */
     this->start();

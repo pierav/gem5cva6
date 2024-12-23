@@ -356,8 +356,8 @@ class StreamAnalyser
         reglive[reg] = readytime;
       }
     }
-    DPRINTF(Cva6Sched, "CLOCK(%d) += STALL(%d) :: -> +READY(%d):%d : %s\n",
-      clock, delta_time, delta_finish, readytime, *inst);
+    // DPRINTF(Cva6Sched, "CLOCK(%d) += STALL(%d) :: -> +READY(%d):%d : %s\n",
+    //   clock, delta_time, delta_finish, readytime, *inst);
     return delta_time;
   }
 };
@@ -365,6 +365,7 @@ class StreamAnalyser
 class BaseScheduler
 {
   public:
+  virtual bool canPush() = 0;
   virtual void push(Cva6DynInstPtr inst) = 0;
   virtual bool canPop() = 0;
   virtual Cva6DynInstPtr front() = 0;
@@ -377,9 +378,13 @@ class BaseScheduler
 
 class NoScheduler : public BaseScheduler
 {
+  uint64_t size;
   std::deque<Cva6DynInstPtr> fifo;
   public:
-  NoScheduler() {}
+  NoScheduler(const std::string &name,
+      Cva6CPU &cpu,
+      const BaseCva6CPUParams &params) : size(params.schedSize) {}
+  bool canPush() override { return fifo.size() < size; }
   void push(Cva6DynInstPtr inst) override { fifo.push_back(inst); };
   bool canPop() override { return fifo.size(); };
   Cva6DynInstPtr front() override {return fifo.front(); };
@@ -422,9 +427,9 @@ class SchedulerBB : public BaseScheduler
     for (int i = 0; i < NBBBQ; i++){
         bbq.push_back(new waitqueue_t());
       }
-
-  }
+    }
   /* Interface */
+  bool canPush() override { return true; /* TODO */ }
   void push(Cva6DynInstPtr inst) override;
   Cva6DynInstPtr pop() override;
   // TODO
@@ -434,6 +439,23 @@ class SchedulerBB : public BaseScheduler
   Cva6DynInstPtr internal_pop();
 };
 
+// template<class T>
+// class RibbonBuffer {
+//   uint64_t base_index = 0;
+//   std::deque<T> ribbon;
+
+//   inline uint64_t norm_index(uint64_t idx){
+//     assert(idx >= base_index);
+//     return idx - base_index;
+//   }
+//   T& operator[](uint64_t idx){
+//     return ribbon[norm_index(idx)];
+//   }
+
+//   void push(T& e){
+
+//   }
+// };
 
 class SchedulerPierreMichaud : public BaseScheduler, public Named
 {
@@ -459,13 +481,18 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
     { }
   } stats;
 
-  struct scheduler_entry_t
+  class scheduler_entry_t
   {
+    uint64_t pushed = 0;
     std::deque<Cva6DynInstPtr> slots;
     PhysicalRegFile<unsigned int> holdregs;
     PhysicalRegFile<unsigned int> latencyregs;
+
+    public:
     // std::map<uint64_t/* Addr */, uint64_t/* Count */> idealstoremap;
+    bool canPush(){ return pushed < 4; }
     void push(Cva6DynInstPtr inst, uint64_t latency){
+      pushed++;
       slots.push_back(inst);
       /* Set Regs annotation */
       for (auto &reg: inst->regs_dst_phy){
@@ -486,9 +513,9 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
       Cva6DynInstPtr inst = slots.front();
       slots.pop_front();
       /* Unset Regs annotation */
-      for (auto &reg: inst->regs_dst_phy){
-        holdregs[reg] -= 1;
-      }
+      // for (auto &reg: inst->regs_dst_phy){
+      //   holdregs[reg] -= 1;
+      // }
       /* Unset Memory annotations */
       // uint64_t addr;
       // if (isMemWrite(inst, addr)){
@@ -522,10 +549,33 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   };
 
   /* The main containers */
+  uint64_t size;
   std::deque<scheduler_entry_t> s2d; // 2D array Scheduler
   uint64_t inflight_insts_count = 0;
 
+  uint64_t last_serialisation_time = 0;
+  uint64_t last_store_time = 0;
+  uint64_t base_time = 0;
+
   StoreSet<Cva6DynInstPtr> mdp;
+
+  PhysicalRegFile<unsigned int> timeofregready;
+
+  bool needSerialise(Cva6DynInstPtr inst){
+    if (inst->isFault()) {
+      return true;
+    }
+    if (inst->staticInst->isReadBarrier() || /* Fence */
+       inst->staticInst->isWriteBarrier() || /* Fence */
+       inst->staticInst->isSerializing()){ /* Instruction serial*/
+      return true;
+    }
+    if (inst->staticInst->isAtomic() ||
+       inst->staticInst->isStoreConditional()){
+      return true;
+    }
+    return false;
+  }
   // DEBUG: delme !
   uint64_t find_inst_line(Cva6DynInstPtr inst);
   /* Base primitives */
@@ -538,13 +588,25 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
 
   public:
   /* Interface */
+  bool canPush() override { return inflight_insts_count < size; }
   void push(Cva6DynInstPtr inst) override;
-  Cva6DynInstPtr front() { return s2d.front().front(); };
+  Cva6DynInstPtr front() {
+    assert(inflight_insts_count);
+    assert(s2d.size());
+    assert(s2d.front().size());
+    return s2d.front().front();
+  };
   Cva6DynInstPtr pop() override;
   bool canPop() override { return inflight_insts_count; }
   void flush() override {
+    /* Set base time to final time (clean debug)*/
+    base_time += s2d.size();
+    /* Clear everything */
     s2d.clear();
     inflight_insts_count = 0;
+    last_store_time = 0;
+    last_serialisation_time = 0;
+    timeofregready.setall(0);
   }
   void violation(uint64_t store_pc, uint64_t load_pc) override {
     mdp.violation(store_pc, load_pc);
@@ -553,8 +615,8 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   SchedulerPierreMichaud(
     const std::string &name,
     Cva6CPU &cpu,
-    const BaseCva6CPUParams &params
-  ) : Named(name), stats(cpu), mdp(1024) {}
+    const BaseCva6CPUParams &p
+  ) : Named(name), stats(cpu), size(p.schedSize), mdp(1024) {}
 };
 
 

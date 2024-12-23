@@ -71,6 +71,10 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg){
         }
         case FWABLE: {
             reg.set(prf[reg]);
+            if (prf_isfault[reg]){ /* Forward fault */
+                Fault fault = NeverCommitFault::fault();
+                inst_in->setFaultEx(fault);
+            }
             break;
         }
     }
@@ -158,16 +162,13 @@ Scoreboard::getIssueInst(
         return Cva6DynInst::bubble();
     }
     /* First check serialisation */
-    for (Cva6DynInstPtr dyn: issue_queue){
-        // if (!dyn->issue_completed){
-        //     inst = dyn;
-        //     break;
-        // }
-        if (dyn->isFault() ||
-            dyn->staticInst->isSerializeAfter()){
-            is_over_serialise = true;
-        }
-    }
+    // for (Cva6DynInstPtr dyn: issue_queue){
+    //     if (inst->needSerialise){
+    //         is_over_serialise = true;
+    //         break;
+    //     }
+    // }
+    is_over_serialise = is_serialise_inflight;
     /* Second, retrieve instruction from previous stage */
     if (!cpu.pipeline->sa.can_pop_scheduled()){
         return Cva6DynInst::bubble();
@@ -183,7 +184,8 @@ Scoreboard::issueInst(Cva6DynInstPtr inst){
     inst->issue_completed = true;
     Cva6DynInstPtr i2 = cpu.pipeline->sa.pop_scheduler();
     fatal_if(i2 != inst, "Sched inst must be this one\n");
-
+    /* Markup serialisation */
+    is_serialise_inflight += inst->needSerialise;
     /* Markup registers */
     for (PhysicalReg &reg: inst->regs_dst_phy){
         fatal_if(sb[reg] != FREE, "Reg %s must be freed\n", reg);
@@ -199,6 +201,9 @@ Scoreboard::completeInst(Cva6DynInstPtr inst) {
         assert(sb[reg] == IN_USE);
         sb[reg] = FWABLE;
         prf[reg] = reg.value;
+        if (inst->isFault()){
+            prf_isfault[reg] = true;
+        }
     }
 }
 
@@ -234,6 +239,7 @@ Scoreboard::tick(){
         /* pop issue queue*/
         Cva6DynInstPtr inst = issue_queue.front();
         issue_queue.pop_front();
+        is_serialise_inflight -= inst->needSerialise;
     }
 }
 
@@ -244,6 +250,8 @@ Scoreboard::flush(){
     issue_queue.clear();
     /* Clear inflights registers */
     sb.setall(FREE);
+    prf_isfault.setall(false);
+    is_serialise_inflight = 0;
 }
 
 #if 0
@@ -424,33 +432,45 @@ Scoreboard::markMemoryViolation(Cva6DynInstPtr inst){
     }
     assert(inst->dreq);
     uint64_t store_addr = inst->dreq->getDWPaddr();
+    DPRINTF(Cva6Scoreboard, "STORE MEM CHECK %s\n", *inst);
+    bool ret = false;
     for (Cva6DynInstPtr i2: issue_queue){
+        /* Check all loads issued before the store */
+        DPRINTF(Cva6Scoreboard, "________ CHECK %s\n", *i2);
         if (i2->commit_completed){ // Skip committed
             continue;
         }
-        if (!i2->issue_completed){ // Reach end
+        assert(i2->issue_completed); // InO issue
+        if (i2 == inst){ //
             break;
         }
         /* Is a load */
         if (i2->isFault() || !i2->staticInst->isLoad()){
             continue;
         }
-        /* Is before the store in programme order*/
-        if (i2->isAfterOrEqual(inst)){
+        /* The load must be translated */
+        assert(i2->dreq);
+        if (!i2->dreq->req->hasPaddr()){
             continue;
         }
+        // /* Is before the store in programme order */
+        // if (i2->isAfterOrEqual(inst)){
+        //     fatal("Bad schedule!\n");
+        //     continue;
+        // }
         /* Is address matches */
-        assert(i2->dreq);
         uint64_t load_addr = i2->dreq->getDWPaddr();
+        DPRINTF(Cva6Scoreboard, "Try addr : %d : %s\n",
+            store_addr, load_addr);
         if (store_addr != load_addr){
             continue;
         }
         DPRINTF(Cva6Scoreboard, "BAD DEPS with %s\n", *i2);
         /* Finnaly we detected a memory hazard : mark the load as invalid */
         i2->break_memory_order = inst;
-        return true;
+        ret = true;
     }
-    return false;
+    return ret;
 }
 
 void
@@ -461,9 +481,9 @@ Scoreboard::dump(){
     for (Cva6DynInstPtr inst: issue_queue){
         if (!inst->isBubble()){
             std::ostringstream os;
-            for (int i = 0; i < 4; i++){
-                if ((inst->bb_idx % 4) == i){
-                    os << " " << (inst->bb_idx % 10) << " ";
+            for (int i = 0; i < 5; i++){
+                if ((inst->bb_idx % 5) == i){
+                    os << "" << (inst->bb_idx % 100) << " ";
                 } else {
                     os << " . ";
                 }

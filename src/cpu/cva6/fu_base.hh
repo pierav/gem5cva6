@@ -20,7 +20,7 @@
 namespace gem5 {
 namespace cva6 {
 
-/** Interface Ready/Valid used by fus */
+/** Ready/Valid interface used by fus */
 class ReadyValidIntf
 {
   public:
@@ -34,6 +34,27 @@ class ReadyValidIntf
     virtual void pop(Cva6DynInstPtr inst) = 0;
     /** Flush */
     virtual void flushfrom(Cva6DynInstPtr inst) = 0;
+};
+
+/** Ready/Valid interface aggregation */
+class ReadyValidIntfSplit : public ReadyValidIntf
+{
+  protected:
+  std::vector<ReadyValidIntf*> rvs;
+  virtual ReadyValidIntf *du(Cva6DynInstPtr inst) = 0;
+  public:
+  bool canPush(Cva6DynInstPtr inst){ return du(inst)->canPush(inst); }
+  void push(Cva6DynInstPtr inst){ return du(inst)->push(inst); }
+  bool canPop(Cva6DynInstPtr inst){ return du(inst)->canPop(inst); }
+  void pop(Cva6DynInstPtr inst){ return du(inst)->pop(inst); }
+  void flushfrom(Cva6DynInstPtr inst){
+    for (auto rv: rvs){ rv->flushfrom(inst); }
+  }
+  bool advance(){
+    bool ret = false;
+    for (auto rv: rvs){ ret |= rv->advance(); }
+    return ret;
+  }
 };
 
 /** FU base with a R/V intf */

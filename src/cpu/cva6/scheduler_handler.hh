@@ -30,12 +30,12 @@ inline BaseScheduler& initSched(
   const BaseCva6CPUParams &p) {
   switch (p.schedType){
     case 0:
-      return *new NoScheduler();
+      return *new NoScheduler(name, cpu, p);
     case 2:
       return *new SchedulerPierreMichaud(name, cpu, p);
   }
   fatal("Invalid Scheduler type: %d\n", p.schedType);
-  return *new NoScheduler();
+  return *new NoScheduler(name, cpu, p);
 }
 
 class SA
@@ -43,6 +43,10 @@ class SA
   public:
   /* The scheduler */
   BaseScheduler &scheduler;
+  private:
+  StreamAnalyser isa; /* Input stream analyser */
+  StreamAnalyser osa; /* Output stream analyser */
+
   private:
   /* Renamming */
   PhysicalRegAllocator regalloc;
@@ -52,9 +56,10 @@ class SA
   SA(const std::string &name,
     Cva6CPU &cpu,
     const BaseCva6CPUParams &p) :
-  scheduler(initSched(name, cpu, p)),
-  regalloc(4096)
-  { }
+    scheduler(initSched(name, cpu, p)),
+    isa(cpu, "sa.i", false),
+    osa(cpu, "sa.o", false),
+    regalloc(4096) { }
   private:
   void rename(Cva6DynInstPtr inst){
     inst->bb_idx = bbcnt;
@@ -92,14 +97,29 @@ class SA
   }
 
   public:
-  bool can_push_scheduler(){ return regalloc.canRename(); }
+  bool can_push_scheduler(){
+    return regalloc.canRename() && scheduler.canPush();
+  }
   void push_scheduler(Cva6DynInstPtr inst){
     rename(inst);
     scheduler.push(inst);
+    /* Some static statistics */
+    isa.commit(inst);
   }
   bool can_pop_scheduled(){ return scheduler.canPop(); }
   Cva6DynInstPtr front_scheduler() { return scheduler.front(); }
-  Cva6DynInstPtr pop_scheduler(){ return scheduler.pop(); }
+  Cva6DynInstPtr pop_scheduler(){
+    Cva6DynInstPtr inst = scheduler.pop();
+    /* Ensure stores are InO */
+    if (!inst->isFault() && inst->staticInst->isStore()){
+      static uint64_t oldid = 0;
+      assert(inst->id.fetchSeqNum >= oldid);
+      oldid = inst->id.fetchSeqNum;
+    }
+    /* Some static statistics */
+    osa.commit(inst);
+    return inst;
+  }
 
   void commit(Cva6DynInstPtr inst){
     regalloc.commit(inst);

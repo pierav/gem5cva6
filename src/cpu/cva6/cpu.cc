@@ -102,12 +102,12 @@ DTLBRequest::sendData(){
     /* TLB Fault: do not request cache */
     if (fault != NoFault){
         pkt->makeResponse();
-        printf("FAULT!\n");
+        // printf("FAULT!\n");
         onRecv(pkt);
         return;
     }
 
-    #if 1
+    #if 0
     /* If possible fetch cache line */
     if (mode == BaseMMU::Read &&
         is_cl_req_inorder &&
@@ -127,6 +127,14 @@ DTLBRequest::sendData(){
         );
         req2->setPC(req->getPC()); // Set PC for prefetcher
         // printf("CL for P:%lx V:%lx\n", getClPaddr(), getClVaddr());
+        // TODO
+        // if (req->isMasked()){ /* Propagate mask */
+        //     std::vector<bool> be(getClSize());
+        //     for (int i = 0; i < getClSize(); i++){
+        //         bool in_req = TODO
+        //     }
+        // MUST CARE ABOUT NonForwarded Values
+
         pkt2 = new Packet(req2, MemCmd::ReadReq);
         pkt2->dataStatic<uint8_t>(getClData()); /* set data */
         pkt2->pushSenderState(this);
@@ -179,6 +187,12 @@ DTLBRequest::onRecv(PacketPtr pkt_){
         // Autodestruction
         delete this;
         return;
+    }
+    /* Perform FW if needed */
+    if (fwmask){
+        DPRINTF(Cva6X, "Forward %lx : mask=%lx\n", fwval, fwmask);
+        uint64_t newval = (getData() & ~fwmask) | fwval;
+        setRawData(newval);
     }
     DPRINTF(Cva6X, "Received load/store response\n");
     state = Complete;

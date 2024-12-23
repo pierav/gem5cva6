@@ -22,45 +22,93 @@
 #include "params/BaseCva6CPU.hh"
 #include "sim/ticked_object.hh"
 
+uint64_t tictac();
+
 namespace gem5 {
 namespace cva6 {
 
 enum iq_enum_t { FAST_IQ = 0, LAMBDA_IQ = 1 };
 
+// class MemOrderChecker {
+//   class Table {
+//     std::map<uint64_t /* Addr*/, Cva6DynInstPtr> lsidt; /* LastStoreID T*/
+//     void markStore(Cva6DynInstPtr &inst){
+//       assert(inst->dreq);
+
+//     }
+//     bool checkLoad(Cva6DynInstPtr &inst){
+//       assert(inst->dreq);
+//     }
+//   };
+//   public:
+// }
+
+
 /** The constructed pipeline. */
 class Pipeline : public Ticked
 {
   protected:
-    Cva6CPU &cpu;
+  Cva6CPU &cpu;
 
   public:
-    /** Pipeline shared elements */
-    VP &vp;                /** Value predictor for load insts */
-    VPDPE &dpe;            /** Delayed Prediction Unit */
-    FUPipelines fus;       /** All functional units */
-    RegDeadAnayser rda;
+  /** Pipeline shared elements */
+  VP &vp;                /** Value predictor for load insts */
+  VPDPE &dpe;            /** Delayed Prediction Unit */
+  FUPipelines fus;       /** All functional units */
+  RegDeadAnayser rda;
 
-    /* New components */
-    SA sa;
-    IssueUnit iq;
-    Cva6DynInstChunk rob;
+  /* New components */
+  SA sa;
+  IssueUnit iq;
+  Cva6DynInstChunk rob;
 
   protected:
-    /** Pipeline registers */
-    Latch<ForwardLineData> f1ToF2;      /* fetched line */
-    ForwardInstData        f2ToD;       /* final insts FIFO */
-    ForwardInstData        dToIssue;    /* final insts FIFO */
-    ForwardInstData        IssueToE;    /* instructions to execute */
+  /** Pipeline registers */
+  Latch<ForwardLineData> f1ToF2;      /* fetched line */
+  ForwardInstData        f2ToD;       /* final insts FIFO */
+  ForwardInstData        dToIssue;    /* final insts FIFO */
+  ForwardInstData        IssueToE;    /* instructions to execute */
 
-    BranchData f2ToF1_nff;              /* F2->F1 prediction */
-    BranchData resolved_branch;         /* EX->all stream update */
+  BranchData f2ToF1_nff;              /* F2->F1 prediction */
+  BranchData resolved_branch;         /* EX->all stream update */
 
-    /** Pipeline stages */
-    Execute execute;
-    Issue issue;
-    Decode decode;
-    Fetch2 fetch2;
-    Fetch1 fetch1;
+  /** Pipeline stages */
+  Execute execute;
+  Issue issue;
+  Decode decode;
+  Fetch2 fetch2;
+  Fetch1 fetch1;
+
+  public:
+  struct Stats : public statistics::Group
+  {
+    statistics::Scalar systemhus;
+    statistics::Scalar exhus;
+    statistics::Scalar ishus;
+    statistics::Scalar dehus;
+    statistics::Scalar f2hus;
+    statistics::Scalar f1hus;
+
+    statistics::Scalar exfus;
+    statistics::Scalar expop;
+    statistics::Scalar excommit;
+
+
+
+    Stats(Cva6CPU &cpu) :
+      statistics::Group(&cpu, "pipeline"),
+      ADD_STAT(systemhus, ""),
+      ADD_STAT(exhus, ""),
+      ADD_STAT(ishus, ""),
+      ADD_STAT(dehus, ""),
+      ADD_STAT(f2hus, ""),
+      ADD_STAT(f1hus, ""),
+
+      ADD_STAT(exfus, ""),
+      ADD_STAT(expop, ""),
+      ADD_STAT(excommit, "")
+    { }
+  } stats;
 
   public:
 
@@ -106,15 +154,16 @@ class Pipeline : public Ticked
               resolved_branch,
               f1ToF2.input(),
               f2ToF1_nff,
-              fetch2.inputBuffer)
+              fetch2.inputBuffer),
+      stats(cpu)
   { }
 
 
   public:
     /** Wake up the Fetch unit after quiesce wakeup */
     void wakeupFetch() {
-        fetch1.wakeupFetch();
-        this->start();
+      fetch1.wakeupFetch();
+      this->start();
     }
 
     /** Try to drain the CPU */
@@ -131,6 +180,11 @@ class Pipeline : public Ticked
 
     /** Return the IcachePort belonging to Fetch1 for the CPU */
     Cva6CPU::Cva6CPUPort &getInstPort() { return fetch1.getIcachePort(); }
+
+    bool isCommitInst(Cva6DynInstPtr inst){
+      assert(rob.size());
+      return rob.front() == inst;
+    }
 
 };
 

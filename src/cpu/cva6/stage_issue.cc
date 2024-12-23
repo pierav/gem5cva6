@@ -29,13 +29,28 @@ IssueUnit::evaluate(){
         Cva6DynInstPtr inst = scoreboard.getIssueInst(0,
             is_over_serialise, is_ready);
 
+        /* -1) */
+        if (!scoreboard.canPush()){
+            DPRINTF(Cva6Issue, "(port %d) Scoreboard full...\n", i);
+            stats.issue_stall_full += 1;
+            break;
+        }
+
         /* 0) Is instruction present ?*/
-        // TODO !!! Over Serialise ,????
-        if (inst->isBubble() /* || is_over_serialise */){
+        if (inst->isBubble()){
             DPRINTF(Cva6Issue, "(port %d) Frontend stall...\n", i);
             stats.issue_stall_front += 1;
             break;
         }
+
+        /* 0.1) is_over_serialise ? */
+        if (is_over_serialise){
+            DPRINTF(Cva6Issue, "(port %d) is over serial stall... %s\n",
+                i, *inst);
+            stats.issue_stall_serialise += 1;
+            break;
+        }
+
         // DPRINTF(Cva6Issue, "(port %d) process %s\n", i, *inst);
         if (!inst->issue_start_ts){
             inst->issue_start_ts = cpu.curCycle();

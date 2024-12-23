@@ -61,6 +61,9 @@ protected:
     };
     PhysicalRegFile<reg_state_t> sb;
     PhysicalRegFile<uint64_t> prf;
+    PhysicalRegFile<uint8_t> prf_isfault;
+
+    int is_serialise_inflight = 0;
 
     // RAW valid <=> state in {FREE, FWABLE}
     // WAW valid <=> state in {FREE}

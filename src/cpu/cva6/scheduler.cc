@@ -160,13 +160,18 @@ SchedulerBB::internal_pop(){
 
 uint64_t
 SchedulerPierreMichaud::getSourceUseLine(PhysicalReg &reg){
+  uint64_t alt_line = timeofregready[reg] > base_time ?
+                      timeofregready[reg] - base_time : 0;
+  return alt_line;
   int64_t schedule_line = s2d.size()-1;
   for (; schedule_line >= 0; schedule_line--){
     scheduler_entry_t& se = s2d[schedule_line];
     if (se.isRaW(reg)){
+      assert(alt_line == (se.execution_latency(reg) + schedule_line));
       return se.execution_latency(reg) + schedule_line;
     }
   }
+  fatal_if(alt_line != 0, "Altline must be 0: %d for %s", alt_line, reg);
   return 0; // Active line
 }
 
@@ -185,12 +190,33 @@ SchedulerPierreMichaud::find_inst_line(Cva6DynInstPtr inst){
 uint64_t
 SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst){
   uint64_t schedule_line = 0; // Active line
-  for (auto &reg: inst->regs_src_phy){
-    schedule_line = std::max(schedule_line, getSourceUseLine(reg));
+
+  /* 0) Generate serialisation point */
+  if (needSerialise(inst)){
+    schedule_line = s2d.size();
+    last_serialisation_time = base_time + schedule_line;
+    DPRINTF(Cva6Sched, "Serialise at line %d for %s\n",
+      schedule_line, dumpInstPreg(inst));
+    inst->needSerialise = true; /* Mark isntruction to be serialised */
+    return schedule_line;
   }
-  DPRINTF(Cva6Sched, "Schedule : line %d for %s\n",
+
+  /* 1) Apply serialisation */
+  if (last_serialisation_time > base_time){
+    schedule_line = last_serialisation_time - base_time;
+  }
+
+  /* 2) Dataflow dependancies */
+  for (auto &reg: inst->regs_src_phy){
+    uint64_t sli = getSourceUseLine(reg);
+    DPRINTF(Cva6Sched, "Schedule (RR: %s): line %d for %s\n",
+      reg, sli, dumpInstPreg(inst));
+    schedule_line = std::max(schedule_line, sli);
+  }
+  DPRINTF(Cva6Sched, "Schedule (RR): line %d for %s\n",
     schedule_line, dumpInstPreg(inst));
 
+  /* 3) Store to load dependancies. Use MDP */
   // uint64_t addr_load;
   if (!inst->isFault() && inst->staticInst->isLoad()){
   // if (isMemLoad(inst, addr_load)){
@@ -199,7 +225,10 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst){
     bool is_dep = mdp.checkInst(inst->pc->instAddr(), &store_inst);
     uint64_t mdp_sched_line = is_dep ? find_inst_line(store_inst) : 0;
     schedule_line = std::max(schedule_line, mdp_sched_line);
-
+    if (is_dep){
+        DPRINTF(Cva6Sched, "Schedule (MDP hit): line %d for %s\n",
+          mdp_sched_line, dumpInstPreg(inst));
+    }
     /* Ideal MDP */
     // Cva6DynInstPtr real_store_inst = Cva6DynInst::bubble();
     // uint64_t ideal_mdp_sched_line = getScheduleLineForLoadAddr(addr_load,
@@ -225,6 +254,21 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst){
     // stats.load_bypass_store += 0; // TODO
     // schedule_line = std::max(schedule_line, ideal_mdp_sched_line);
   }
+
+  /* Store order : do not allow store store bypass */
+  if (!inst->isFault() && inst->staticInst->isStore()){
+    /* Is there a store dependancy */
+    if (last_store_time > base_time){
+      uint64_t store_schedule_line = last_store_time - base_time + 1;
+      // +1 to avoid Store leak ??!
+      schedule_line = std::max(schedule_line, store_schedule_line);
+      DPRINTF(Cva6Sched, "Schedule (Store order): line %d T %d for %s\n",
+        schedule_line, schedule_line + base_time, dumpInstPreg(inst));
+    }
+    /* Mark the store schedule line */
+    last_store_time = base_time + schedule_line;
+  }
+
   return schedule_line;
 }
 #if 0
@@ -252,14 +296,25 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
 
   uint64_t schedule_line = getScheduleLine(inst);
   /* Ignore already filled lines */
-  while (schedule_line < s2d.size() && s2d[schedule_line].size() >= 4){
+  while (schedule_line < s2d.size() && !s2d[schedule_line].canPush()){
     schedule_line ++;
   }
-  /* Insert instruction */
   if (schedule_line >= s2d.size()){
     s2d.resize(schedule_line + 1);
   }
+
+  /* Insert instruction */
+  assert(s2d[schedule_line].canPush());
   s2d[schedule_line].push(inst, latency(inst));
+  /* Mark ready line */
+  for (auto &reg: inst->regs_dst_phy){
+    timeofregready[reg] = base_time + schedule_line + latency(inst);
+  }
+  // FIX ARRAY ! TODO NOT NEEDED (only when s2d is empty)
+  while (!s2d.empty() && s2d.front().empty()){
+    s2d.pop_front();
+    base_time ++;
+  }
 }
 
 Cva6DynInstPtr
@@ -274,11 +329,15 @@ SchedulerPierreMichaud::pop() {
   /* active_line ++ : Drop SE if clearred */
   while (!s2d.empty() && s2d.front().empty()){
     s2d.pop_front();
+    base_time ++;
   }
+  DPRINTF(Cva6Sched, "size=%d, T=%d, #inflight=%d\n",
+    s2d.size(), base_time, inflight_insts_count);
   /* Mdp things */
   if (!inst->isFault() && inst->staticInst->isStore()){
     mdp.popStore(inst->pc->instAddr(), inst);
   }
+  DPRINTF(Cva6Sched, "SCHEDPOP: %s\n", dumpInstPreg(inst));
   return inst;
 }
 

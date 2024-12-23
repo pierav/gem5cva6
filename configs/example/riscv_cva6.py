@@ -67,6 +67,7 @@ cva6_config = {
     "lltSize" : DEFAULT(0), # Enable lambda things ...
     "sbSize" : DEFAULT(32), # Scoreboard size
     "schedType" : DEFAULT(0), # The type of scheduler used in frontend
+    "schedSize" : DEFAULT(128),
     "userelf": DEFAULT("") # User elf for symbols only
 }
 o3_config = {

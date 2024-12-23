@@ -58,6 +58,7 @@ class BaseCva6CPU(BaseCPU):
 
     # Scheduler
     schedType = Param.Unsigned(0, "Scheduler type. (0 for no scheduler)")
+    schedSize = Param.Unsigned(128, "Scheduler size")
 
     def addCheckerCpu(self):
         print("Checker not yet supported by Cva6CPU")

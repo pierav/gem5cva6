@@ -107,10 +107,13 @@ Cva6DynInst::basedump(std::ostream &os) const {
   if (isBubble()){
     os << "bubble";
   } else {
-    os << "0x" << std::hex << pc->instAddr() << std::dec << ": ";
+    os << "0x" << std::hex << pc->instAddr() << std::dec;
+    os << " sn:" << id.fetchSeqNum;
+    os << ": ";
     if (isFault()){
       os << "F: " << getFault()->name();
     } else if (staticInst) {
+      #if 0
       #define COLOR "\x1B[1;36m"
       /* CUSTOM */
       if (l_data.is_predicted_first){
@@ -122,6 +125,7 @@ Cva6DynInst::basedump(std::ostream &os) const {
       } else {
           os << PIPENO " " ;
       }
+      #endif
       os << std::setw(30) << std::left
       << staticInst->disassemble(pc->instAddr());
       //   << "Flags=";

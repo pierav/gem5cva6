@@ -37,7 +37,6 @@ Decode::evaluate(){
   //   /* Push also in rob to keep track of isntruction order */
   //   cpu.pipeline->rob.push(inst);
   // }
-
 }
 
 void

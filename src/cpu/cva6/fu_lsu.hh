@@ -47,7 +47,6 @@ class LSUStoreBuffer
   protected:
       Cva6CPU &cpu;
   public:
-
     // the store queue has two parts:
     // 1. Speculative queue
     // 2. Commit queue which is non-speculative
@@ -68,6 +67,9 @@ class LSUStoreBuffer
     // the non-speculative queue
     bool isEmpty();
 
+    // Enhanced version of isEmpty. Allow store to be issued
+    bool isNoPendingReqBefore(Cva6DynInstPtr& inst);
+
     // The load should return the data stored by the most recent store to the
     // same physical address.  The most direct way to implement this is to
     // maintain physical addresses in the store buffer.
@@ -81,6 +83,7 @@ class LSUStoreBuffer
     // checks if the requested load is in the store buffer
     // page offsets are virtually and physically the same
     bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) override;
+    uint64_t lookupSQDW(Cva6DynInstPtr inst, uint64_t& value);
 
     /* Ready Valid interface */
     bool canPush(Cva6DynInstPtr inst_);
@@ -120,79 +123,40 @@ class LSUAmoBuffer
 };
 
 class LSUStoreUnit
-    : public Named, public ReadyValidIntf, public MatchAddrIntf
+    : public Named, public ReadyValidIntfSplit, public MatchAddrIntf
 {
   protected:
-    Cva6CPU &cpu;
+  Cva6CPU &cpu;
   public:
-    LSUStoreBuffer store_buffer;
-    LSUAmoBuffer amo_buffer;
+  LSUStoreBuffer store_buffer;
+  LSUAmoBuffer amo_buffer;
 
   public:
-    LSUStoreUnit(const std::string &name, Cva6CPU &cpu_)
-        : Named(name),
-          cpu(cpu_),
-          store_buffer(name + ".store_buffer", cpu),
-          amo_buffer(name + ".amo_buffer", cpu, &store_buffer) { ; }
+  LSUStoreUnit(const std::string &name, Cva6CPU &cpu_)
+      : Named(name),
+        cpu(cpu_),
+        store_buffer(name + ".store_buffer", cpu),
+        amo_buffer(name + ".amo_buffer", cpu, &store_buffer) {
+    rvs = { &store_buffer, &amo_buffer };
+  }
 
   protected:
-    ReadyValidIntf *destUnit(Cva6DynInstPtr inst){
-
-        /*
-        bool is_load = request->isLoad;
-        bool is_llsc = request->request->isLLSC();
-        bool is_release = request->request->isRelease();
-        bool is_swap = request->request->isSwap();
-        bool is_atomic = request->request->isAtomic();
-        bool bufferable = !(request->request->isStrictlyOrdered() ||
-                    is_llsc || is_swap || is_atomic || is_release);
-        */
-
-        if (inst->staticInst->isAtomic() ||
-            inst->staticInst->isStoreConditional()){
-            return &amo_buffer;
-        } else {
-            return &store_buffer;
-        }
+  ReadyValidIntf *du(Cva6DynInstPtr inst) override {
+    if (inst->staticInst->isAtomic() ||
+        inst->staticInst->isStoreConditional()){
+        return &amo_buffer;
+    } else {
+        return &store_buffer;
     }
+  }
 
   public:
-    bool canPush(Cva6DynInstPtr inst){
-        // We cannot push in store_buffer until
-        // the amo_buffer is not empty
-        return amo_buffer.canPush(inst) &&
-               store_buffer.canPush(inst);
-        // return destUnit(inst)->canPush(inst);
-    }
+  bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) override {
+    return store_buffer.isMaskMatchVaddr(inst, mask) ||
+            amo_buffer.isMaskMatchVaddr(inst, mask);
+  }
 
-    void push(Cva6DynInstPtr inst){
-        assert(canPush(inst));
-        destUnit(inst)->push(inst);
-    }
-
-    bool canPop(Cva6DynInstPtr inst){
-        return destUnit(inst)->canPop(inst);
-    }
-
-    void pop(Cva6DynInstPtr inst){
-        assert(canPop(inst));
-        destUnit(inst)->pop(inst);
-    }
-
-    void flushfrom(Cva6DynInstPtr inst_){
-        store_buffer.flushfrom(inst_);
-        amo_buffer.flushfrom(inst_);
-    }
-
-    bool advance(){
-        return store_buffer.advance() |
-               amo_buffer.advance();
-    }
-
-    bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) override {
-      return store_buffer.isMaskMatchVaddr(inst, mask) ||
-             amo_buffer.isMaskMatchVaddr(inst, mask);
-    }
+  bool lookupSQ(Cva6DynInstPtr inst);
 };
 
 class LSULoadUnit
@@ -234,13 +198,47 @@ class LSULoadUnit
     bool advance();
 };
 
+
+class LSULoadUnitNoLock
+    : public Named, public ReadyValidIntf
+{
+  protected:
+    LSUStoreUnit *su; /** Pointer back to store unit */
+    Cva6CPU &cpu;     /** Pointer back to CPU */
+    struct LSULoadUnitNoLockStats : public statistics::Group
+    {
+      statistics::Scalar full_forward;
+      statistics::Scalar partial_forward;
+      statistics::Scalar no_forward;
+
+      LSULoadUnitNoLockStats(BaseCPU &cpu):
+        statistics::Group(&cpu, "lsu"),
+        ADD_STAT(full_forward, ""),
+        ADD_STAT(partial_forward, ""),
+        ADD_STAT(no_forward, ""){}
+    } stats;
+
+  public:
+    LSULoadUnitNoLock(const std::string &name,
+                LSUStoreUnit *su_,
+                Cva6CPU &cpu_) :
+        Named(name), su(su_), cpu(cpu_), stats(cpu) { }
+
+  bool canPush(Cva6DynInstPtr inst) { return !cpu.dcache->isBlocked(); }
+  void push(Cva6DynInstPtr inst);
+  bool canPop(Cva6DynInstPtr inst){ return inst->dreq->isCompleted(); }
+  void pop(Cva6DynInstPtr inst){ return; /* Nothing to do */ }
+  void flushfrom(Cva6DynInstPtr inst){/* Nothing to do */ }
+  bool advance(){ /* Nothing to do */  return false; }
+};
+
 class LSUBase
     : public Named, public virtual ReadyValidIntf, public MatchAddrIntf
 {
   protected:
     Cva6CPU &cpu;
     LSUStoreUnit store_unit;
-    LSULoadUnit load_unit;
+    LSULoadUnitNoLock load_unit;
     Cva6DynInstChunk lsu_fifo; /** Lsu bypass buffer */
 
   public:
@@ -352,18 +350,22 @@ class LSUWithCheckerLQ : public virtual ReadyValidIntf
   }
 };
 
+
+// LSUWithCheckerLQ
+
 class FULSU
-  : public LSUWithCheckerLQ, public FUBase
+  : public LSUBase, public FUBase
 {
   public:
     FULSU(const std::string &name,
           std::vector<OpClass> &ops,
           Cva6CPU &cpu_,
           const BaseCva6CPUParams &params)
-      : LSUWithCheckerLQ(name, cpu_, params),
+      : LSUBase(name, cpu_, params),
         FUBase(name, ops)
         { ; }
 };
+
 
 } // namespace cva6
 } // namespace gem5

@@ -28,6 +28,19 @@
 namespace gem5 {
 namespace cva6 {
 
+inline uint64_t basemask(Cva6DynInstPtr inst){
+    uint64_t size = inst->dreq->getSize();
+    return size >= sizeof(uint64_t) ? -1ULL : (1ULL << (size*8))-1;
+}
+
+inline uint64_t offsetDW(Cva6DynInstPtr inst){
+    return (inst->dreq->getPaddr() & 0b111) * 8;
+}
+
+inline uint64_t makeMaskDW(Cva6DynInstPtr inst){
+    return basemask(inst) << offsetDW(inst);
+}
+
 /************************************************************************
  * Store buffer
  ***********************************************************************/
@@ -42,7 +55,24 @@ LSUStoreBuffer::isEmpty(){
     return (speculative_queue.size() == 0) && (commit_queue.size() == 0);
 }
 
-bool LSUStoreBuffer::isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask){
+bool
+LSUStoreBuffer::isNoPendingReqBefore(Cva6DynInstPtr& inst){
+    for (auto &i2: speculative_queue){
+        if (!i2->isAfterOrEqual(inst)){
+            return false;
+        }
+    }
+    for (auto &i2: commit_queue){
+        if (!i2->isAfterOrEqual(inst)){
+            return false;
+        }
+    }
+    /* Finnaly return true */
+    return true;
+}
+
+bool
+LSUStoreBuffer::isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask){
     Addr addr_masked = inst->dreq->req->getVaddr() & mask;
     // Check if the page offset matches and whether the entry is valid,
     // for the commit queue
@@ -51,6 +81,8 @@ bool LSUStoreBuffer::isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask){
             continue;
         }
         if ((i2->dreq->req->getVaddr() & mask) == addr_masked){
+            DPRINTF(Cva6LSU, "* Match comitted %s : (%x)\n", *i2,
+                i2->dreq->req->getVaddr());
             return 1;
         }
     }
@@ -60,10 +92,83 @@ bool LSUStoreBuffer::isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask){
             continue;
         }
         if ((i2->dreq->req->getVaddr() & mask) == addr_masked){
+            DPRINTF(Cva6LSU, "* Match speculative %s : (%x)\n", *i2,
+                i2->dreq->req->getVaddr());
             return 1;
         }
     }
     return 0;
+}
+
+uint64_t
+LSUStoreBuffer::lookupSQDW(Cva6DynInstPtr inst, uint64_t& value){
+    uint64_t paddr = inst->dreq->getPaddr();
+    /* Do it from old to new */
+    value = 0;
+    uint64_t valid_mask = 0;
+    uint64_t dwaddr = paddr & ~0b111ULL;
+    for (Cva6DynInstPtr i2: commit_queue){
+        if (!inst->isAfterOrEqual(i2)){ // Ignore futur instructuions
+            continue;
+        }
+        if (dwaddr == i2->dreq->getDWPaddr()){
+            DPRINTF(Cva6LSU, "MatchC %s:%s\n", *i2, i2->dreq->name());
+            uint64_t cur_mask = makeMaskDW(i2);
+            /* Update value and mask */
+            value &= ~cur_mask; /* Remove old value */
+            value |= i2->dreq->getDWData() & cur_mask; /* Set new value */
+            valid_mask |= cur_mask; /* Update mask */
+        }
+    }
+    for (Cva6DynInstPtr i2: speculative_queue){
+        if (!inst->isAfterOrEqual(i2)){ // Ignore futur instructuions
+            continue;
+        }
+        if (dwaddr == i2->dreq->getDWPaddr()){
+            DPRINTF(Cva6LSU, "MatchS %s:%s\n", *i2, i2->dreq->name());
+            uint64_t cur_mask = makeMaskDW(i2);
+            /* Update value and mask */
+            value &= ~cur_mask; /* Remove old value */
+            value |= i2->dreq->getDWData() & cur_mask; /* Set new value */
+            valid_mask |= cur_mask; /* Update mask */
+        }
+    }
+    return valid_mask;
+}
+
+bool
+LSUStoreUnit::lookupSQ(Cva6DynInstPtr inst){
+    uint64_t value = 0;
+    uint64_t valid_mask = store_buffer.lookupSQDW(inst, value);
+    /* Normalise */
+    valid_mask = (valid_mask >> offsetDW(inst)) & basemask(inst);
+    value = (value >> offsetDW(inst)) & basemask(inst);
+
+    /* Forward something but not everything */
+    if ((valid_mask & basemask(inst)) == basemask(inst)){
+        DPRINTF(Cva6LSU, "Forward Full : %lx: mask=%lx\n", value, valid_mask);
+        inst->dreq->complete_forward(value);
+        return true;
+    }
+    /* Adjust dreq to fit inflights */
+    if (valid_mask){
+        DPRINTF(Cva6LSU, "Forward partial : %lx : mask=%lx\n",
+            value, valid_mask);
+        /* Only read unsets bytes */
+        // CANNOT WORKS "be" is only used to perform sparse write
+        // std::vector<bool> be;
+        // be.resize(inst->dreq->getSize());
+        // for (int i = 0; i < inst->dreq->getSize(); i++){
+        //   be[i] = (valid_mask >> (i * 8)) & 1 ? false : true;
+        // }
+        // inst->dreq->req->setByteEnable(be);
+        /* Set value in payload (debug) */
+        inst->dreq->setRawData(value);
+        /* Setup forward flags */
+        inst->dreq->fwval = value;
+        inst->dreq->fwmask = valid_mask;
+    }
+    return false;
 }
 
 bool
@@ -131,20 +236,16 @@ LSUStoreBuffer::advance(){
     // static int pop_lat = 0;
     DPRINTF(Cva6LSU, "Advance... [%d]->[%d]\n", speculative_queue.size(),
         commit_queue.size());
-
+    for (Cva6DynInstPtr inst: commit_queue){
+        DPRINTF(Cva6LSU, "SQC: %s %s\n", *inst, inst->dreq->name());
+    }
     /** send store_buffer & commit_queue to memory */
     /* Received data ? -> pop */
     if (!commit_queue.empty()){
         Cva6DynInstPtr inst = commit_queue.front();
         DTLBRequestPtr dreq = inst->dreq;
-        assert(dreq);
         if (inst->dreq->isCompleted()){
-        //     pop_lat++;
-        // }
-        // if (pop_lat == 3){
-        //     pop_lat = 0;
             DPRINTF(Cva6LSU, POP_STR "%s %s\n", *inst, dreq->name());
-            // inst->untrackDreq();
             commit_queue.pop(inst);
         }
     }
@@ -232,14 +333,16 @@ LSUAmoBuffer::advance(){
     if (amo_buffer->isBubble()){
         DPRINTF(Cva6LSU, "Advance...\n");
     } else {
-        DPRINTF(Cva6LSU, "Advance... store_buffer->isEmpty()=%d %s %s\n",
-        store_buffer->isEmpty(), *amo_buffer, amo_buffer->dreq->name());
+        DPRINTF(Cva6LSU, "Advance... store_buffer()=%d %s %s\n",
+        store_buffer->isNoPendingReqBefore(amo_buffer),
+        *amo_buffer, amo_buffer->dreq->name());
     }
 
     /* Need to send memory request ? */
     if (!amo_buffer->isBubble() && /* Data to transfer */
-        store_buffer->isEmpty() && /* All stores have drained */
-        cpu.pipeline->iq.isCommitInst(amo_buffer) &&
+        store_buffer->isNoPendingReqBefore(amo_buffer) &&
+        /* All stores have drained */
+        cpu.pipeline->isCommitInst(amo_buffer) &&
         /* The AMO is in the commit stage */
         amo_buffer->dreq->isTranslated() && /* Not already sent*/
         !cpu.dcache->isBlocked() /* Cache ready */
@@ -273,8 +376,8 @@ LSUAmoBuffer::isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask){
 bool
 LSULoadUnit::canPush(Cva6DynInstPtr inst_){
     /** Check collision with store unit (SQ and amo buffer) */
-    return loadqueue.size() < 8 &&
-        !su->isPageOffsetMatches(inst_);
+    return loadqueue.size() < 8 // TODO! Cannot be one day true
+            && !su->isPageOffsetMatches(inst_); //
 }
 
 void
@@ -326,21 +429,25 @@ LSULoadUnit::advance(){
             inst->dreq->name());
 
         /* Instruction is translated */
-        if (!inst->dreq->isTranslated()){
+        if (!inst->dreq->isTranslated()){ /* Must be true one day */
+            break;
+        }
+        /* Cache is ready */
+        if (!insts_in_memory.canPush(inst)){ /* Always true */
+            break;
+        }
+        if (cpu.dcache->isBlocked()){ /* Must be true one day */
             break;
         }
         /* If inst is uncacheable, wait inst until commit head */
         if (inst->dreq->req->isUncacheable()){
-            if (!cpu.pipeline->iq.isCommitInst(inst)){
-                break;
+            if (!cpu.pipeline->isCommitInst(inst)){
+                /* Cannot be true one day ! Solution is to replay */
+                // break; // OLD !
+                // NEW: Mark a replay fault
+                uint64_t pc = inst->pc->instAddr();
+                inst->dreq->fault = std::make_shared<FlushBeforeFault>(pc);
             }
-        }
-        /* Cache is ready */
-        if (!insts_in_memory.canPush(inst)){
-            break;
-        }
-        if (cpu.dcache->isBlocked()){
-            break;
         }
 
         /* When all conditions are met, send data */
@@ -415,13 +522,16 @@ LSUBase::advance(){
         if (inst->dreq->fault != NoFault){
             lsu_fifo.pop(inst);
             continue;
-        } else {
-            assert(inst->dreq->req->hasPaddr());
-            if (destUnit(inst)->canPush(inst)){
-                destUnit(inst)->push(inst);
-                lsu_fifo.pop(inst);
-                continue;
-            }
+        }
+        assert(inst->dreq->req->hasPaddr());
+        /* Amo must be drained */
+        if (store_unit.amo_buffer.isPageOffsetMatches(inst)){
+            break;
+        }
+        if (destUnit(inst)->canPush(inst)){
+            destUnit(inst)->push(inst);
+            lsu_fifo.pop(inst);
+            continue;
         }
         break; // Break if no access emitted
     }
@@ -541,6 +651,31 @@ LSUBaseChecker::advance(){
         break;
     }
     return true;
+}
+
+void
+LSULoadUnitNoLock::push(Cva6DynInstPtr inst){
+    /* Preliminary check for loads */
+    if (inst->dreq->req->isUncacheable()){
+        if (!cpu.pipeline->isCommitInst(inst)){
+            uint64_t pc = inst->pc->instAddr();
+            inst->dreq->fault = std::make_shared<FlushBeforeFault>(pc);
+            inst->dreq->sendData();
+            return;
+        }
+    }
+    /* Forward from SQ if possible */
+    if (su->lookupSQ(inst)){
+        assert(inst->dreq->isCompleted());
+        stats.full_forward += 1;
+        return; /* Req completed */
+    }
+    /* Finally read data from cache */
+    assert(!cpu.dcache->isBlocked()); /* Cache ready */
+    stats.no_forward += !inst->dreq->req->isMasked();
+    stats.partial_forward += inst->dreq->req->isMasked();
+    inst->dreq->sendData();
+    return;
 }
 
 } // namespace cva6

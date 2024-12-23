@@ -313,6 +313,7 @@ class Cva6DynInst : public RefCounted
     /************ Decode stage ***********/
     // All static informations from decoded insts.
     ExecContextStaticData static_data;
+    bool needSerialise = false;
 
     /************ Issue stage ************/
     uint64_t issue_start_ts = 0;
@@ -499,6 +500,11 @@ class Cva6DynInst : public RefCounted
     void setFaultEx(Fault fault_){
       fault_ex = fault_;
     }
+
+    // void switchToReplayFault(){
+    //   assert(!isFault());
+    //   fault_ex = std::make_shared(FlushBeforeFault(pc->instAddr()));
+    // }
 
     Fault getFault() const {
       if (fault != NoFault){
