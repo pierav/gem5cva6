@@ -197,8 +197,25 @@ Execute::evaluate() {
         Cva6DynInstPtr inst = cpu.pipeline->rob.front();
         DPRINTF(Cva6Execute, "rob entry: %s\n", *inst);
 
+        if (!inst->execute_completed){
+            DPRINTF(Cva6Execute, "(port%d) inst is not ex : %s\n", i, *inst);
+            break;
+        }
+
+        /* Check is mdpc is valid */
+        /* Care inst must have a valid paddr */
+        // if (cpu.pipeline->mdpc.isViolation(inst) !=
+        //        !inst->break_memory_order->isBubble()){
+        //     fatal("REF: %s\n testid: %d, mdpccommitid: %d\n",
+        //      *inst->break_memory_order,
+        //         inst->last_store_id,
+        //    cpu.pipeline->mdpc.commit_table.checkLoad(inst));
+        // }
+        uint64_t pcstore;
+        bool is_mem_violation = cpu.pipeline->mdpc.isViolation(inst, pcstore);
+        // bool is_mem_violation_ref = !inst->break_memory_order->isBubble()
         /* Inst produced bad value */
-        if (!inst->break_memory_order->isBubble()){
+        if (is_mem_violation){
             DPRINTF(Cva6Execute, "MISSPRED MEM ORDER : %s\n", *inst);
             std::unique_ptr<PCStateBase> target(
                 cpu.getContext()->pcState().clone());
@@ -209,16 +226,12 @@ Execute::evaluate() {
                 *target,
                 true // Unused
             );
-            Cva6DynInstPtr storeinst = inst->break_memory_order;
-            cpu.pipeline->sa.scheduler.violation(storeinst->pc->instAddr(),
-                inst->pc->instAddr());
+            // Cva6DynInstPtr storeinst = inst->break_memory_order;
+            // storeinst->pc->instAddr()
+            uint64_t pcload = inst->pc->instAddr();
+            cpu.pipeline->sa.scheduler.violation(pcstore, pcload);
             flush();
             return; /* EARLY FLUSH : do not commit */
-        }
-
-        if (!inst->execute_completed){
-            DPRINTF(Cva6Execute, "(port%d) inst is not ex : %s\n", i, *inst);
-            break;
         }
 
         commitInst(inst, resolved_branch);
@@ -227,9 +240,9 @@ Execute::evaluate() {
         cpu.pipeline->rob.pop(inst);
 
         cpu.pipeline->sa.commit(inst);
-
+        cpu.pipeline->mdpc.commit(inst);
         /* Check if there is memory order violation */
-        cpu.pipeline->iq.markMemoryViolation(inst);
+        // cpu.pipeline->iq.markMemoryViolation(inst);
         // TODO: replay from load !
 
         // iq.commit(inst);

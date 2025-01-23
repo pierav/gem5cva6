@@ -459,6 +459,81 @@ class SchedulerBB : public BaseScheduler
 
 class SchedulerPierreMichaud : public BaseScheduler, public Named
 {
+  class MinLineAnalyser
+  {
+    uint64_t max_last_time = 0;
+    uint64_t size; // For now the SQ size
+    std::deque<uint64_t /* Times */> times;
+
+    public:
+    MinLineAnalyser(uint64_t size_) : size(size_) {}
+
+    uint64_t getMinSchedulerTime(Cva6DynInstPtr& inst){
+      return max_last_time;
+    }
+
+    /* When instruction is scheduled */
+    void onSchedule(Cva6DynInstPtr& inst, uint64_t time){
+      /* By default push in fifo the schedule line */
+      times.push_back(time);
+      /* Update max_last_time if needed */
+      if (times.size() == size){
+        max_last_time = std::max(times.front(), max_last_time);
+        times.pop_front();
+      }
+    }
+
+    void flush(){
+      max_last_time = 0; // Nothing in flight
+      times.clear();
+    }
+  };
+
+  class MinLineAnalyserV2
+  {
+    uint64_t themll = 0;
+    uint64_t mll = 0; /* Min Last Line */
+    uint64_t size; // For now the SQ size
+    std::deque<uint64_t /* Times */> times;
+
+    public:
+    MinLineAnalyserV2(uint64_t size_) : size(size_) {}
+
+    virtual bool isConstraints(Cva6DynInstPtr& inst){
+      return !inst->isFault() && inst->staticInst->isStore();
+    }
+
+    uint64_t getMinSchedulerTime(Cva6DynInstPtr& inst){
+      // assert(isConstraints(inst));
+      // if (times.size() == size){
+      //   return times.front();
+      // }
+      return themll;
+    }
+
+    /* When instruction is scheduled */
+    void onSchedule(Cva6DynInstPtr& inst, uint64_t time){
+      /* By default update MLL MaxLastLine */
+      mll = std::max(time, mll);
+      /* push in fifo the schedule line if store */
+      if (isConstraints(inst)){
+        times.push_back(mll);
+        /* Update mll if needed */
+        if (times.size() > size){
+          themll = times.front();
+          times.pop_front();
+        }
+      }
+    }
+
+    void flush(){
+      mll = 0; // Nothing in flight
+      themll = 0;
+      times.clear();
+    }
+  };
+
+
   struct Stats : public statistics::Group
   {
     statistics::Scalar req;
@@ -561,6 +636,8 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
 
   PhysicalRegFile<unsigned int> timeofregready;
 
+  MinLineAnalyserV2 mla;
+
   bool needSerialise(Cva6DynInstPtr inst){
     if (inst->isFault()) {
       return true;
@@ -616,7 +693,9 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
     const std::string &name,
     Cva6CPU &cpu,
     const BaseCva6CPUParams &p
-  ) : Named(name), stats(cpu), size(p.schedSize), mdp(1024) {}
+  ) : Named(name),
+      stats(cpu), size(p.schedSize), mdp(1024),
+      mla(16) {}
 };
 
 

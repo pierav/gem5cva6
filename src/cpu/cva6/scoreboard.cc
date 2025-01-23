@@ -437,20 +437,20 @@ Scoreboard::markMemoryViolation(Cva6DynInstPtr inst){
     for (Cva6DynInstPtr i2: issue_queue){
         /* Check all loads issued before the store */
         DPRINTF(Cva6Scoreboard, "________ CHECK %s\n", *i2);
-        if (i2->commit_completed){ // Skip committed
+        if (i2->id.fetchSeqNum == inst->id.fetchSeqNum){
+            /* FIRST OF ALL:  Stop at ourself !*/
+            break;
+        }
+        if (i2->commit_completed){ /* Skip committed */
             continue;
         }
         assert(i2->issue_completed); // InO issue
-        if (i2 == inst){ //
-            break;
-        }
         /* Is a load */
         if (i2->isFault() || !i2->staticInst->isLoad()){
             continue;
         }
-        /* The load must be translated */
         assert(i2->dreq);
-        if (!i2->dreq->req->hasPaddr()){
+        if (!i2->dreq->req->hasPaddr()){ /* The load must be translated */
             continue;
         }
         // /* Is before the store in programme order */
@@ -475,6 +475,9 @@ Scoreboard::markMemoryViolation(Cva6DynInstPtr inst){
 
 void
 Scoreboard::dump(){
+    if (!(GEM5_UNLIKELY(TRACING_ON && ::gem5::debug::Cva6Scoreboard))) {
+        return;
+    }
     int i = 0;
     char hit[2] = {' ', 'x'};
     DPRINTF(Cva6Scoreboard, "Scoreboard [I][E][C]\n");
@@ -488,7 +491,7 @@ Scoreboard::dump(){
                     os << " . ";
                 }
             }
-            DPRINTF(Cva6Scoreboard, "sbe#%d [%c][%c][%c] %s%s\n",
+            DPRINTF(Cva6Scoreboard, "sbe#%3d [%c][%c][%c] %s%s\n",
             i++, hit[inst->issue_completed], hit[inst->execute_completed],
             hit[inst->commit_completed], os.str(), *inst);
         }

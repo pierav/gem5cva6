@@ -142,6 +142,11 @@ Cva6DynInst::basedump(std::ostream &os) const {
         }
       }
     }
+    if (issue_completed && !execute_completed){
+        if (dreq){
+            os << dreq->name();
+        }
+    }
   }
   return os;
 }
@@ -149,6 +154,7 @@ Cva6DynInst::basedump(std::ostream &os) const {
 std::ostream &operator <<(std::ostream &os, const Cva6DynInst &inst){
     return inst.basedump(os);
 }
+
 
 Fault
 Cva6DynInst::initiateMemRead(Addr addr, unsigned int size,

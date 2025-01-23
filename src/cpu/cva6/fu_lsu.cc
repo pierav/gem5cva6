@@ -529,8 +529,11 @@ LSUBase::advance(){
             break;
         }
         if (destUnit(inst)->canPush(inst)){
+            /* Push inst */
             destUnit(inst)->push(inst);
             lsu_fifo.pop(inst);
+            /* Mark MDP checker */
+            cpu.pipeline->mdpc.issue(inst);
             continue;
         }
         break; // Break if no access emitted

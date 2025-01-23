@@ -51,13 +51,13 @@ Pipeline::evaluate(){
     execute.evaluate();
     stats.exhus += tictac();
     issue.evaluate();
-    stats.exhus += tictac();
+    stats.ishus += tictac();
     decode.evaluate();
-    stats.exhus += tictac();
+    stats.dehus += tictac();
     fetch2.evaluate();
-    stats.exhus += tictac();
+    stats.f2hus += tictac();
     fetch1.evaluate();
-    stats.exhus += tictac();
+    stats.f1hus += tictac();
 
     /* We simulate all cycles */
     this->start();

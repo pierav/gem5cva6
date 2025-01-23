@@ -45,7 +45,9 @@ std::string dumpInstPreg(Cva6DynInstPtr& inst){
         os << " . ";
       }
     }
-    os << "0x" << std::hex << inst->pc->instAddr() << std::dec << ": ";
+    os << "0x" << std::hex << inst->pc->instAddr() << std::dec;
+    os << " sn:" << inst->id.fetchSeqNum;
+    os << ": ";
     if (inst->isFault()){
       os << "F: " << inst->getFault()->name();
     } else if (inst->staticInst) {
@@ -265,10 +267,16 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst){
       DPRINTF(Cva6Sched, "Schedule (Store order): line %d T %d for %s\n",
         schedule_line, schedule_line + base_time, dumpInstPreg(inst));
     }
-    /* Mark the store schedule line */
-    last_store_time = base_time + schedule_line;
   }
-
+  if (mla.isConstraints(inst)){
+    uint64_t mla_time = mla.getMinSchedulerTime(inst);
+    if (mla_time > base_time){
+      uint64_t store_schedule_line = mla_time - base_time + 1;
+      schedule_line = std::max(schedule_line, store_schedule_line);
+        DPRINTF(Cva6Sched, "Schedule (Store NOLOCK): line %d T %d for %s\n",
+        schedule_line, schedule_line + base_time, dumpInstPreg(inst));
+    }
+  }
   return schedule_line;
 }
 #if 0
@@ -310,6 +318,19 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
   for (auto &reg: inst->regs_dst_phy){
     timeofregready[reg] = base_time + schedule_line + latency(inst);
   }
+  /* Mark store */
+  if (!inst->isFault() && inst->staticInst->isStore()){
+    last_store_time = base_time + schedule_line;
+  }
+  /* PR: TODO CARE BONUS ADD LOADS */
+  // if (!inst->isFault() && inst->staticInst->isLoad()){
+  //   last_store_time = std::max(last_store_time, base_time + schedule_line);
+  // }
+  DPRINTF(Cva6Sched, "SCHEDPUSH %d: %s\n", base_time + schedule_line,
+    dumpInstPreg(inst));
+
+  mla.onSchedule(inst, base_time + schedule_line);
+
   // FIX ARRAY ! TODO NOT NEEDED (only when s2d is empty)
   while (!s2d.empty() && s2d.front().empty()){
     s2d.pop_front();

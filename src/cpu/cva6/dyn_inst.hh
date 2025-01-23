@@ -324,6 +324,7 @@ class Cva6DynInst : public RefCounted
     /** memory request generated when load/store */
     DTLBRequestPtr dreq = nullptr;
     Cva6DynInstPtr break_memory_order = bubble();
+    uint64_t last_store_id = 0; /* Used to detech mem hazard */
 
     /************ Execute stage ************/
     bool execute_completed = false;
