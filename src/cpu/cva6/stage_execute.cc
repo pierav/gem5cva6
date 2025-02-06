@@ -234,6 +234,35 @@ Execute::evaluate() {
             return; /* EARLY FLUSH : do not commit */
         }
 
+        /* Annotate effective base address */
+        if (inst->vp_data.is_predicted){
+            inst->vp_data.eff_addr = cpu.thread->getReg(
+                inst->staticInst->srcRegIdx(0));
+        }
+        /* Compare the pred base addr with the real one */
+        if (inst->vp_data.addr_taken){
+            assert(inst->staticInst);
+            assert(inst->staticInst->isLoad());
+            uint64_t pred_addr = inst->vp_data.t1_addr;
+            // TODO: Read PRF in scoreboard
+            bool missprediction = pred_addr != inst->vp_data.eff_addr;
+            if (missprediction){
+                DPRINTF(Cva6Execute, "MISSPRED ADDR : %s\n", *inst);
+                std::unique_ptr<PCStateBase> target(
+                    cpu.getContext()->pcState().clone());
+                resolved_branch = BranchData(
+                    false, /* Is predicted : need update */
+                    true, /* Need squash */
+                    0, /* sn:0 Squash everything */
+                    *target,
+                    true // Unused
+                );
+                cpu.pipeline->sa.misspredaddr(inst, inst->vp_data.eff_addr);
+                flush();
+                return; /* EARLY FLUSH : do not commit */
+            }
+        }
+
         commitInst(inst, resolved_branch);
         cpu.pipeline->iq.commit(inst);
         assert(cpu.pipeline->rob.front() == inst);

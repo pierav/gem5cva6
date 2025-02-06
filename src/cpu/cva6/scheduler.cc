@@ -165,6 +165,7 @@ SchedulerPierreMichaud::getSourceUseLine(PhysicalReg &reg){
   uint64_t alt_line = timeofregready[reg] > base_time ?
                       timeofregready[reg] - base_time : 0;
   return alt_line;
+  #if 0
   int64_t schedule_line = s2d.size()-1;
   for (; schedule_line >= 0; schedule_line--){
     scheduler_entry_t& se = s2d[schedule_line];
@@ -175,6 +176,7 @@ SchedulerPierreMichaud::getSourceUseLine(PhysicalReg &reg){
   }
   fatal_if(alt_line != 0, "Altline must be 0: %d for %s", alt_line, reg);
   return 0; // Active line
+  #endif
 }
 
 uint64_t
@@ -190,36 +192,22 @@ SchedulerPierreMichaud::find_inst_line(Cva6DynInstPtr inst){
 }
 
 uint64_t
-SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst){
-  uint64_t schedule_line = 0; // Active line
-
-  /* 0) Generate serialisation point */
-  if (needSerialise(inst)){
-    schedule_line = s2d.size();
-    last_serialisation_time = base_time + schedule_line;
-    DPRINTF(Cva6Sched, "Serialise at line %d for %s\n",
-      schedule_line, dumpInstPreg(inst));
-    inst->needSerialise = true; /* Mark isntruction to be serialised */
-    return schedule_line;
-  }
-
-  /* 1) Apply serialisation */
-  if (last_serialisation_time > base_time){
-    schedule_line = last_serialisation_time - base_time;
-  }
-
-  /* 2) Dataflow dependancies */
+SchedulerPierreMichaud::getSLRR(Cva6DynInstPtr &inst){
+  uint64_t schedule_line = 0;
   for (auto &reg: inst->regs_src_phy){
     uint64_t sli = getSourceUseLine(reg);
-    DPRINTF(Cva6Sched, "Schedule (RR: %s): line %d for %s\n",
-      reg, sli, dumpInstPreg(inst));
+    DPRINTF(Cva6Sched, "Schedule (RR: %s): line %d T %d for %s\n",
+      reg, sli, sli + base_time, dumpInstPreg(inst));
     schedule_line = std::max(schedule_line, sli);
   }
-  DPRINTF(Cva6Sched, "Schedule (RR): line %d for %s\n",
-    schedule_line, dumpInstPreg(inst));
+  DPRINTF(Cva6Sched, "Schedule (RR:          ): line %d T %d for %s\n",
+    schedule_line, schedule_line + base_time, dumpInstPreg(inst));
+  return schedule_line;
+}
 
-  /* 3) Store to load dependancies. Use MDP */
-  // uint64_t addr_load;
+uint64_t
+SchedulerPierreMichaud::getSLMDP(Cva6DynInstPtr &inst){
+  uint64_t schedule_line = 0;
   if (!inst->isFault() && inst->staticInst->isLoad()){
   // if (isMemLoad(inst, addr_load)){
     /* MDP */
@@ -228,8 +216,8 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst){
     uint64_t mdp_sched_line = is_dep ? find_inst_line(store_inst) : 0;
     schedule_line = std::max(schedule_line, mdp_sched_line);
     if (is_dep){
-        DPRINTF(Cva6Sched, "Schedule (MDP hit): line %d for %s\n",
-          mdp_sched_line, dumpInstPreg(inst));
+        DPRINTF(Cva6Sched, "Schedule (MDP hit      ): line %d T %d for %s\n",
+          mdp_sched_line, mdp_sched_line + base_time, dumpInstPreg(inst));
     }
     /* Ideal MDP */
     // Cva6DynInstPtr real_store_inst = Cva6DynInst::bubble();
@@ -256,7 +244,12 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst){
     // stats.load_bypass_store += 0; // TODO
     // schedule_line = std::max(schedule_line, ideal_mdp_sched_line);
   }
+  return schedule_line;
+}
 
+uint64_t
+SchedulerPierreMichaud::getSLSTORE(Cva6DynInstPtr &inst){
+  uint64_t schedule_line = 0;
   /* Store order : do not allow store store bypass */
   if (!inst->isFault() && inst->staticInst->isStore()){
     /* Is there a store dependancy */
@@ -264,7 +257,7 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst){
       uint64_t store_schedule_line = last_store_time - base_time + 1;
       // +1 to avoid Store leak ??!
       schedule_line = std::max(schedule_line, store_schedule_line);
-      DPRINTF(Cva6Sched, "Schedule (Store order): line %d T %d for %s\n",
+      DPRINTF(Cva6Sched, "Schedule (Store order  ): line %d T %d for %s\n",
         schedule_line, schedule_line + base_time, dumpInstPreg(inst));
     }
   }
@@ -273,12 +266,57 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst){
     if (mla_time > base_time){
       uint64_t store_schedule_line = mla_time - base_time + 1;
       schedule_line = std::max(schedule_line, store_schedule_line);
-        DPRINTF(Cva6Sched, "Schedule (Store NOLOCK): line %d T %d for %s\n",
+        DPRINTF(Cva6Sched, "Schedule (Store NOLOCK ): line %d T %d for %s\n",
         schedule_line, schedule_line + base_time, dumpInstPreg(inst));
     }
   }
   return schedule_line;
 }
+
+uint64_t
+SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta){
+  uint64_t schedule_line = 0; // Active line
+  delta = latency(inst); // Default latency
+
+  /* 0) Generate serialisation point */
+  if (needSerialise(inst)){
+    schedule_line = s2d.size();
+    last_serialisation_time = base_time + schedule_line;
+    DPRINTF(Cva6Sched, "Serialise at line %d for %s\n",
+      schedule_line, dumpInstPreg(inst));
+    inst->needSerialise = true; /* Mark isntruction to be serialised */
+    return schedule_line;
+  }
+
+  /* 1) Apply serialisation */
+  if (last_serialisation_time > base_time){
+    schedule_line = last_serialisation_time - base_time;
+  }
+
+  uint64_t sl_rr = getSLRR(inst);
+  uint64_t sl_mdp = getSLMDP(inst);
+  uint64_t sl_st = getSLSTORE(inst);
+
+  if (!inst->isFault() && inst->staticInst->isLoad()){
+    /* If load prediction is confident remove reg deps */
+    /* Also do not mark prediction if useless (sl_rr > sl_mdp)*/
+    if (inst->vp_data.t1_isconf && (sl_mdp < sl_rr)){
+      delta += (sl_rr - sl_mdp); // The defautl schedule
+      schedule_line = std::max({schedule_line, sl_mdp});
+       DPRINTF(Cva6Sched, "Schedule (ADDR PRED    ): line %d T %d for %s\n",
+        schedule_line, schedule_line + base_time, dumpInstPreg(inst));
+      inst->vp_data.addr_taken = true; /* Mark taken */
+    } else {
+      schedule_line = std::max({schedule_line, sl_rr, sl_mdp});
+    }
+  } else if (!inst->isFault() && inst->staticInst->isStore()) {
+    schedule_line = std::max({schedule_line, sl_rr, sl_st});
+  } else {
+    schedule_line = std::max({schedule_line, sl_rr});
+  }
+  return schedule_line;
+}
+
 #if 0
 uint64_t
 SchedulerPierreMichaud::getScheduleLineForLoadAddr(uint64_t addr,
@@ -302,7 +340,14 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
     mdp.pushStore(inst->pc->instAddr(), inst);
   }
 
-  uint64_t schedule_line = getScheduleLine(inst);
+  uint64_t delta;
+  uint64_t schedule_line = getScheduleLine(inst, delta);
+  if (delta > (size * 10)){ // Worst case size * load lat
+    fatal("delta too big (delta=%d)!\n", delta);
+  }
+  DPRINTF(Cva6Sched, "Schedule (pre fix      ): line %d T %d : %s\n",
+    schedule_line, base_time + schedule_line, dumpInstPreg(inst));
+
   /* Ignore already filled lines */
   while (schedule_line < s2d.size() && !s2d[schedule_line].canPush()){
     schedule_line ++;
@@ -313,10 +358,10 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
 
   /* Insert instruction */
   assert(s2d[schedule_line].canPush());
-  s2d[schedule_line].push(inst, latency(inst));
+  s2d[schedule_line].push(inst, delta);
   /* Mark ready line */
   for (auto &reg: inst->regs_dst_phy){
-    timeofregready[reg] = base_time + schedule_line + latency(inst);
+    timeofregready[reg] = base_time + schedule_line + delta;
   }
   /* Mark store */
   if (!inst->isFault() && inst->staticInst->isStore()){
@@ -326,8 +371,8 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
   // if (!inst->isFault() && inst->staticInst->isLoad()){
   //   last_store_time = std::max(last_store_time, base_time + schedule_line);
   // }
-  DPRINTF(Cva6Sched, "SCHEDPUSH %d: %s\n", base_time + schedule_line,
-    dumpInstPreg(inst));
+  DPRINTF(Cva6Sched, "SCHEDPUSH ::::::::::::::: line %d T %d : %s\n",
+    schedule_line, base_time + schedule_line, dumpInstPreg(inst));
 
   mla.onSchedule(inst, base_time + schedule_line);
 
@@ -352,8 +397,8 @@ SchedulerPierreMichaud::pop() {
     s2d.pop_front();
     base_time ++;
   }
-  DPRINTF(Cva6Sched, "size=%d, T=%d, #inflight=%d\n",
-    s2d.size(), base_time, inflight_insts_count);
+  // DPRINTF(Cva6Sched, "size=%d, T=%d, #inflight=%d\n",
+  //   s2d.size(), base_time, inflight_insts_count);
   /* Mdp things */
   if (!inst->isFault() && inst->staticInst->isStore()){
     mdp.popStore(inst->pc->instAddr(), inst);

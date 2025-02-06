@@ -93,8 +93,8 @@ class Execute : public Named
             name_ + "memtrace", cpu_, params));
       }
       plugins.push_back(new PluginSimpointBar(name_ + "simbar", cpu, params));
-      plugins.push_back(new PluginVPP(name_ + "vpp", cpu, params));
-      plugins.push_back(new PluginMCVP(name_ + "mcvp", cpu, params));
+      // plugins.push_back(new PluginVPP(name_ + "vpp", cpu, params));
+      // plugins.push_back(new PluginMCVP(name_ + "mcvp", cpu, params));
       plugins.push_back(new PluginGoodbadTrap(name_ + "gbt", cpu, params));
 
       plugins.push_back(new PluginLambda(name_ + "lambda", cpu, params));

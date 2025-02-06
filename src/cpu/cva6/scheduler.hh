@@ -570,10 +570,10 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
       pushed++;
       slots.push_back(inst);
       /* Set Regs annotation */
-      for (auto &reg: inst->regs_dst_phy){
-        holdregs[reg] += 1;
-        latencyregs[reg] = latency;
-      }
+      // for (auto &reg: inst->regs_dst_phy){
+      //   holdregs[reg] += 1;
+      //   latencyregs[reg] = latency;
+      // }
       /* Set Memory annotations */
       // uint64_t addr;
       // if (isMemWrite(inst, addr)){
@@ -602,7 +602,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
       return find(slots.begin(), slots.end(), inst) != slots.end();
     }
     bool empty(){ return slots.empty(); }
-    bool isRaW(PhysicalReg &reg){ return holdregs[reg]; }
+    // bool isRaW(PhysicalReg &reg){ return holdregs[reg]; }
     #if 0
     bool isRaWMem(uint64_t addr, Cva6DynInstPtr *store_inst) {
       bool ret = idealstoremap[addr | 0b111];
@@ -657,7 +657,11 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   uint64_t find_inst_line(Cva6DynInstPtr inst);
   /* Base primitives */
   uint64_t getSourceUseLine(PhysicalReg &reg);
-  uint64_t getScheduleLine(Cva6DynInstPtr inst);
+
+  uint64_t getSLRR(Cva6DynInstPtr &inst);
+  uint64_t getSLMDP(Cva6DynInstPtr &inst);
+  uint64_t getSLSTORE(Cva6DynInstPtr &inst);
+  uint64_t getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta);
   // uint64_t getScheduleLineForLoadAddr(uint64_t addr, Cva6DynInstPtr*inst);
   uint64_t latency(Cva6DynInstPtr inst){
     return instructioncoststatic(inst);
@@ -665,7 +669,10 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
 
   public:
   /* Interface */
-  bool canPush() override { return inflight_insts_count < size; }
+  bool canPush() override {
+    return inflight_insts_count < size &&
+           s2d.size() < size; // Avoid huge array
+  }
   void push(Cva6DynInstPtr inst) override;
   Cva6DynInstPtr front() {
     assert(inflight_insts_count);

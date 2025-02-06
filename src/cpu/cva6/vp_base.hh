@@ -19,7 +19,7 @@
 namespace gem5 {
 namespace cva6 {
 
-#define CONF_MAX 7
+#define CONF_MAX 32
 
 struct confcpt_t
 {
@@ -29,7 +29,8 @@ struct confcpt_t
       conf += 1;
     }
     if (!valid && conf > 0){
-      conf -= 1;
+      conf = 0;
+      // conf -= 1;
     }
   }
   bool valid(){
@@ -121,6 +122,7 @@ class BaseAddrPred
       vp_inst_metadata_t *res) = 0;
     virtual void update_conf(uint64_t pc, bool valid,
       vp_inst_metadata_t *res) = 0;
+    virtual bool isEnable() { return size != 0; }
 };
 
 class BasePred

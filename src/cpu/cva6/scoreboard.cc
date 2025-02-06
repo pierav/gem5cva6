@@ -126,8 +126,13 @@ bool
 Scoreboard::canInstIssue(Cva6DynInstPtr inst) {
 
     /* Fault does not have register dependancies */
-    if (inst->isFault())
+    if (inst->isFault()){ return true; }
+
+    if (inst->vp_data.addr_taken){
+        assert(inst->staticInst->isLoad());
+        inst->regs_src_phy[0].set(inst->vp_data.t1_addr);
         return true;
+    }
 
     /* Available source registers */
     // RaW dependencies

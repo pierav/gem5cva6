@@ -16,12 +16,12 @@
 #include "cpu/cva6/dyn_inst.hh"
 #include "cpu/cva6/scheduler.hh"
 #include "cpu/cva6/store_set.hh"
+#include "cpu/cva6/vp.hh"
 #include "debug/Cva6Sched.hh"
 #include "debug/Cva6SchedSched.hh"
 
 namespace gem5 {
 namespace cva6 {
-
 
 
 inline BaseScheduler& initSched(
@@ -47,10 +47,35 @@ class SA
   StreamAnalyser isa; /* Input stream analyser */
   StreamAnalyser osa; /* Output stream analyser */
 
+  public:
+  /* An address predictor */
+  BaseAddrPredDFCM apred;
+
   private:
   /* Renamming */
   PhysicalRegAllocator regalloc;
   uint64_t bbcnt = 0;
+
+  struct Stats : public statistics::Group
+  {
+    statistics::Scalar apred_req;
+    statistics::Scalar apred_conf;
+    statistics::Scalar apred_hit;
+    statistics::Scalar apred_conf_hit;
+    statistics::Scalar apred_taken_hit;
+    statistics::Scalar apred_taken_miss;
+
+    Stats(Cva6CPU &cpu) :
+      statistics::Group(&cpu, "SA"),
+      ADD_STAT(apred_req, ""),
+      ADD_STAT(apred_conf, ""),
+      ADD_STAT(apred_hit, ""),
+      ADD_STAT(apred_conf_hit, ""),
+      ADD_STAT(apred_taken_hit, ""),
+      ADD_STAT(apred_taken_miss, "")
+    { }
+  } stats;
+
 
   public:
   SA(const std::string &name,
@@ -59,7 +84,10 @@ class SA
     scheduler(initSched(name, cpu, p)),
     isa(cpu, "sa.i", false),
     osa(cpu, "sa.o", false),
-    regalloc(4096) { }
+    apred(p.vpSize),
+    regalloc(4096),
+    stats(cpu) { }
+
   private:
   void rename(Cva6DynInstPtr inst){
     inst->bb_idx = bbcnt;
@@ -102,6 +130,12 @@ class SA
   }
   void push_scheduler(Cva6DynInstPtr inst){
     rename(inst);
+    /* Perform address prediction */
+    if (!inst->isFault() && inst->staticInst->isLoad() && apred.isEnable()){
+      apred.predict(inst->pc->instAddr(), &inst->vp_data);
+      inst->vp_data.is_predicted = true;
+    }
+    /* Schedule */
     scheduler.push(inst);
     /* Some static statistics */
     isa.commit(inst);
@@ -123,7 +157,31 @@ class SA
 
   void commit(Cva6DynInstPtr inst){
     regalloc.commit(inst);
+    /* APRED commit */
+    if (!inst->isFault() && inst->staticInst->isLoad() && apred.isEnable()){
+      uint64_t pc = inst->pc->instAddr();
+      // uint64_t base_addr = inst->getSrcRegOperand(0);
+      // uint64_t addr = inst->dreq->req->getPaddr();
+      uint64_t addr = inst->vp_data.eff_addr;
+      apred.commit(pc, addr, &inst->vp_data);
+      bool valid = inst->vp_data.t1_addr == addr;
+      apred.update_conf(pc, valid, &inst->vp_data);
+      stats.apred_req += 1;
+      stats.apred_conf += inst->vp_data.t1_isconf;
+      stats.apred_hit += valid;
+      stats.apred_conf_hit += inst->vp_data.t1_isconf && valid;
+      stats.apred_taken_hit += inst->vp_data.addr_taken && valid;
+    }
   }
+
+  void misspredaddr(Cva6DynInstPtr inst, uint64_t eff_addr){
+    assert(inst->vp_data.addr_taken);
+    uint64_t pc = inst->pc->instAddr();
+    apred.commit(pc, eff_addr, &inst->vp_data);
+    apred.update_conf(pc, false, &inst->vp_data);
+    stats.apred_taken_miss += 1;
+  }
+
   void flushfrom(Cva6DynInstPtr inst){
     if (!inst->isBubble()){
       fatal("Must implem\n");

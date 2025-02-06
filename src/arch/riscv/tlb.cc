@@ -202,8 +202,8 @@ TLB::insert(Addr vpn, const TlbEntry &entry) {
     if (newEntry) {
         // update PTE flags (maybe we set the dirty/writable flag)
         assert(newEntry->pte == entry.pte); // PR: must be true ?
-        newEntry->pte = entry.pte;
-        assert(newEntry->vaddr == vpn);
+        // newEntry->pte = entry.pte;
+        // assert(newEntry->vaddr == vpn); // No more true
         return newEntry;
     }
 
