@@ -19,7 +19,7 @@
 namespace gem5 {
 namespace cva6 {
 
-#define CONF_MAX 32
+#define CONF_MAX 15
 
 struct confcpt_t
 {
@@ -29,7 +29,7 @@ struct confcpt_t
       conf += 1;
     }
     if (!valid && conf > 0){
-      conf = 0;
+      conf -= 1;
       // conf -= 1;
     }
   }
@@ -44,7 +44,6 @@ int64_t fixstride(int64_t stride);
 
 struct vp_inst_metadata_t
 {
-
   // Input
   uint64_t inst_mem_req_imm = 0;
   uint64_t inst_mem_req_size = 0;
@@ -61,7 +60,6 @@ struct vp_inst_metadata_t
   uint64_t time_predict = 0;
 
   // Output Issue
-  bool taken = false; // new bit in sbe
   bool _hit_deter = false;
   uint64_t pred_val = 0; // rd in sbe
   uint64_t time_issue = 0;
@@ -70,22 +68,28 @@ struct vp_inst_metadata_t
   bool hit = 0;
 
   // Inflight
-  uint64_t t1_addr = 0;
+  /* Address prediction related */
+  uint64_t t1_addr = 0; /* The predicted base address */
   uint64_t t1_str = 0;
-  bool t1_isconf = false;
-  uint64_t eff_addr = 0;
+  bool t1_isconf = false; /* Is the addr to be taken ? */
+  uint64_t eff_addr = 0; /* The effective base address */
 
+  /* Are prediction ready to be used */
+  bool value_ready = false; // new bit in sbe
+  bool addr_ready = false;
+
+  /* Is the prediction is used, you must annotate taken flag  */
+  bool addr_taken = false; /* Is the addr prediction taken ?*/
+  bool value_taken = false; /* Is the value prediction taken */
 
   bool fc_isconf = false;
-
 
   uint64_t pred_val_vastra = 0;
   bool pred_val_vastra_valid = 0;
   uint64_t pred_val_lvp = 0;
   bool pred_val_lvp_valid = 0;
 
-  bool addr_taken = false;
-  bool isPredAddr(){ return pred_val_vastra && t1_isconf; }
+  // bool isPredAddr(){ return pred_val_vastra && t1_isconf; }
   uint64_t getPredAddr(){ return t1_addr; }
 
   // METADATA for stats

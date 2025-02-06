@@ -120,7 +120,7 @@ IssueUnit::evaluate(){
         /* markup dst registers as busy */
         scoreboard.issueInst(inst);
 
-        bool need_execution = true;
+        bool need_execution = cpu.pipeline->dpe.issue(inst);
         if (need_execution){
             /* Push in fu */
             fus.push(inst);

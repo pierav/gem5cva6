@@ -30,103 +30,104 @@ VPDPE::predict(Cva6DynInstPtr inst){
   }
   /* In all cases updates predict timestamp for stats */
   inst->vp_data.time_predict = cpu.curCycle();
-  DPRINTF(Cva6VP, "predict %s at %d\n", *inst, inst->vp_data.time_predict);
+  // DPRINTF(Cva6VP, "predict %s at %d\n", *inst, inst->vp_data.time_predict);
 }
 
 void
 VPDPE::insert(Cva6DynInstPtr inst){
-    inflights.push_back(inst);
-    // Compute static data
-    if (vp.isEnable() &&         /** VP enable */
-      !inst->isFault() &&        /** Not a adress fault */
-      inst->staticInst->isLoad() /** Only predict memory load */
-    ){
-      inst->executeInitiateStatic();
-      inst->vp_data.inst_mem_req_imm = inst->static_data.mem_req_imm;
-      inst->vp_data.inst_mem_req_size = inst->static_data.mem_req_size;
-      inst->vp_data._pc = inst->pc->instAddr();
-      if (DPE_IGNORE){
-        /* Perform prediction only in the fetch stage */
-        predict(inst);
+  inflights.push_back(inst);
+  // Compute static data
+  if (vp.isEnable() &&         /** VP enable */
+    !inst->isFault() &&        /** Not a adress fault */
+    inst->staticInst->isLoad() /** Only predict memory load */
+  ){
+    inst->executeInitiateStatic();
+    inst->vp_data.inst_mem_req_imm = inst->static_data.mem_req_imm;
+    inst->vp_data.inst_mem_req_size = inst->static_data.mem_req_size;
+    inst->vp_data._pc = inst->pc->instAddr();
+    if (DPE_IGNORE){
+      /* Perform prediction only in the fetch stage */
+      predict(inst);
+      if (TEST_MODE){ // Clear predictions
+        inst->vp_data.addr_ready = false;
+        inst->vp_data.value_ready = false;
       }
     }
-
+  }
   ghist.insert(inst);
 
 }
 
-
-
 bool
 VPDPE::vp_perform_issue(Cva6DynInstPtr inst){
-    // Perfom VP
-    bool need_execution = true;
-    if (vp.isEnable() &&
-      !inst->isFault() &&
-      inst->staticInst->isLoad()){
-      fatal_if(!inst->vp_data.is_predicted,
-        "Inst %d is not predicted\n", *inst);
-      inst->vp_data.time_issue = cpu.curCycle();
-      int64_t delta = inst->vp_data.time_issue -
-            inst->vp_data.time_predict;
-      fatal_if(delta < VP_DELAY, "Timing anomaly : delta = %d\n", delta);
-      assert(inst->dreq);
-      uint64_t base_addr = inst->getSrcRegOperand(0);
-      uint64_t eff_addr = inst->dreq->req->getVaddr();
-      assert(eff_addr == base_addr + inst->static_data.mem_req_imm);
-      bool taken = vp.update_prediction_at_issue(&inst->vp_data,
-          base_addr);
-      if (TEST_MODE){ // Force the effetive execution
-        inst->vp_data.hit = false;
-      }
-      if (taken){
-        need_execution = !inst->vp_data.hit;
-        fatal_if(inst->staticInst->numDestRegs() != 1,
-            "VP: si->numDestRegs() must be equal to 1.\n");
-        // Notify scoreboard that destination register is ready
-        // with the predicted value
-        // We do this shitty flow to perform sign extension
-        inst->dreq->complete_forward(inst->vp_data.pred_val);
-        inst->executeComplete();
-        // Reset inst if non deterministic TODO
-        if (need_execution){
-            inst->untrackDreq();
-            inst->setFaultEx(NoFault);
-            inst->executeInitiate();
-        }
-        // inst->setDstRegOperand(0, inst->vp_data.pred_val);
-      }
-    }
-
-    // WB store
-    if (vp.isEnable() &&
+  // Perfom VP
+  bool need_execution = true;
+  if (vp.isEnable() &&
     !inst->isFault() &&
-    (inst->staticInst->isStore() ||
-      inst->staticInst->isAtomic())){
+    inst->staticInst->isLoad()){
+    fatal_if(!inst->vp_data.is_predicted,
+      "Inst %d is not predicted\n", *inst);
+    inst->vp_data.time_issue = cpu.curCycle();
+    int64_t delta = inst->vp_data.time_issue -
+          inst->vp_data.time_predict;
+    // TODO predict at fetch
+    // fatal_if(delta < VP_DELAY, "Timing anomaly : delta = %d\n", delta);
+    assert(inst->dreq);
+    uint64_t base_addr = inst->getSrcRegOperand(0);
+    uint64_t eff_addr = inst->dreq->req->getVaddr();
+    assert(eff_addr == base_addr + inst->static_data.mem_req_imm);
+    bool taken = vp.update_prediction_at_issue(&inst->vp_data,
+        base_addr);
+    if (TEST_MODE){ // Force the effetive execution
+      inst->vp_data.hit = false;
+    }
+    if (taken){
+      need_execution = !inst->vp_data.hit;
+      fatal_if(inst->staticInst->numDestRegs() != 1,
+          "VP: si->numDestRegs() must be equal to 1.\n");
+      // Notify scoreboard that destination register is ready
+      // with the predicted value
+      // We do this shitty flow to perform sign extension
+      inst->dreq->complete_forward(inst->vp_data.pred_val);
+      inst->executeComplete();
+      // Reset inst if non deterministic TODO
+      if (need_execution){
+          inst->untrackDreq();
+          inst->setFaultEx(NoFault);
+          inst->executeInitiate();
+      }
+      // inst->setDstRegOperand(0, inst->vp_data.pred_val);
+    }
+  }
 
-      // uint64_t base_addr = inst->getSrcRegOperand(0);
-      uint64_t eff_addr = inst->dreq->req->getVaddr();
-      uint64_t pc = inst->pc->instAddr();
-      vp.store_issued(pc, eff_addr);
+  // WB store
+  if (vp.isEnable() &&
+  !inst->isFault() &&
+  (inst->staticInst->isStore() ||
+    inst->staticInst->isAtomic())){
 
-      // First invalidate inflight instructions
-      uint64_t eff_tag = eff_addr >> 3;
-      for (Cva6DynInstPtr ifinst: inflights){
-        vp_inst_metadata_t *res = &ifinst->vp_data;
-        uint64_t res_eff_tag = (res->t1_addr + res->inst_mem_req_imm) >> 3;
-        if (res_eff_tag == eff_tag){
-          res->pred_val_vastra_valid = false;
-        }
+    // uint64_t base_addr = inst->getSrcRegOperand(0);
+    uint64_t eff_addr = inst->dreq->req->getVaddr();
+    uint64_t pc = inst->pc->instAddr();
+    vp.store_issued(pc, eff_addr);
+
+    // First invalidate inflight instructions
+    uint64_t eff_tag = eff_addr >> 3;
+    for (Cva6DynInstPtr ifinst: inflights){
+      vp_inst_metadata_t *res = &ifinst->vp_data;
+      uint64_t res_eff_tag = (res->t1_addr + res->inst_mem_req_imm) >> 3;
+      if (res_eff_tag == eff_tag){
+        res->pred_val_vastra_valid = false;
       }
     }
-    return need_execution;
+  }
+  return need_execution;
 }
 
 
 /**  Make prediction int the 2 DeltaCycle Window */
 void
 VPDPE::perform_window_predictions(){
-
   /* Remove issued instructions */
   while (!inflights.empty() && inflights.front()->issue_completed){
     issued.push_back(inflights.front());
@@ -175,7 +176,8 @@ VPDPE::issue(Cva6DynInstPtr inst){
   // }
 
   // Update Predictor
-  bool need_execution = vp_perform_issue(inst);
+  // bool need_execution = vp_perform_issue(inst);
+  bool need_execution = true;
   // Make prediction if needed
   // update_prediction_window();
   return need_execution;
@@ -183,31 +185,39 @@ VPDPE::issue(Cva6DynInstPtr inst){
 
 bool
 VPDPE::post_commit(Cva6DynInstPtr inst){
-  bool addr_taken = inst->vp_data.addr_taken;
-
+  /* Annotate effective base address */
+  if (inst->vp_data.is_predicted){
+    StaticInstPtr si = inst->staticInst;
+    assert(si->numSrcRegs() == 1);
+    RegId reg = si->srcRegIdx(0);
+    inst->vp_data.eff_addr = cpu.thread->getReg(reg);
+  }
   stats.req += 1;
-  if (vp.isEnable() && addr_taken){
+  /* Check missprediction */
+  if (inst->vp_data.addr_taken){
     assert(inst->staticInst);
     assert(inst->staticInst->isLoad());
     // Post commit
     Addr pc = inst->pc->instAddr();
-    StaticInstPtr si = inst->staticInst;
-    assert(si->numSrcRegs() == 1);
-    RegId reg = si->srcRegIdx(0);
-    RegVal regv = cpu.thread->getReg(reg); // Base addr
-    bool baseaddr_match = regv == inst->vp_data.getPredAddr();
+    bool baseaddr_match = inst->vp_data.eff_addr == inst->vp_data.t1_addr;
 
     DPRINTF(Cva6VP, "%16lx: VP@ : %lx =? %lx :: %d\n",
-      pc, regv, inst->vp_data.getPredAddr(), baseaddr_match);
+      pc, inst->vp_data.eff_addr, inst->vp_data.t1_addr, baseaddr_match);
 
     stats.predaddr_taken += 1;
     stats.predaddr_takenhit += baseaddr_match;
-    static int hitsa[2];
-    hitsa[baseaddr_match] += 1;
-    DPRINTF(Cva6VP, "VP@ : #(t^@)=%d, #(t^!@)=%d :: %f\n",
-        hitsa[1], hitsa[0], (float)hitsa[1]/(hitsa[1] + hitsa[0]));
 
-    bool misspred = addr_taken && !baseaddr_match;
+    // static int hitsa[2];
+    // hitsa[baseaddr_match] += 1;
+    // DPRINTF(Cva6VP, "VP@ : #(t^@)=%d, #(t^!@)=%d :: %f\n",
+    //     hitsa[1], hitsa[0], (float)hitsa[1]/(hitsa[1] + hitsa[0]));
+
+    bool misspred = !baseaddr_match;
+    if (misspred){
+      // Clear AP entry
+      // vp.getAP().commit(pc, inst->vp_data.eff_addr, &inst->vp_data);
+      vp.getAP()->update_conf(pc, false, &inst->vp_data);
+    }
     return misspred;
   }
   return false;
@@ -252,7 +262,7 @@ VPDPE::commit(Cva6DynInstPtr inst){
           uint64_t real_val = inst->dreq->getData();
           // inst->getDsrRegOperand(0);
           uint64_t pred_val = inst->vp_data.pred_val;
-          inst->vp_data.hit = inst->vp_data.taken &&
+          inst->vp_data.hit = inst->vp_data.value_ready &&
               (pred_val == real_val);
           // Commit real value
           vp.commit(pc, base_addr, inst->dreq->req->getSize(),
@@ -274,7 +284,7 @@ VPDPE::commit(Cva6DynInstPtr inst){
         !inst->isFault() &&
         inst->staticInst->isLoad()
     ){ /* Missprediction taken */
-        misspred = inst->vp_data.taken && !inst->vp_data.hit;
+        misspred = inst->vp_data.value_taken && !inst->vp_data.hit;
         fatal_if(TEST_MODE && misspred, "MISSPRED!\n");
     }
 

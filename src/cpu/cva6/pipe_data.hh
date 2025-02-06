@@ -61,6 +61,16 @@ class BranchData
         set(target, other.target);
     }
 
+    static BranchData
+    SquashAt(const PCStateBase &target){
+      return BranchData(
+        false, /* Is predicted : need update */
+        true, /* Need squash */
+        0, /* sn:0 Squash everything */
+        target,
+        true // Unused
+      );
+    }
     BranchData &
     operator=(const BranchData &other)
     {

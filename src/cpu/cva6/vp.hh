@@ -54,25 +54,29 @@ class VP : public Named
     {
       /** Stats */
       statistics::Scalar _hit_perfect; // hit count at commit time
-      statistics::Scalar _hit_exp; // hit count at predict time
       statistics::Scalar _hitaddr_perfect; // hit count at commit time
       statistics::Scalar _hitaddr_exp; // hit count at predict time
       statistics::Scalar _hitaddrt1_exp;
 
-      statistics::Scalar hit;
-      statistics::Scalar miss;
+      statistics::Scalar value_hit;
+      statistics::Scalar value_hit_ready;
+      statistics::Scalar value_miss_ready;
+      statistics::Scalar value_hit_taken;
+      statistics::Scalar value_miss_taken;
 
-      statistics::Scalar hitaddr;
-      statistics::Scalar missaddr;
+      statistics::Scalar addr_hit;
+      statistics::Scalar addr_hit_ready;
+      statistics::Scalar addr_miss_ready;
+      statistics::Scalar addr_hit_taken;
+      statistics::Scalar addr_miss_taken;
+
 
       statistics::Scalar req;
 
       statistics::Formula hitrate;
-      statistics::Formula hitreqrate;
       statistics::Formula coverage;
 
       statistics::Scalar _hit_deter; // hit deter
-
       statistics::Scalar _hit_stra; // Stride alias
       statistics::Scalar _hit_stra_fca; // Stride alias and f$ alias
 
@@ -93,46 +97,37 @@ class VP : public Named
         statistics::Group(&cpu, name.c_str()),
         ADD_STAT(_hit_perfect, statistics::units::Count::get(),
                  "Number of hit count at commit time"),
-        ADD_STAT(_hit_exp, statistics::units::Count::get(),
-                 "Number of hit count at predict time"),
         ADD_STAT(_hitaddr_perfect, statistics::units::Count::get(),
                  "Number of hit count at commit time"),
         ADD_STAT(_hitaddr_exp, statistics::units::Count::get(),
                  "Number of hit count at predict time"),
-        ADD_STAT(_hitaddrt1_exp, statistics::units::Count::get(),
-                 "Number of hit count at predict time"),
-        ADD_STAT(hit, statistics::units::Count::get(),
-                 "Number of hit taken"),
-        ADD_STAT(miss, statistics::units::Count::get(),
-                 "Number of miss taken"),
-        ADD_STAT(hitaddr, statistics::units::Count::get(),
-                 "Number of hit addr taken"),
-        ADD_STAT(missaddr, statistics::units::Count::get(),
-                 "Number of miss addr taken"),
-        ADD_STAT(req, statistics::units::Count::get(),
-                 "Number of load commited"),
+        ADD_STAT(_hitaddrt1_exp, ""),
+        ADD_STAT(value_hit, ""),
+        ADD_STAT(value_hit_ready, ""),
+        ADD_STAT(value_miss_ready, ""),
+        ADD_STAT(value_hit_taken, ""),
+        ADD_STAT(value_miss_taken, ""),
+        ADD_STAT(addr_hit, ""),
+        ADD_STAT(addr_hit_ready, ""),
+        ADD_STAT(addr_miss_ready, ""),
+        ADD_STAT(addr_hit_taken, ""),
+        ADD_STAT(addr_miss_taken, ""),
+
+        ADD_STAT(req, "Number of load commited"),
 
         ADD_STAT(hitrate, statistics::units::Rate<
           statistics::units::Count, statistics::units::Count>::get(),
                  "hit / (hit + miss)"),
-        ADD_STAT(hitreqrate, statistics::units::Rate<
-          statistics::units::Count, statistics::units::Count>::get(),
-                 "hit / req"),
         ADD_STAT(coverage, statistics::units::Rate<
           statistics::units::Count, statistics::units::Count>::get(),
-                 "(hit + miss) / req"),
-        ADD_STAT(_hit_deter, statistics::units::Count::get(),
-                 "Number of deterministics hit"),
-        ADD_STAT(_hit_stra, statistics::units::Count::get(),
-                 "Number of hit pred when stride alias"),
-        ADD_STAT(_hit_stra_fca, statistics::units::Count::get(),
-                 "Number of hit pred when stride and f$ alias"),
-        ADD_STAT(_hit_wbs, statistics::units::Count::get(),
-                 "Number of hit pred Writed by store"),
-        ADD_STAT(_hit_fca, statistics::units::Count::get(),
-                 "Number of hit pred when fake cache alias"),
-        ADD_STAT(_hit_taga, statistics::units::Count::get(),
-                 "Number of hit pred when T1 alias"),
+                 "(hit) / req"),
+
+        ADD_STAT(_hit_deter, "Number of deterministics hit"),
+        ADD_STAT(_hit_stra, "Number of hit pred when stride alias"),
+        ADD_STAT(_hit_stra_fca, "Number of hit pred when stride and f$ alias"),
+        ADD_STAT(_hit_wbs, "Number of hit pred Writed by store"),
+        ADD_STAT(_hit_fca, "Number of hit pred when fake cache alias"),
+        ADD_STAT(_hit_taga, "Number of hit pred when T1 alias"),
 
         ADD_STAT(compression_hit, statistics::units::Count::get(),
                  "The CAM compressor is valid"),
@@ -144,11 +139,9 @@ class VP : public Named
                  "The down address is valid but not the up")
       {
         hitrate.precision(6);
-        hitrate = hit / (hit + miss);
-        hitreqrate.precision(6);
-        hitreqrate = hit / req;
+        hitrate = value_hit_ready / (value_hit_ready + value_miss_ready);
         coverage.precision(6);
-        coverage = (hit + miss) / req;
+        coverage = (value_hit_ready) / req;
       }
     } stats;
     size_t size;
@@ -213,7 +206,7 @@ class VP : public Named
     */
     virtual bool update_prediction_at_issue(vp_inst_metadata_t *res,
       uint64_t addr){
-      return res->taken;
+      return res->value_ready;
     }
 
     /**
@@ -228,6 +221,12 @@ class VP : public Named
     }
 
     /* Commit value prediction */
+
+    virtual BaseAddrPred* getAP(){
+      fatal("Unimplemented");
+      return nullptr;
+    }
+
     virtual bool commit(uint64_t pc, uint64_t addr, uint16_t rsize,
       uint64_t real_val, vp_inst_metadata_t *pred, bool is_load) {
       return false;
@@ -271,17 +270,31 @@ class VP_VXXX: public VP
   lvp_entry_t *lvt;
 
   public:
-    VP_VXXX(const std::string &name, BaseCPU &cpu, size_t _size,
-      BaseAddrPred &_AP, bool enable_lvp):
-      VP(name, cpu, _size),
-      AP(_AP), meta_lvp_enable(enable_lvp) {
-          lvt = new lvp_entry_t[_size];
-      }
+  VP_VXXX(const std::string &name, BaseCPU &cpu, size_t _size,
+    BaseAddrPred &_AP, bool enable_lvp):
+    VP(name, cpu, _size),
+    AP(_AP), meta_lvp_enable(enable_lvp) {
+        lvt = new lvp_entry_t[_size];
+  }
+  BaseAddrPred *getAP() override {
+    return &AP;
+  }
+
   virtual bool predict_readfc(vp_inst_metadata_t *res, bool atcommit=false);
   virtual void predict_base_addr(vp_inst_metadata_t *res);
   virtual bool predict(vp_inst_metadata_t *res, bool atcommit=false){
+    /* 0) Predict base addr */
     predict_base_addr(res);
-    return predict_readfc(res, atcommit);
+    /* 1) Compute effective addr */
+    uint64_t base_addr = res->t1_addr;
+    uint64_t imm = res->inst_mem_req_imm;
+    res->eff_addr = base_addr + imm;
+    /* 2) Read FC In DLVP mode */
+    bool use_fc = false;
+    if (use_fc){
+      predict_readfc(res, atcommit);
+    }
+    return res->value_ready;
   }
   virtual bool commit(uint64_t pc, uint64_t addr, uint16_t rsize,
       uint64_t real_val, vp_inst_metadata_t *pred, bool is_load);
@@ -347,11 +360,6 @@ class VP_VXXX_C: public VP_VXXX
     // Fix the first predicted addr
     res->t1_addr &= (1 << DOWN_ADDR_SIZE) - 1;
     res->t1_addr |= baseaddr << DOWN_ADDR_SIZE;
-  }
-
-  bool predict(vp_inst_metadata_t *res, bool atcommit=false){
-    predict_base_addr(res);
-    return predict_readfc(res, atcommit);
   }
 
   const int IDAT_CPT_MAX = 16;
@@ -458,8 +466,8 @@ class VP_LVP: public VP
       uint64_t tag = (pc >> 1);
       lvp_entry_t *lve = &lvt[tag%size];
       res->pred_val = lve->value;
-      res->taken = lve->conf.valid();
-      return res->taken;
+      res->value_ready = lve->conf.valid();
+      return res->value_ready;
     }
     /* Commit value prediction */
     bool commit(uint64_t pc, uint64_t addr, uint16_t rsize, uint64_t real_val,
@@ -495,8 +503,8 @@ class VP_Str2D: public VP
       uint64_t tag = (pc >> 1);
       str2D_entry_t *e = &lvt[tag%size];
       res->pred_val = e->value + e->str[0];
-      res->taken = e->conf.valid();
-      return res->taken;
+      res->value_ready = e->conf.valid();
+      return res->value_ready;
     }
     bool commit(uint64_t pc, uint64_t addr, uint16_t rsize, uint64_t real_val,
            vp_inst_metadata_t *res, bool is_load) {
@@ -527,8 +535,8 @@ class VP_DFCM: public VP
 
     bool predict(vp_inst_metadata_t *res, bool atcommit=false) {
       uint64_t pc = res->_pc;
-      res->taken = dfcm.predict(pc, &res->pred_val);
-      return res->taken;
+      res->value_ready = dfcm.predict(pc, &res->pred_val);
+      return res->value_ready;
     }
     bool commit(uint64_t pc, uint64_t addr, uint16_t rsize, uint64_t real_val,
            vp_inst_metadata_t *res, bool is_load) {

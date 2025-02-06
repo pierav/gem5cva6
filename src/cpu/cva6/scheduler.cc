@@ -300,7 +300,7 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta){
   if (!inst->isFault() && inst->staticInst->isLoad()){
     /* If load prediction is confident remove reg deps */
     /* Also do not mark prediction if useless (sl_rr > sl_mdp)*/
-    if (inst->vp_data.t1_isconf && (sl_mdp < sl_rr)){
+    if (inst->vp_data.addr_ready && (sl_mdp < sl_rr)){
       delta += (sl_rr - sl_mdp); // The defautl schedule
       schedule_line = std::max({schedule_line, sl_mdp});
        DPRINTF(Cva6Sched, "Schedule (ADDR PRED    ): line %d T %d for %s\n",

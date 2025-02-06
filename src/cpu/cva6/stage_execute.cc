@@ -213,61 +213,32 @@ Execute::evaluate() {
         // }
         uint64_t pcstore;
         bool is_mem_violation = cpu.pipeline->mdpc.isViolation(inst, pcstore);
-        // bool is_mem_violation_ref = !inst->break_memory_order->isBubble()
         /* Inst produced bad value */
         if (is_mem_violation){
             DPRINTF(Cva6Execute, "MISSPRED MEM ORDER : %s\n", *inst);
-            std::unique_ptr<PCStateBase> target(
-                cpu.getContext()->pcState().clone());
-            resolved_branch = BranchData(
-                false, /* Is predicted : need update */
-                true, /* Need squash */
-                0, /* sn:0 Squash everything */
-                *target,
-                true // Unused
-            );
-            // Cva6DynInstPtr storeinst = inst->break_memory_order;
-            // storeinst->pc->instAddr()
+            resolved_branch = BranchData::SquashAt(
+                cpu.getContext()->pcState());
             uint64_t pcload = inst->pc->instAddr();
             cpu.pipeline->sa.scheduler.violation(pcstore, pcload);
             flush();
             return; /* EARLY FLUSH : do not commit */
         }
 
-        /* Annotate effective base address */
-        if (inst->vp_data.is_predicted){
-            inst->vp_data.eff_addr = cpu.thread->getReg(
-                inst->staticInst->srcRegIdx(0));
-        }
         /* Compare the pred base addr with the real one */
-        if (inst->vp_data.addr_taken){
-            assert(inst->staticInst);
-            assert(inst->staticInst->isLoad());
-            uint64_t pred_addr = inst->vp_data.t1_addr;
-            // TODO: Read PRF in scoreboard
-            bool missprediction = pred_addr != inst->vp_data.eff_addr;
-            if (missprediction){
-                DPRINTF(Cva6Execute, "MISSPRED ADDR : %s\n", *inst);
-                std::unique_ptr<PCStateBase> target(
-                    cpu.getContext()->pcState().clone());
-                resolved_branch = BranchData(
-                    false, /* Is predicted : need update */
-                    true, /* Need squash */
-                    0, /* sn:0 Squash everything */
-                    *target,
-                    true // Unused
-                );
-                cpu.pipeline->sa.misspredaddr(inst, inst->vp_data.eff_addr);
-                flush();
-                return; /* EARLY FLUSH : do not commit */
-            }
+        bool misspred_addr = cpu.pipeline->dpe.post_commit(inst);
+        if (misspred_addr){
+            DPRINTF(Cva6Execute, "MISSPRED ADDR : %s\n", *inst);
+            resolved_branch = BranchData::SquashAt(
+                cpu.getContext()->pcState());
+            flush();
+            return; /* EARLY FLUSH : do not commit */
         }
 
+        /* Commit everyrhings */
         commitInst(inst, resolved_branch);
         cpu.pipeline->iq.commit(inst);
         assert(cpu.pipeline->rob.front() == inst);
         cpu.pipeline->rob.pop(inst);
-
         cpu.pipeline->sa.commit(inst);
         cpu.pipeline->mdpc.commit(inst);
         /* Check if there is memory order violation */
@@ -296,20 +267,26 @@ Execute::evaluate() {
             }
         }
 
-#if 0
+        bool misspred_value = dpe.commit(inst);
         // VP commit
-        if (misspred){
+        if (misspred_value){
             if (vpFlush){ // Flush
-
+                resolved_branch = BranchData::SquashAt(
+                    cpu.getContext()->pcState());
+                flush();
+                return;  /* LATE FLUSH : commit then flush */
             } else { // Replay the scoreboard if needed
+                fatal("Unimp!\n");
+                #if 0
                 Cva6DynInstPtr vilain = scoreboard.flush_value_from(inst);
                 if (!vilain->isBubble()){ //
                     flushfrom(vilain); // Only Flush FUS et inps
                     i=commitWidth;
                 }
+                #endif
             }
         }
-#endif
+
         for (Plugin *plugin: plugins){
             plugin->commit(inst);
         }
@@ -329,6 +306,8 @@ Execute::flushfrom(Cva6DynInstPtr inst){
     inp.flushfrom(inst);
     cpu.pipeline->rob.flushfrom(inst);
     cpu.pipeline->sa.flushfrom(inst);
+    assert(inst->isBubble());
+    cpu.pipeline->dpe.flush();
 }
 
 bool

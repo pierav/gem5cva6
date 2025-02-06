@@ -182,8 +182,6 @@ class VPDPE : public Named
     std::deque<Cva6DynInstPtr> inflights;
     std::deque<Cva6DynInstPtr> issued;
 
-
-
     bool is_fresh_commited_values = false;
 
     bool TEST_MODE = false;
@@ -202,7 +200,7 @@ class VPDPE : public Named
         vp(vp_),
         stats(cpu_, name),
         TEST_MODE(params.dpeTestMode),
-        DPE_IGNORE(params.dpeIgnore),
+        DPE_IGNORE(true), // params.dpeIgnore TODO ?
         ISSUE_WIDTH(params.issueWidth),
         ghist(640),
         ghist_commit(640),

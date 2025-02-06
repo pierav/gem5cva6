@@ -128,51 +128,48 @@ VP::compute_key(uint64_t shr){
 
 void
 VP::commitaccount(vp_inst_metadata_t *res, uint64_t real_val){
-    bool taken = res->taken;
+    bool taken = res->value_taken;
+    bool ready = res->value_ready;
     bool pred_valid = (res->pred_val == real_val);
 
-    stats._hit_exp += pred_valid;
-
+    stats.value_hit += pred_valid;
+    stats.value_hit_ready += pred_valid && ready;
+    stats.value_miss_ready += !pred_valid && ready;
+    stats.value_hit_taken += pred_valid && taken;
+    stats.value_miss_taken += !pred_valid && taken;
     stats.req += 1;
+
     if (taken){
         if (pred_valid){
-            stats.hit += 1;
             DPRINTF(Cva6VP, "VP %016lx: HIT__PRED\n", res->_pc);
         } else {
-            stats.miss += 1;
             DPRINTF(Cva6VP, "VP %016lx: MISS_PRED\n", res->_pc);
         }
-
         static int hits[2];
         hits[pred_valid] += 1;
         DPRINTF(Cva6VP, "VP : #(t^h)=%d, #(t^!h)=%d :: %f\n",
             hits[1], hits[0], (float)hits[1]/(hits[1] + hits[0]));
     }
-    DPRINTF(Cva6VP, "VP %016lx: commit_ [%d] %s: pred %x real %x\n",
+    DPRINTF(Cva6VP, "VP %016lx: commit_ V [%d] %s: pred %x real %x\n",
         res->_pc, taken, pred_valid ? "OK" : "KO", res->pred_val, real_val);
-
 }
 
 void
 VP_VXXX::predict_base_addr(vp_inst_metadata_t *res){
-   // Predict base addr
-    AP.predict(res->_pc, res);
+    // Predict base addr
+    res->addr_ready = AP.predict(res->_pc, res);
+    DPRINTF(Cva6VP, "VP %016lx: predict @=%lx [%d]\n",
+        res->_pc, res->t1_addr, res->addr_ready);
 }
 
 bool
 VP_VXXX::predict_readfc(vp_inst_metadata_t *res, bool atcommit){
     uint64_t pc = res->_pc;
     uint16_t rsize = res->inst_mem_req_size;
-    uint64_t imm = res->inst_mem_req_imm;
 
 
-    // Compute addr
-    uint64_t base_addr = res->t1_addr;
-    res->eff_addr = base_addr + imm;
-
-    // Read fake cache
+    /* Read fake cache and store aliaser */
     bool is_fc_match = fake_cache_read(pc, res->eff_addr, rsize, res);
-    // Read store aliaser
     bool fc_valid = fc_sa_is_dep(res->eff_addr);
 
     // History
@@ -196,19 +193,14 @@ VP_VXXX::predict_readfc(vp_inst_metadata_t *res, bool atcommit){
         res->pred_val_lvp_valid = lve->conf.valid();
     }
 
-     // DPRINTF(Cva6VP, "VP %016lx: lvp    predict [%d] %x\n", pc,
-    //     res->pred_val_lvp_valid, res->pred_val_lvp);
-    // DPRINTF(Cva6VP, "VP %016lx: predict taken  [%d] %x\n",
-    //     pc, res->taken, res->pred_val);
-
-    if (!atcommit){ /* Push inflight */
-        DPRINTF(Cva6VP, "VP %016lx: predict [%d][%d&%d&%d]"
-            "%016x @ %16lx\n",
-            pc, res->pred_val_vastra_valid,
-            res->t1_isconf, fc_valid, is_fc_match,
-            res->pred_val_vastra, res->eff_addr);
-    }
-    return res->taken;
+    // if (!atcommit){ /* Push inflight */
+    //     DPRINTF(Cva6VP, "VP %016lx: predict [%d][%d&%d&%d]"
+    //         "%016x @ %16lx\n",
+    //         pc, res->pred_val_vastra_valid,
+    //         res->t1_isconf, fc_valid, is_fc_match,
+    //         res->pred_val_vastra, res->eff_addr);
+    // }
+    return res->value_ready;
 }
 
 bool
@@ -223,21 +215,21 @@ VP_VXXX::update_prediction_at_issue(vp_inst_metadata_t *res,
     }
 
     // res->pred_val_lvp_valid = false;
-    res->taken = false;
+    res->value_ready = false;
     res->hit = false;
     res->pred_val = res->pred_val_vastra;
     // return false;
 
     if (res->pred_val_vastra_valid && matchaddrtag){ // Deter VASTRA
         res->hit = true;
-        res->taken = true;
+        res->value_ready = true;
         res->_hit_deter = true;
         res->pred_val = res->pred_val_vastra;
         DPRINTF(Cva6VP, "VP %016lx: issue DETER @=%lx : %lx\n",
             res->_pc, res->t1_addr, res->pred_val);
     }
     else if (res->pred_val_lvp_valid) {
-        res->taken = true;
+        res->value_ready = true;
         res->pred_val = res->pred_val_lvp;
         DPRINTF(Cva6VP, "VP %016lx: issue PROBA : %lx\n", res->_pc,
         res->pred_val);
@@ -245,23 +237,21 @@ VP_VXXX::update_prediction_at_issue(vp_inst_metadata_t *res,
         DPRINTF(Cva6VP, "VP %016lx: issue NOTHING\n", res->_pc);
     }
 
-    return res->taken;
+    return res->value_ready;
 }
 
 void
 VP_VXXX::store_issued(uint64_t pc, uint64_t eff_addr){
-
-    // Second Annotate history
     int cpt = fc_sa_increment(eff_addr);
-    DPRINTF(Cva6VP, "VP %016lx:    LOCK @%016lx : %d\n",
-        pc, eff_addr, cpt);
+    // DPRINTF(Cva6VP, "VP %016lx:    LOCK @%016lx : %d\n",
+    //    pc, eff_addr, cpt);
 }
 
 void
 VP_VXXX::store_commit(uint64_t pc, uint64_t eff_addr){
     int cpt = fc_sa_decrement(eff_addr);
-    DPRINTF(Cva6VP, "VP %016lx: UNLOCK @%016lx : %d\n",
-        pc, eff_addr, cpt);
+    // DPRINTF(Cva6VP, "VP %016lx: UNLOCK @%016lx : %d\n",
+    //    pc, eff_addr, cpt);
 }
 
 bool
@@ -276,34 +266,35 @@ VP_VXXX::commit(uint64_t pc, uint64_t addr, uint16_t rsize, uint64_t real_val,
     res->_pred_valid = pred_valid;
     // res->_predperfect_valid = perfect_res.pred_val == real_val;
 
+    bool taken = res->addr_taken;
+    bool ready = res->addr_ready;
+    bool valid = addr_valid;
+
+    stats.addr_hit += valid;
+    stats.addr_hit_ready += valid && ready;
+    stats.addr_miss_ready += !valid && ready;
+    stats.addr_hit_taken += valid && taken;
+    stats.addr_miss_taken += !valid && taken;
+
+    bool addr_hit_ready = valid && ready;
+    stats._hit_wbs += addr_hit_ready && res->_is_wbs;
+    stats._hit_fca += addr_hit_ready && res->_is_fca;
+    stats._hit_stra += addr_hit_ready && res->_is_stra;
+    stats._hit_deter += addr_hit_ready && res->_hit_deter;
+    stats._hit_taga += addr_hit_ready && res->_is_taga;
+    stats._hit_stra_fca += addr_hit_ready && res->_is_stra && res->_is_fca;
+
+    DPRINTF(Cva6VP, "VP %016lx: commit_ @ [%d] %s: pred %x real %x\n",
+        res->_pc, taken, valid ? "OK" : "KO", res->t1_addr, addr);
+
     commitaccount(res, real_val);
 
-    DPRINTF(Cva6VP, "VP: @%s: pred@ %x real@ %x\n",
-        addr_valid ? "OK" : "KO", res->t1_addr, addr);
-
-    if (res->taken){
-        if (pred_valid){
-            stats._hit_wbs += res->_is_wbs;
-            stats._hit_fca += res->_is_fca;
-            stats._hit_stra += res->_is_stra;
-            // if (res->_is_stra){
-            //     printf("pc: %lx : STRA!\n", pc);
-            // }
-            stats._hit_deter += res->_hit_deter;
-            stats._hit_taga += res->_is_taga;
-            stats._hit_stra_fca += res->_is_stra && res->_is_fca;
-        }
-        if (addr_valid){
-            stats.hitaddr += 1;
-        } else {
-            stats.missaddr += 1;
-        }
-
-        static int hitsa[2];
-        hitsa[addr_valid] += 1;
-        DPRINTF(Cva6VP, "VP : #(t^@)=%d, #(t^!@)=%d :: %f\n",
-            hitsa[1], hitsa[0], (float)hitsa[1]/(hitsa[1] + hitsa[0]));
-    }
+    // if (res->addr_ready){
+    //     static int hitsa[2];
+    //     hitsa[addr_valid] += 1;
+    //     DPRINTF(Cva6VP, "VP : #(t^@)=%d, #(t^!@)=%d :: %f\n",
+    //         hitsa[1], hitsa[0], (float)hitsa[1]/(hitsa[1] + hitsa[0]));
+    // }
 
     // LVP Commit
     uint64_t tag = (pc >> 1);
@@ -313,12 +304,13 @@ VP_VXXX::commit(uint64_t pc, uint64_t addr, uint16_t rsize, uint64_t real_val,
 
     // AP Commit
     AP.commit(pc, addr, res);
+    AP.update_conf(pc, valid, res);
+
     // bool addridxok = (res->t1_addr % size) == (addr % size);
     // bool pred_valid_vastra = res->pred_val_vastra == real_val;
     // if (addridxok){ // Addr conditioning
     //     AP.update_conf(pc, pred_valid_vastra, res);
     // }
-    // AP.update_conf(pc, res->t1_addr == addr, res);
     return 0;
 }
 

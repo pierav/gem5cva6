@@ -49,7 +49,6 @@ class SA
 
   public:
   /* An address predictor */
-  BaseAddrPredDFCM apred;
 
   private:
   /* Renamming */
@@ -76,7 +75,6 @@ class SA
     { }
   } stats;
 
-
   public:
   SA(const std::string &name,
     Cva6CPU &cpu,
@@ -84,7 +82,6 @@ class SA
     scheduler(initSched(name, cpu, p)),
     isa(cpu, "sa.i", false),
     osa(cpu, "sa.o", false),
-    apred(p.vpSize),
     regalloc(4096),
     stats(cpu) { }
 
@@ -130,11 +127,6 @@ class SA
   }
   void push_scheduler(Cva6DynInstPtr inst){
     rename(inst);
-    /* Perform address prediction */
-    if (!inst->isFault() && inst->staticInst->isLoad() && apred.isEnable()){
-      apred.predict(inst->pc->instAddr(), &inst->vp_data);
-      inst->vp_data.is_predicted = true;
-    }
     /* Schedule */
     scheduler.push(inst);
     /* Some static statistics */
@@ -157,29 +149,6 @@ class SA
 
   void commit(Cva6DynInstPtr inst){
     regalloc.commit(inst);
-    /* APRED commit */
-    if (!inst->isFault() && inst->staticInst->isLoad() && apred.isEnable()){
-      uint64_t pc = inst->pc->instAddr();
-      // uint64_t base_addr = inst->getSrcRegOperand(0);
-      // uint64_t addr = inst->dreq->req->getPaddr();
-      uint64_t addr = inst->vp_data.eff_addr;
-      apred.commit(pc, addr, &inst->vp_data);
-      bool valid = inst->vp_data.t1_addr == addr;
-      apred.update_conf(pc, valid, &inst->vp_data);
-      stats.apred_req += 1;
-      stats.apred_conf += inst->vp_data.t1_isconf;
-      stats.apred_hit += valid;
-      stats.apred_conf_hit += inst->vp_data.t1_isconf && valid;
-      stats.apred_taken_hit += inst->vp_data.addr_taken && valid;
-    }
-  }
-
-  void misspredaddr(Cva6DynInstPtr inst, uint64_t eff_addr){
-    assert(inst->vp_data.addr_taken);
-    uint64_t pc = inst->pc->instAddr();
-    apred.commit(pc, eff_addr, &inst->vp_data);
-    apred.update_conf(pc, false, &inst->vp_data);
-    stats.apred_taken_miss += 1;
   }
 
   void flushfrom(Cva6DynInstPtr inst){
