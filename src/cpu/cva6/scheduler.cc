@@ -6,6 +6,7 @@
  **/
 
 #include "cpu/cva6/scheduler.hh"
+#include "cpu/cva6/pipeline.hh"
 
 namespace gem5 {
 namespace cva6 {
@@ -363,6 +364,24 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
   for (auto &reg: inst->regs_dst_phy){
     timeofregready[reg] = base_time + schedule_line + delta;
   }
+
+  /* Also try to VP : unlock register dependancy */
+  inst->vp_data.value_taken = false;
+  if (inst->vp_data.value_ready){
+    assert(inst->staticInst);
+    assert(inst->staticInst->isLoad());
+    uint64_t value = inst->vp_data.pred_val;
+    PhysicalReg &reg = inst->regs_dst_phy[0];
+    /* Clear read dep */
+    timeofregready[reg] = base_time;
+    /* We also have to write predicted value to the PRF */
+    cpu.pipeline->iq.forwardSpeculativeRegVal(reg, value);
+    /* Mark the prediction taken */
+    inst->vp_data.value_taken = true;
+    DPRINTF(Cva6Sched, "SCHEDVP : UNLOCK %s with %lx\n",
+      reg, value);
+  }
+
   /* Mark store */
   if (!inst->isFault() && inst->staticInst->isStore()){
     last_store_time = base_time + schedule_line;

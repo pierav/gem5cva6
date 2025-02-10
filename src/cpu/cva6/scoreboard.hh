@@ -49,7 +49,7 @@ class Scoreboard : public Named
     /* number of entries un issue queue*/
     const unsigned nr_entries;
 
-protected:
+  protected:
     /* this is the FIFO struct of the issue queue  */
     std::deque<Cva6DynInstPtr> issue_queue;
 
@@ -62,11 +62,23 @@ protected:
     PhysicalRegFile<reg_state_t> sb;
     PhysicalRegFile<uint64_t> prf;
     PhysicalRegFile<uint8_t> prf_isfault;
+    PhysicalRegFile<uint8_t> prf_isvp; /* Is value predicted (debug) */
 
     int is_serialise_inflight = 0;
 
     // RAW valid <=> state in {FREE, FWABLE}
     // WAW valid <=> state in {FREE}
+  public:
+    void forwardSpeculativeRegVal(PhysicalReg &reg, RegVal regval){
+      /* Register must be free (Inst is not issued) */
+      assert(sb[reg] == FREE);
+      /* Mark forwardable */
+      sb[reg] = FWABLE;
+      prf_isvp[reg] = true;
+      /* Forward value */
+      prf[reg] = regval;
+    }
+
 
   public:
     Scoreboard(const std::string &name,

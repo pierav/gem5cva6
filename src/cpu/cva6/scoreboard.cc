@@ -193,6 +193,9 @@ Scoreboard::issueInst(Cva6DynInstPtr inst){
     is_serialise_inflight += inst->needSerialise;
     /* Markup registers */
     for (PhysicalReg &reg: inst->regs_dst_phy){
+        if (prf_isvp[reg]){ /* Nothing to do */
+            continue;
+        }
         fatal_if(sb[reg] != FREE, "Reg %s must be freed\n", reg);
         sb[reg] = IN_USE;
     }
@@ -203,8 +206,14 @@ Scoreboard::completeInst(Cva6DynInstPtr inst) {
     assert(!inst->execute_completed); // not already commplete
     inst->execute_completed = true; // Finished execution
     for (PhysicalReg &reg: inst->regs_dst_phy){
-        assert(sb[reg] == IN_USE);
-        sb[reg] = FWABLE;
+        if (prf_isvp[reg]){ /* Clear vp flags because no more vp */
+            assert(sb[reg] == FWABLE);
+            prf_isvp[reg] = false;
+        } else {
+            assert(sb[reg] == IN_USE);
+            sb[reg] = FWABLE;
+        }
+        /* Set value and fault */
         prf[reg] = reg.value;
         if (inst->isFault()){
             prf_isfault[reg] = true;
@@ -256,6 +265,7 @@ Scoreboard::flush(){
     /* Clear inflights registers */
     sb.setall(FREE);
     prf_isfault.setall(false);
+    prf_isvp.setall(false);
     is_serialise_inflight = 0;
 }
 

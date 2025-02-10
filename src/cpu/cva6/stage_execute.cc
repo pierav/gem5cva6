@@ -268,9 +268,14 @@ Execute::evaluate() {
         }
 
         bool misspred_value = dpe.commit(inst);
-        // VP commit
         if (misspred_value){
-            if (vpFlush){ // Flush
+            ThreadContext *thread = cpu.getContext();
+            resolved_branch = BranchData::SquashAt(thread->pcState());
+        }
+        // VP commit
+        # if 0
+        if (misspred_value){
+            if (vpFlush){ //  vpFlush Flush
                 resolved_branch = BranchData::SquashAt(
                     cpu.getContext()->pcState());
                 flush();
@@ -286,6 +291,7 @@ Execute::evaluate() {
                 #endif
             }
         }
+        #endif
 
         for (Plugin *plugin: plugins){
             plugin->commit(inst);

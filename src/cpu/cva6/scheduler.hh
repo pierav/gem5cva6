@@ -533,6 +533,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
     }
   };
 
+  Cva6CPU &cpu;
 
   struct Stats : public statistics::Group
   {
@@ -560,12 +561,13 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   {
     uint64_t pushed = 0;
     std::deque<Cva6DynInstPtr> slots;
-    PhysicalRegFile<unsigned int> holdregs;
-    PhysicalRegFile<unsigned int> latencyregs;
+    // PhysicalRegFile<unsigned int> holdregs;
+    // PhysicalRegFile<unsigned int> latencyregs;
 
     public:
+    const static int width = 4;
     // std::map<uint64_t/* Addr */, uint64_t/* Count */> idealstoremap;
-    bool canPush(){ return pushed < 4; }
+    bool canPush(){ return pushed < width; }
     void push(Cva6DynInstPtr inst, uint64_t latency){
       pushed++;
       slots.push_back(inst);
@@ -620,7 +622,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
       return ret;
     }
     #endif
-    uint64_t execution_latency(PhysicalReg &reg){ return latencyregs[reg]; }
+    // uint64_t execution_latency(PhysicalReg &reg){ return latencyregs[reg]; }
   };
 
   /* The main containers */
@@ -698,11 +700,13 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   /* Constructor */
   SchedulerPierreMichaud(
     const std::string &name,
-    Cva6CPU &cpu,
+    Cva6CPU &cpu_,
     const BaseCva6CPUParams &p
-  ) : Named(name),
-      stats(cpu), size(p.schedSize), mdp(1024),
-      mla(16) {}
+  ) : Named(name), cpu(cpu_),
+      stats(cpu_), size(p.schedSize), mdp(1024),
+      mla(16) {
+        // scheduler_entry_t::width = p.schedWidth;
+      }
 };
 
 

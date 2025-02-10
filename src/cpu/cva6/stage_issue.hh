@@ -195,6 +195,10 @@ class IssueUnit : public Named
     bool markMemoryViolation(Cva6DynInstPtr inst){
       return scoreboard.markMemoryViolation(inst);
     }
+
+    void forwardSpeculativeRegVal(PhysicalReg &reg, RegVal regval){
+      scoreboard.forwardSpeculativeRegVal(reg, regval);
+    }
 };
 
 /** Issue stage. */

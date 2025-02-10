@@ -5,7 +5,6 @@
  * Created:   27/12/2023
  **/
 
-
 #pragma once
 
 #include <deque>
@@ -29,7 +28,8 @@ struct confcpt_t
       conf += 1;
     }
     if (!valid && conf > 0){
-      conf -= 1;
+      // conf -= 1;
+      conf = 0;
       // conf -= 1;
     }
   }

@@ -52,6 +52,8 @@ VPDPE::insert(Cva6DynInstPtr inst){
         inst->vp_data.addr_ready = false;
         inst->vp_data.value_ready = false;
       }
+      /* By default take prediction */
+      inst->vp_data.value_taken = inst->vp_data.value_ready;
     }
   }
   ghist.insert(inst);
@@ -259,10 +261,12 @@ VPDPE::commit(Cva6DynInstPtr inst){
       }
       if (isload){
           uint64_t base_addr = inst->getSrcRegOperand(0);
-          uint64_t real_val = inst->dreq->getData();
+          uint64_t real_val = inst->getDstRegOperand(0); //
+          // CARE SIGN EXTENSION !!!!
+          // inst->dreq->getData();
           // inst->getDsrRegOperand(0);
           uint64_t pred_val = inst->vp_data.pred_val;
-          inst->vp_data.hit = inst->vp_data.value_ready &&
+          inst->vp_data.hit = inst->vp_data.value_taken &&
               (pred_val == real_val);
           // Commit real value
           vp.commit(pc, base_addr, inst->dreq->req->getSize(),
