@@ -43,7 +43,6 @@ from common import Options
 from common.SysPaths import binary
 from os import path
 
-
 parser = argparse.ArgumentParser()
 Options.addCommonOptions(parser)
 # Options.addFSOptions(parser)
@@ -68,6 +67,7 @@ cva6_config = {
     "sbSize" : DEFAULT(32), # Scoreboard size
     "schedType" : DEFAULT(0), # The type of scheduler used in frontend
     "schedSize" : DEFAULT(128),
+    "schedWidth" : DEFAULT(4),
     "userelf": DEFAULT("") # User elf for symbols only
 }
 o3_config = {

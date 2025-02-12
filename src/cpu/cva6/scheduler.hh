@@ -533,6 +533,39 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
     }
   };
 
+  class MinLineDepAfterBB
+  {
+    PhysicalRegFile<uint8_t> fromload;
+    uint64_t last_bb_time = 0;
+    uint64_t cur_bb_time = 0;
+    public:
+    MinLineDepAfterBB() {}
+
+    bool isConstraints(Cva6DynInstPtr& inst){
+      for (auto &reg: inst->regs_src_phy){
+        if (fromload[reg]){ return true; }
+      }
+      return false;
+    }
+    uint64_t getMinSchedulerTime(Cva6DynInstPtr& inst){
+      return last_bb_time;
+    }
+    /* When instruction is scheduled */
+    void onSchedule(Cva6DynInstPtr& inst, uint64_t time){
+      cur_bb_time = std::max(cur_bb_time, time);
+      bool is_load = !inst->isFault() && inst->staticInst->isLoad();
+      is_load &= !inst->vp_data.value_ready;
+      for (auto &reg: inst->regs_dst_phy){
+        fromload[reg] = is_load;
+      }
+      /* When BB end, clear stats and setup last_bb_time */
+      if (!inst->isFault() && inst->staticInst->isControl()){
+        last_bb_time = cur_bb_time;
+        fromload.setall(false);
+      }
+    }
+  } mldabb;
+
   Cva6CPU &cpu;
 
   struct Stats : public statistics::Group
@@ -565,7 +598,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
     // PhysicalRegFile<unsigned int> latencyregs;
 
     public:
-    const static int width = 4;
+    inline static int width = 0;
     // std::map<uint64_t/* Addr */, uint64_t/* Count */> idealstoremap;
     bool canPush(){ return pushed < width; }
     void push(Cva6DynInstPtr inst, uint64_t latency){
@@ -705,7 +738,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   ) : Named(name), cpu(cpu_),
       stats(cpu_), size(p.schedSize), mdp(1024),
       mla(16) {
-        // scheduler_entry_t::width = p.schedWidth;
+        scheduler_entry_t::width = p.schedWidth;
       }
 };
 

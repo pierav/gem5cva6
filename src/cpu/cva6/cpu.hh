@@ -248,7 +248,7 @@ class DTLBRequest :
     Cva6CPU &cpu;
   public:
     // The public interface !
-    Fault fault; // All faults
+    Fault fault = NoFault; // All faults
     RequestPtr req; // Used in pipeline
     PacketPtr pkt = nullptr; // Used for commitAcc
     // Request::Flags flags;
@@ -273,15 +273,97 @@ class DTLBRequest :
 
     enum DTLBRequestState
     {
-        NotIssued = 0, /* Just been made */
-        InTranslation, /* Issued to ITLB, must wait for reqply */
-        Translated, /* Translation complete */
-        InMemory, /* Issued to memory, must wait for response */
-        Complete, /* Complete.  Either a fault, or a fetched line */
-        End
+      NotIssued = 0, /* Just been made */
+      InTranslation, /* Issued to ITLB, must wait for reqply */
+      Translated, /* Translation complete */
+      InMemory, /* Issued to memory, must wait for response */
+      Complete, /* Complete.  Either a fault, or a fetched line */
+      End
     };
+    class Fsm
+    {
+      private:
+      Cva6CPU &cpu;
+      DTLBRequest *req; /* Englobing req*/
+      static inline const std::string _names[] = {
+        "____NotIssued",
+        "InTranslation",
+        "___Translated",
+        "_____InMemory",
+        "_____Complete"
+      };
+      uint64_t last_time = 0;
+      uint64_t delays[5] = { 0 };
+      DTLBRequestState state = NotIssued;
+      uint64_t time(){
+        return cpu.curCycle();
+      }
 
-    DTLBRequestState state;
+      class SingletonStats
+      {
+        private:
+        struct Stats : public statistics::Group
+        {
+          statistics::Distribution inMemoryLatencies;
+          statistics::Scalar *delays[5];
+          Stats(const std::string &name, BaseCPU &cpu) :
+            statistics::Group(&cpu, name.c_str()),
+            ADD_STAT(inMemoryLatencies, "inMemoryLatencies") {
+            for (int i = 0; i < 5; i++){
+              delays[i] = new statistics::Scalar(this, _names[i].c_str());
+            }
+            inMemoryLatencies
+              .init(0,100,1)
+              .flags(statistics::pdf);
+          };
+        } stats;
+        public:
+        SingletonStats(const std::string &name, BaseCPU &cpu) :
+          stats(name, cpu) {}
+        void sample(uint64_t delta, DTLBRequestState x){
+          *stats.delays[(int)x] += delta;
+          if (x == InMemory){
+            stats.inMemoryLatencies.sample(delta);
+          }
+        }
+      };
+
+      static inline SingletonStats *ss = nullptr;
+      SingletonStats *getSS(){
+        if (ss == nullptr){
+          printf("New SING!!\n");
+          ss = new SingletonStats(cpu.name() + ".dreqfsm", cpu);
+        }
+        return ss;
+      }
+
+      public:
+      Fsm(Cva6CPU &cpu_, DTLBRequest *req_) : cpu(cpu_), req(req_) {
+        last_time = time();
+      }
+      Fsm& operator=(DTLBRequestState x) {
+        uint64_t now = time();
+        uint64_t delta = now - last_time;
+        last_time = now;
+        delays[(int)state] += delta;
+        if (req->mode == BaseMMU::Read){
+          getSS()->sample(delta, state);
+        }
+        state = x; /* Set new state */
+        return *this;
+      }
+      bool operator==(DTLBRequestState rhs) {
+        return state == rhs;
+      }
+      bool operator!=(DTLBRequestState rhs) {
+        return state != rhs;
+      }
+      const std::string& str(){
+        assert((int)state < (int)DTLBRequestState::End);
+        return _names[(int)state];
+      }
+    };
+    Fsm state;
     bool inuse = true;
 
     void setupfault();
@@ -289,21 +371,20 @@ class DTLBRequest :
   public:
     DTLBRequest(
       Cva6CPU &cpu_,
-      Addr pc, // Idk why
-      Addr addr,
-      unsigned int size,
+      Addr pc, /* For prefetchers ? */
+      Addr addr, /* The virtual address */
+      unsigned int size, /* The request size */
       Request::Flags flags_,
-      const std::vector<bool>& be, // For RW
+      const std::vector<bool>& be, /* For masker writes only */
       uint8_t *data_, // Data for stores
       uint64_t *res_, // For Store
       AtomicOpFunctorPtr amo_op, // For AMO
       BaseMMU::Mode mode_) :
       SenderState(),
       cpu(cpu_),
-      fault(NoFault),
       res(res_),
       mode(mode_),
-      state(NotIssued)
+      state(cpu_, this)
     {
       // Check unalignement
       raw_size = BASESIZE; // cpu.cacheLineSize();

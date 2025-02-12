@@ -298,6 +298,16 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta){
   uint64_t sl_mdp = getSLMDP(inst);
   uint64_t sl_st = getSLSTORE(inst);
 
+  /* Add our wip constraint */
+  // if (mldabb.isConstraints(inst)){
+  //   uint64_t mla_time = mldabb.getMinSchedulerTime(inst);
+  //   if (mla_time > base_time){
+  //     uint64_t mldabb_schedule_line = mla_time - base_time + 1;
+  //     schedule_line = std::max(schedule_line, mldabb_schedule_line);
+  //   }
+  // }
+
+
   if (!inst->isFault() && inst->staticInst->isLoad()){
     /* If load prediction is confident remove reg deps */
     /* Also do not mark prediction if useless (sl_rr > sl_mdp)*/
@@ -394,6 +404,7 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
     schedule_line, base_time + schedule_line, dumpInstPreg(inst));
 
   mla.onSchedule(inst, base_time + schedule_line);
+  // mldabb.onSchedule(inst, base_time + schedule_line);
 
   // FIX ARRAY ! TODO NOT NEEDED (only when s2d is empty)
   while (!s2d.empty() && s2d.front().empty()){

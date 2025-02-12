@@ -227,25 +227,16 @@ DTLBRequest::getData(){
     return 0;
 }
 
-static std::string DTLBRequestStateName[] = {
-    "____NotIssued",
-    "InTranslation",
-    "___Translated",
-    "_____InMemory",
-    "_____Complete"
-};
-
 std::string
 DTLBRequest::name(){
     std::ostringstream oss;
-    assert((int)state < (int)DTLBRequest::DTLBRequestState::End);
     char key = mode == BaseMMU::Read ? 'R' :
                      req->isAtomic() ? 'A' : 'W';
     if (is_prefetch_mode){
         key = 'C';
     }
     oss << "<...>.DTLBreq("
-        << DTLBRequestStateName[(int)state]
+        << state.str()
         << std::hex
         << ",Vx" << req->getVaddr()
         << ",#x" << req->getSize()
