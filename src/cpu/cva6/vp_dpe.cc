@@ -18,18 +18,22 @@ namespace cva6 {
 
 void
 VPDPE::predict(Cva6DynInstPtr inst){
-  if (!inst->vp_data.is_predicted){
-    vp.predict(&inst->vp_data);
-    inst->vp_data.is_predicted = true;
-  } else {
-    /* overpredict if needed */
-    if (is_fresh_commited_values){
-       vp.predict(&inst->vp_data);
+  if (vp.isEnable()){
+    if (!inst->vp_data.is_predicted){
+      vp.predict(&inst->vp_data);
+      inst->vp_data.is_predicted = true;
+    } else {
+      /* overpredict if needed */
+      if (is_fresh_commited_values){
+        vp.predict(&inst->vp_data);
+      }
+      // printf("Overpredict\n");
     }
-    // printf("Overpredict\n");
   }
   /* In all cases updates predict timestamp for stats */
   inst->vp_data.time_predict = cpu.curCycle();
+  /* Predict L1 hit/miss */
+  inst->vp_data.hmp_l1hit_pred = hmp.predict(inst);
   // DPRINTF(Cva6VP, "predict %s at %d\n", *inst, inst->vp_data.time_predict);
 }
 
@@ -37,9 +41,8 @@ void
 VPDPE::insert(Cva6DynInstPtr inst){
   inflights.push_back(inst);
   // Compute static data
-  if (vp.isEnable() &&         /** VP enable */
-    !inst->isFault() &&        /** Not a adress fault */
-    inst->staticInst->isLoad() /** Only predict memory load */
+  if (!inst->isFault() &&        /** Not a adress fault */
+      inst->staticInst->isLoad() /** Only predict memory load */
   ){
     inst->executeInitiateStatic();
     inst->vp_data.inst_mem_req_imm = inst->static_data.mem_req_imm;
@@ -284,7 +287,7 @@ VPDPE::commit(Cva6DynInstPtr inst){
     }
 
     bool misspred = false;
-     if (vp.isEnable() &&
+    if (vp.isEnable() &&
         !inst->isFault() &&
         inst->staticInst->isLoad()
     ){ /* Missprediction taken */
@@ -294,7 +297,6 @@ VPDPE::commit(Cva6DynInstPtr inst){
 
     /* History management */
     ghist.commit(inst);
-
     bool updated_hist = ghist_commit.insert(inst);
     if (updated_hist){
       void *history;
@@ -304,6 +306,11 @@ VPDPE::commit(Cva6DynInstPtr inst){
       vtage.flush_branch(history);
     }
     ghist_commit.commit(inst);
+
+    /* Hit Miss predictor update */
+    if (!inst->isFault() && inst->staticInst->isLoad()){
+      hmp.commit(inst, inst->vp_data.hmp_l1hit_pred);
+    }
 
     #if 0
     if (!inst->isFault() && inst->staticInst->isLoad()){

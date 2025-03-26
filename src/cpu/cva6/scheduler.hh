@@ -503,6 +503,10 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
       return !inst->isFault() && inst->staticInst->isStore();
     }
 
+    virtual bool isTriggerPush(Cva6DynInstPtr& inst){
+      return isConstraints(inst);
+    }
+
     uint64_t getMinSchedulerTime(Cva6DynInstPtr& inst){
       // assert(isConstraints(inst));
       // if (times.size() == size){
@@ -516,7 +520,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
       /* By default update MLL MaxLastLine */
       mll = std::max(time, mll);
       /* push in fifo the schedule line if store */
-      if (isConstraints(inst)){
+      if (isTriggerPush(inst)){
         times.push_back(mll);
         /* Update mll if needed */
         if (times.size() > size){
@@ -530,6 +534,21 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
       mll = 0; // Nothing in flight
       themll = 0;
       times.clear();
+    }
+  };
+
+
+  class MinLineAnalyserBB : public MinLineAnalyserV2
+  {
+    public:
+    MinLineAnalyserBB(uint64_t size_) : MinLineAnalyserV2(size_) {}
+
+    bool isConstraints(Cva6DynInstPtr& inst) override {
+      return true;
+    }
+
+    bool isTriggerPush(Cva6DynInstPtr& inst) override {
+      return !inst->isFault() && inst->staticInst->isControl();
     }
   };
 
@@ -672,6 +691,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   PhysicalRegFile<unsigned int> timeofregready;
 
   MinLineAnalyserV2 mla;
+  MinLineAnalyserBB mlabb;
 
   bool needSerialise(Cva6DynInstPtr inst){
     if (inst->isFault()) {
@@ -696,6 +716,8 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   uint64_t getSLRR(Cva6DynInstPtr &inst);
   uint64_t getSLMDP(Cva6DynInstPtr &inst);
   uint64_t getSLSTORE(Cva6DynInstPtr &inst);
+  uint64_t getSLBBdep(Cva6DynInstPtr &inst);
+
   uint64_t getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta);
   // uint64_t getScheduleLineForLoadAddr(uint64_t addr, Cva6DynInstPtr*inst);
   uint64_t latency(Cva6DynInstPtr inst){
@@ -737,7 +759,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
     const BaseCva6CPUParams &p
   ) : Named(name), cpu(cpu_),
       stats(cpu_), size(p.schedSize), mdp(1024),
-      mla(16) {
+      mla(16), mlabb(6) {
         scheduler_entry_t::width = p.schedWidth;
       }
 };

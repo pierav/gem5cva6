@@ -113,6 +113,10 @@ struct vp_inst_metadata_t
     _hit_deter = false;
     // *this = {};
   }
+
+  int64_t hmp_proba = 0;
+  bool hmp_l1hit_pred = false; /* */
+  bool hmp_l1hit_eff = false;
 };
 
 

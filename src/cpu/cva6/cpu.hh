@@ -362,6 +362,10 @@ class DTLBRequest :
         assert((int)state < (int)DTLBRequestState::End);
         return _names[(int)state];
       }
+      uint64_t inMemoryDelay(){
+        return delays[InMemory];
+      }
+
     };
     Fsm state;
     bool inuse = true;
@@ -533,6 +537,9 @@ class DTLBRequest :
             !req->isCacheInvalidate() &&
             !req->isCacheClean() &&
             !req->isLockedRMW();
+    }
+    uint64_t inMemoryDelay(){
+      return state.inMemoryDelay();
     }
 
 };

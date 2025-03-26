@@ -86,7 +86,24 @@ class FUBase : public virtual ReadyValidIntf, /* Ready valid interface */
     }
 };
 
-class Cva6DynInstChunk : public Named
+bool maskMatchVaddrInst(Cva6DynInstPtr i1, Cva6DynInstPtr i2, uint64_t mask);
+
+class MatchAddrIntf
+{
+  public:
+  virtual bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) = 0;
+  bool isPageOffsetMatches(Cva6DynInstPtr inst){
+      return isMaskMatchVaddr(inst, 0b111111111000);
+  }
+  bool isClMatch(Cva6DynInstPtr inst, uint64_t clsize){
+      uint64_t mask = ((1 << 12) - 1); // 0b111111111111;
+      mask &= ~(clsize - 1); // 0b111111110000
+      // assert(mask == 0b111111110000);
+      return isMaskMatchVaddr(inst, mask);
+  }
+};
+
+class Cva6DynInstChunk : public Named, public MatchAddrIntf
 {
   using ContainerT = std::deque<Cva6DynInstPtr>;
 
@@ -114,6 +131,10 @@ class Cva6DynInstChunk : public Named
       chunk.erase(std::find(chunk.begin(), chunk.end(), inst));
     }
 
+    ContainerT::iterator erase(ContainerT::iterator it){
+      return chunk.erase(it);
+    }
+
     void flushfrom(Cva6DynInstPtr _inst) {
       while (!chunk.empty() &&
         chunk.back()->isAfterOrEqual(_inst)){
@@ -121,6 +142,7 @@ class Cva6DynInstChunk : public Named
         chunk.pop_back();
       }
     }
+
     bool empty()                 { return chunk.empty(); }
     size_t size()                { return chunk.size(); }
     Cva6DynInstPtr front()       { return chunk.front(); }
@@ -131,7 +153,20 @@ class Cva6DynInstChunk : public Named
     Cva6DynInstPtr& operator[](int idx)      { return chunk[idx]; }
     Cva6DynInstPtr operator[](int idx) const { return chunk[idx]; }
 
-
+    bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) override {
+      Addr addr_masked = inst->dreq->req->getVaddr() & mask;
+      // Check if the page offset matches
+      for (Cva6DynInstPtr i2: chunk){
+        if (i2 == inst){
+          return false;
+        }
+        if ((i2->dreq->req->getVaddr() & mask) == addr_masked){
+          return true;
+        }
+      }
+      fatal("Unrecheable\n");
+      return false;
+    }
 };
 
 } // namespace cva6

@@ -423,6 +423,7 @@ bool
 LSULoadUnit::advance(){
     DPRINTF(Cva6LSU, "Advance... [%d]\n", loadqueue.size());
     /* Try to send instruction to memory */
+
     while (!loadqueue.empty()){
         Cva6DynInstPtr inst = loadqueue.front();
         DPRINTF(Cva6LSU, "Select Queue : %s : %s\n", *inst,
@@ -507,36 +508,73 @@ bool
 LSUBase::advance(){
 
     DPRINTF(Cva6LSU, "Advance ... [%d]\n", lsu_fifo.size());
-    for (Cva6DynInstPtr inst: lsu_fifo){
+    auto it = lsu_fifo.begin();
+    while (it != lsu_fifo.end()){
+        Cva6DynInstPtr &inst = *it;
+        // assert(inst->dreq->fault == NoFault);
         if (!inst->dreq->isLaunched()){
             inst->dreq->translateTiming();
         }
-    }
-    while (!lsu_fifo.empty()){
-        Cva6DynInstPtr inst = lsu_fifo.front();
-        DPRINTF(Cva6LSU, "Select Queue : %s : %s\n", *inst,
-            inst->dreq->name());
         if (!inst->dreq->isTranslated()){
-            break;
+            DPRINTF(Cva6LSU, "In translation : %s \n",
+                *inst, inst->dreq->name());
+            it++;
+            continue;
         }
         if (inst->dreq->fault != NoFault){
-            lsu_fifo.pop(inst);
+            DPRINTF(Cva6LSU, "issue fault    : %s \n",
+                *inst, inst->dreq->name());
+            it=lsu_fifo.erase(it);
             continue;
         }
         assert(inst->dreq->req->hasPaddr());
         /* Amo must be drained */
         if (store_unit.amo_buffer.isPageOffsetMatches(inst)){
+            DPRINTF(Cva6LSU, "Break on amo   : %s \n",
+                *inst, inst->dreq->name());
+            break;
+        }
+        /* Drain to avoid store -> load */
+        bool isStoreBefore = false;
+        for (auto &i2: lsu_fifo){
+            if (i2 == inst){
+                break;
+            }
+            if (!i2->isFault() && !i2->staticInst->isLoad()){
+                isStoreBefore = true;
+                break;
+            }
+        }
+        /* Store serialisation */
+        if (!inst->staticInst->isLoad()){
+            if (isStoreBefore){
+                DPRINTF(Cva6LSU, "Break on store : %s \n",
+                    *inst, inst->dreq->name());
+                break;
+            }
+        }
+        /* Load bypass */
+        if (inst->staticInst->isLoad() &&
+           lsu_fifo.isPageOffsetMatches(inst)){
+            DPRINTF(Cva6LSU, "Break on deps  : %s \n",
+                *inst, inst->dreq->name());
             break;
         }
         if (destUnit(inst)->canPush(inst)){
+            DPRINTF(Cva6LSU, "Issue          : %s \n",
+                *inst, inst->dreq->name());
             /* Push inst */
             destUnit(inst)->push(inst);
-            lsu_fifo.pop(inst);
             /* Mark MDP checker */
             cpu.pipeline->mdpc.issue(inst);
+            it=lsu_fifo.erase(it);
+            continue;
+        } else {
+            DPRINTF(Cva6LSU, "Fu Stall for   : %s \n",
+                *inst, inst->dreq->name());
+            it++;
             continue;
         }
-        break; // Break if no access emitted
     }
     store_unit.advance();
     load_unit.advance();

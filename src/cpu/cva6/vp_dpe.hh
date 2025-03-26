@@ -18,6 +18,7 @@
 #include "cpu/cva6/VTAGE.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/dyn_inst.hh"
+#include "cpu/cva6/hmp.hh"
 #include "cpu/cva6/vp_base.hh"
 #include "debug/Cva6VP.hh"
 
@@ -191,7 +192,7 @@ class VPDPE : public Named
     ghist_t ghist;
     ghist_t ghist_commit; // debug only
     VTageVP vtage;
-
+    HMP hmp;
   public:
     VPDPE(const std::string &name, Cva6CPU &cpu_,
           const BaseCva6CPUParams &params, VP& vp_) :
@@ -213,7 +214,8 @@ class VPDPE : public Named
               3, //counterWidth,
               1, // instShiftAmt,
               *(new std::vector<unsigned>()),
-              &ghist_commit) { }
+              &ghist_commit),
+        hmp(name + ".hmp", cpu, params) { }
 
   protected:
     /** Internal predict */

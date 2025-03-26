@@ -22,23 +22,6 @@
 namespace gem5 {
 namespace cva6 {
 
-bool maskMatchVaddrInst(Cva6DynInstPtr i1, Cva6DynInstPtr i2, uint64_t mask);
-
-class MatchAddrIntf
-{
-  public:
-  virtual bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) = 0;
-  bool isPageOffsetMatches(Cva6DynInstPtr inst){
-      return isMaskMatchVaddr(inst, 0b111111111000);
-  }
-  bool isClMatch(Cva6DynInstPtr inst, uint64_t clsize){
-      uint64_t mask = ((1 << 12) - 1); // 0b111111111111;
-      mask &= ~(clsize - 1); // 0b111111110000
-      // assert(mask == 0b111111110000);
-      return isMaskMatchVaddr(inst, mask);
-  }
-};
-
 // Store queue persists store requests and pushes them to memory
 // if they are no longer speculative
 class LSUStoreBuffer

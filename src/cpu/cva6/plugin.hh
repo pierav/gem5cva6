@@ -15,6 +15,7 @@
 #include "base/statistics.hh"
 #include "base/time.hh"
 #include "cpu/cva6/dyn_inst.hh"
+#include "cpu/cva6/hmp.hh"
 #include "cpu/cva6/pure_block.hh"
 #include "cpu/cva6/scheduler.hh"
 #include "debug/Cva6Plugin.hh"
@@ -174,6 +175,27 @@ class PluginLambda : public Plugin
   }
 };
 
+
+class PluginHMP : public Plugin
+{
+  protected:
+    HMP hmp;
+
+  public:
+    PluginHMP(const std::string &name,
+      Cva6CPU &cpu_,
+      const BaseCva6CPUParams &params) :
+      Plugin(name, cpu_),
+      hmp(name, cpu_, params) {
+    }
+
+  void commit(Cva6DynInstPtr inst){
+    if (!inst->isFault() && inst->staticInst->isLoad()){
+      bool prediction = hmp.predict(inst);
+      hmp.commit(inst, prediction);
+    }
+  }
+};
 
 #define PMC_RANGE 20
 

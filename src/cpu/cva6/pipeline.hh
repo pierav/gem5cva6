@@ -183,8 +183,6 @@ class Pipeline : public Ticked
     statistics::Scalar expop;
     statistics::Scalar excommit;
 
-
-
     Stats(Cva6CPU &cpu) :
       statistics::Group(&cpu, "pipeline"),
       ADD_STAT(systemhus, ""),

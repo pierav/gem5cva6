@@ -267,13 +267,24 @@ SchedulerPierreMichaud::getSLSTORE(Cva6DynInstPtr &inst){
     if (mla_time > base_time){
       uint64_t store_schedule_line = mla_time - base_time + 1;
       schedule_line = std::max(schedule_line, store_schedule_line);
-        DPRINTF(Cva6Sched, "Schedule (Store NOLOCK ): line %d T %d for %s\n",
+      DPRINTF(Cva6Sched, "Schedule (Store NOLOCK ): line %d T %d for %s\n",
         schedule_line, schedule_line + base_time, dumpInstPreg(inst));
     }
   }
   return schedule_line;
 }
 
+uint64_t
+SchedulerPierreMichaud::getSLBBdep(Cva6DynInstPtr &inst){
+  uint64_t schedule_line = 0;
+  uint64_t mlabb_time = mlabb.getMinSchedulerTime(inst);
+    if (mlabb_time > base_time){
+      schedule_line = mlabb_time - base_time + 1;
+      DPRINTF(Cva6Sched, "Schedule (BB Deps      ): line %d T %d for %s\n",
+        schedule_line, schedule_line + base_time, dumpInstPreg(inst));
+    }
+  return schedule_line;
+}
 uint64_t
 SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta){
   uint64_t schedule_line = 0; // Active line
@@ -297,6 +308,7 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta){
   uint64_t sl_rr = getSLRR(inst);
   uint64_t sl_mdp = getSLMDP(inst);
   uint64_t sl_st = getSLSTORE(inst);
+  uint64_t sl_bb = getSLBBdep(inst);
 
   /* Add our wip constraint */
   // if (mldabb.isConstraints(inst)){
@@ -306,24 +318,22 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta){
   //     schedule_line = std::max(schedule_line, mldabb_schedule_line);
   //   }
   // }
-
-
   if (!inst->isFault() && inst->staticInst->isLoad()){
     /* If load prediction is confident remove reg deps */
     /* Also do not mark prediction if useless (sl_rr > sl_mdp)*/
     if (inst->vp_data.addr_ready && (sl_mdp < sl_rr)){
-      delta += (sl_rr - sl_mdp); // The defautl schedule
-      schedule_line = std::max({schedule_line, sl_mdp});
+      // delta += (sl_rr - sl_mdp); // The defautl schedule
+      schedule_line = std::max({schedule_line, sl_mdp, sl_bb});
        DPRINTF(Cva6Sched, "Schedule (ADDR PRED    ): line %d T %d for %s\n",
         schedule_line, schedule_line + base_time, dumpInstPreg(inst));
       inst->vp_data.addr_taken = true; /* Mark taken */
     } else {
-      schedule_line = std::max({schedule_line, sl_rr, sl_mdp});
+      schedule_line = std::max({schedule_line, sl_rr, sl_mdp, sl_bb});
     }
   } else if (!inst->isFault() && inst->staticInst->isStore()) {
-    schedule_line = std::max({schedule_line, sl_rr, sl_st});
+    schedule_line = std::max({schedule_line, sl_rr, sl_st, sl_bb});
   } else {
-    schedule_line = std::max({schedule_line, sl_rr});
+    schedule_line = std::max({schedule_line, sl_rr, sl_bb});
   }
   return schedule_line;
 }
@@ -358,6 +368,16 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
   }
   DPRINTF(Cva6Sched, "Schedule (pre fix      ): line %d T %d : %s\n",
     schedule_line, base_time + schedule_line, dumpInstPreg(inst));
+
+  /* Fix delta with Hit/Miss prediction */
+  // BAD (+3%)
+  // if (!inst->isFault() && inst->staticInst->isLoad() &&
+  //     !inst->vp_data.hmp_l1hit_pred){
+  //   delta = 20; // L1 Miss
+  // }
+  // if (!inst->isFault() && inst->staticInst->isLoad()){
+  //   delta = 4 + inst->vp_data.hmp_proba;
+  // }
 
   /* Ignore already filled lines */
   while (schedule_line < s2d.size() && !s2d[schedule_line].canPush()){
@@ -405,6 +425,7 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
 
   mla.onSchedule(inst, base_time + schedule_line);
   // mldabb.onSchedule(inst, base_time + schedule_line);
+  mlabb.onSchedule(inst, base_time + schedule_line);
 
   // FIX ARRAY ! TODO NOT NEEDED (only when s2d is empty)
   while (!s2d.empty() && s2d.front().empty()){
