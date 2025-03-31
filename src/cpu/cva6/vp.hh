@@ -195,9 +195,12 @@ class VP : public Named
     uint64_t compute_key(uint64_t shr);
 
   public:
+    /* Before predict. Only inserted one */
+    virtual void insert(vp_inst_metadata_t *res, ghist_t &ghist) {}
+
     /* Make a prediction */
     virtual bool predict(vp_inst_metadata_t *res, bool atcommit=false){
-        return false;
+      return false;
     }
     /**
      * Update the prediction at issue time.

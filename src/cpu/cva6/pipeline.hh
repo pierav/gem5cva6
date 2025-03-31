@@ -121,7 +121,8 @@ class MemOrderChecker : public Named
     /* Use != for perfect serialisation => No skip InFLight stores */
     DPRINTF(Cva6MDP, "Violation [%d] : %d != %d\n", is_violation,
       inst->last_store_id, refid);
-
+    stats.req += 1;
+    stats.miss += is_violation;
     return is_violation;
   }
 

@@ -14,6 +14,7 @@
 #include "base/named.hh"
 #include "base/statistics.hh"
 #include "cpu/base.hh"
+#include "cpu/cva6/VTAGE.hh"
 
 namespace gem5 {
 namespace cva6 {
@@ -117,6 +118,11 @@ struct vp_inst_metadata_t
   int64_t hmp_proba = 0;
   bool hmp_l1hit_pred = false; /* */
   bool hmp_l1hit_eff = false;
+
+  /* Vtage things */
+  uint64_t seqNum;
+  FoldedHistories ch;
+  VPSave history;
 };
 
 

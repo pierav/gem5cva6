@@ -68,7 +68,8 @@ cva6_config = {
     "schedType" : DEFAULT(0), # The type of scheduler used in frontend
     "schedSize" : DEFAULT(128),
     "schedWidth" : DEFAULT(4),
-    "userelf": DEFAULT("") # User elf for symbols only
+    "userelf": DEFAULT(""), # User elf for symbols only
+    "renameSize": DEFAULT(64)
 }
 o3_config = {
     "numIQEntries": DEFAULT(32),

@@ -57,7 +57,8 @@ Scoreboard::isUnissedStoreBefore(Cva6DynInstPtr inst_in){
 }
 
 bool
-Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg){
+Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg,
+    Cva6DynInstPtr &producer){
     switch(sb[reg]){
         case FREE: {
             /* Read commited value */
@@ -66,6 +67,7 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg){
             break;
         }
         case IN_USE: {
+            producer = _sb_producer[reg];
             /* We have to wait */
             break;
         }
@@ -123,7 +125,7 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg){
 }
 
 bool
-Scoreboard::canInstIssue(Cva6DynInstPtr inst) {
+Scoreboard::canInstIssue(Cva6DynInstPtr inst, Cva6DynInstPtr &producer) {
 
     /* Fault does not have register dependancies */
     if (inst->isFault()){ return true; }
@@ -138,7 +140,7 @@ Scoreboard::canInstIssue(Cva6DynInstPtr inst) {
     // RaW dependencies
     int ok = 1;
     for (PhysicalReg &reg: inst->regs_src_phy){
-        ok &= getRegState(inst, reg);
+        ok &= getRegState(inst, reg, producer);
     }
     if (!ok){ return false; }
 
@@ -158,7 +160,8 @@ Cva6DynInstPtr
 Scoreboard::getIssueInst(
     size_t index,
     bool &is_over_serialise,
-    bool &is_ready
+    bool &is_ready,
+    Cva6DynInstPtr &producer
 ){
     Cva6DynInstPtr inst = Cva6DynInst::bubble();
     is_over_serialise = false;
@@ -179,7 +182,7 @@ Scoreboard::getIssueInst(
         return Cva6DynInst::bubble();
     }
     inst = cpu.pipeline->sa.front_scheduler();
-    is_ready = canInstIssue(inst);
+    is_ready = canInstIssue(inst, producer);
     return inst;
 }
 
@@ -198,6 +201,7 @@ Scoreboard::issueInst(Cva6DynInstPtr inst){
         }
         fatal_if(sb[reg] != FREE, "Reg %s must be freed\n", reg);
         sb[reg] = IN_USE;
+        _sb_producer[reg] = inst;
     }
 }
 

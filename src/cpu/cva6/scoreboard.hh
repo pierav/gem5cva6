@@ -60,6 +60,8 @@ class Scoreboard : public Named
       FWABLE
     };
     PhysicalRegFile<reg_state_t> sb;
+    PhysicalRegFile<Cva6DynInstPtr> _sb_producer; /* (debug) */
+
     PhysicalRegFile<uint64_t> prf;
     PhysicalRegFile<uint8_t> prf_isfault;
     PhysicalRegFile<uint8_t> prf_isvp; /* Is value predicted (debug) */
@@ -92,11 +94,13 @@ class Scoreboard : public Named
   public:
     bool isUnissedStoreBefore(Cva6DynInstPtr inst_in);
     /** Returns the register state with associated value */
-    bool getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg);
+    bool getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg,
+      Cva6DynInstPtr &producer);
   protected:
     /** Can this instruction be issued.  Are any of its source registers
      *  due to be written by other marked-up instructions in flight */
-    bool canInstIssue(Cva6DynInstPtr inst);
+    bool canInstIssue(Cva6DynInstPtr inst,
+      Cva6DynInstPtr &producer);
 
   public:
     /** Is Available space in scoreboard */
@@ -106,7 +110,8 @@ class Scoreboard : public Named
 
     /** Issue Stage */
     /* Return the instruction to issue. Bubble if none. */
-    Cva6DynInstPtr getIssueInst(size_t index, bool &is_oser, bool &is_ready);
+    Cva6DynInstPtr getIssueInst(size_t index, bool &is_oser, bool &is_ready,
+      Cva6DynInstPtr &producer);
     /** Issue the instruction (notify instruction is issued) */
     void issueInst(Cva6DynInstPtr inst);
 

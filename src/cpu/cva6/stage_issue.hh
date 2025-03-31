@@ -77,6 +77,9 @@ class IssueUnit : public Named
 
       statistics::Vector2d typeStallOnLoad;
 
+      statistics::Vector2d typeStallFU;
+      statistics::Vector2d typeStallProducerReg;
+
 
       IssueStats(const std::string &name, BaseCPU &cpu,
         const BaseCva6CPUParams &params) :
@@ -91,7 +94,10 @@ class IssueUnit : public Named
         ADD_STAT(issue_stall_fu, "Issue functional unit stall"),
         ADD_STAT(issue_pass, "Nothing stall issue"),
         ADD_STAT(issue_stall_raw, "Delta Cycles between sb enter and issue"),
-        ADD_STAT(typeStallOnLoad, "typeStallOnLoad"){
+        ADD_STAT(typeStallOnLoad, "typeStallOnLoad"),
+        ADD_STAT(typeStallFU, "typeStallFU"),
+        ADD_STAT(typeStallProducerReg, "typeStallProducerReg")
+        {
         numIssued
           .init(0,params.issueWidth,1)
           .flags(statistics::pdf);
@@ -105,6 +111,16 @@ class IssueUnit : public Named
           .init(1, OCS::NumOCS)
           .flags(statistics::total | statistics::pdf | statistics::dist);
         typeStallOnLoad.ysubnames(OCSNames);
+
+        typeStallFU
+          .init(1, OCS::NumOCS)
+          .flags(statistics::total | statistics::pdf | statistics::dist);
+        typeStallFU.ysubnames(OCSNames);
+
+        typeStallProducerReg
+          .init(1, OCS::NumOCS)
+          .flags(statistics::total | statistics::pdf | statistics::dist);
+        typeStallProducerReg.ysubnames(OCSNames);
 
         issue_stall_raw
           .init(0,16,1)

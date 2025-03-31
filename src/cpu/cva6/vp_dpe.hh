@@ -53,13 +53,33 @@ class ghist_t
     }
   }
 
+  void dump(){
+    {
+      std::ostringstream os;
+      for (int i = 0; i < 64; i++){
+        os << hist[i].dir;
+      }
+      DPRINTF(Cva6VP, "dir:  %s\n", os.str());
+    }
+    {
+      std::ostringstream os;
+      for (int i = 0; i < 64; i++){
+        os << hist[i].path;
+      }
+      DPRINTF(Cva6VP, "path: %s\n", os.str());
+    }
+  }
+
   hist_entry_t i2h(Cva6DynInstPtr inst){
     assert(!inst->isBubble());
     bool taken = inst->predictedTaken;
     if (inst->execute_completed){
       taken = inst->pc_next_taken;
     }
-    uint64_t path = (inst->pc->instAddr() >> 1) ^ (inst->pc->instAddr() >> 2);
+    // TODO FIX PATH
+    uint64_t path = (inst->pc->instAddr() >> 1) ^
+                    (inst->pc->instAddr() >> 2) ^
+                    (inst->pc->instAddr() >> 3);
     return hist_entry_t(taken, path, inst->id.fetchSeqNum);
   }
 
@@ -87,11 +107,21 @@ class ghist_t
     }
   }
 
-  uint64_t getPath(uint64_t size=16){
+  uint64_t getPath(uint64_t size=64){
     uint64_t res = 0;
     assert(hist.size() >= size);
     for (int i = 0; i < size; i++){
       res |= ((uint64_t)hist[i].path) << i;
+    }
+    return res;
+  }
+
+  uint64_t getDirFold(int original_length, int compressed_length){
+    uint64_t res = 0;
+    // printf("hist size = %d, ol = %d\n", hist.size(), original_length);
+    assert(hist.size() >= original_length);
+    for (int i = 0; i < original_length; i++){
+      res ^= ((uint64_t)hist[i].dir) << (i % compressed_length);
     }
     return res;
   }
@@ -190,9 +220,8 @@ class VPDPE : public Named
     int ISSUE_WIDTH;
 
     ghist_t ghist;
-    ghist_t ghist_commit; // debug only
-    VTageVP vtage;
     HMP hmp;
+
   public:
     VPDPE(const std::string &name, Cva6CPU &cpu_,
           const BaseCva6CPUParams &params, VP& vp_) :
@@ -204,17 +233,6 @@ class VPDPE : public Named
         DPE_IGNORE(true), // params.dpeIgnore TODO ?
         ISSUE_WIDTH(params.issueWidth),
         ghist(640),
-        ghist_commit(640),
-        vtage(name + ".vtage",
-              4, //numhist_entry_tComponents,
-              10, // numLogBaseEntry,
-              4, // minHistSize,
-              64, // maxHistSize,
-              0, // baseHystShift
-              3, //counterWidth,
-              1, // instShiftAmt,
-              *(new std::vector<unsigned>()),
-              &ghist_commit),
         hmp(name + ".hmp", cpu, params) { }
 
   protected:

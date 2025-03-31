@@ -10,6 +10,7 @@
 #include <iomanip>
 
 #include "base/named.hh"
+#include "cpu/cva6/vtage_wrapper.hh"
 #include "debug/Cva6VP.hh"
 
 namespace gem5 {
@@ -63,6 +64,8 @@ VP* init_value_vp(int64_t type, const std::string &name,
             return new VP_Str2D(name, cpu, size);
         case 3:
             return new VP_DFCM(name, cpu, size);
+        case 7:
+            return new VP_TAGE(name, cpu, size);
     }
     fatal("Invalid VP type: %d\n", type);
     return NULL;

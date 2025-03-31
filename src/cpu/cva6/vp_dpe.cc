@@ -20,11 +20,13 @@ void
 VPDPE::predict(Cva6DynInstPtr inst){
   if (vp.isEnable()){
     if (!inst->vp_data.is_predicted){
+      ghist.dump();
       vp.predict(&inst->vp_data);
       inst->vp_data.is_predicted = true;
     } else {
       /* overpredict if needed */
       if (is_fresh_commited_values){
+        ghist.dump();
         vp.predict(&inst->vp_data);
       }
       // printf("Overpredict\n");
@@ -39,6 +41,11 @@ VPDPE::predict(Cva6DynInstPtr inst){
 
 void
 VPDPE::insert(Cva6DynInstPtr inst){
+  vp.insert(&inst->vp_data, ghist);
+  // Compute inst context
+  inst->vp_data.seqNum = inst->id.fetchSeqNum;
+  ghist.insert(inst);
+
   inflights.push_back(inst);
   // Compute static data
   if (!inst->isFault() &&        /** Not a adress fault */
@@ -59,7 +66,6 @@ VPDPE::insert(Cva6DynInstPtr inst){
       inst->vp_data.value_taken = inst->vp_data.value_ready;
     }
   }
-  ghist.insert(inst);
 
 }
 
@@ -297,15 +303,6 @@ VPDPE::commit(Cva6DynInstPtr inst){
 
     /* History management */
     ghist.commit(inst);
-    bool updated_hist = ghist_commit.insert(inst);
-    if (updated_hist){
-      void *history;
-      vtage.updateFoldedHist(true, history, inst->id.fetchSeqNum);
-      assert(history);
-      // delete history;
-      vtage.flush_branch(history);
-    }
-    ghist_commit.commit(inst);
 
     /* Hit Miss predictor update */
     if (!inst->isFault() && inst->staticInst->isLoad()){

@@ -51,6 +51,7 @@ class BaseCva6CPU(BaseCPU):
     sbSize = Param.Unsigned(32, "Scoreboard size")
     issueWidth = Param.Unsigned(4, "Issue width")
     commitWidth = Param.Unsigned(4, "Commit Width")
+    renameSize = Param.Unsigned(64, "Rename size")
 
     # Lambda
     userelf = Param.String("", "Main user elf")

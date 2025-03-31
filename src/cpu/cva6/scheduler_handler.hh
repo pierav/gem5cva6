@@ -33,6 +33,8 @@ inline BaseScheduler& initSched(
       return *new NoScheduler(name, cpu, p);
     case 2:
       return *new SchedulerPierreMichaud(name, cpu, p);
+    case 3:
+      return *new SchedulerVP(name, cpu, p);
   }
   fatal("Invalid Scheduler type: %d\n", p.schedType);
   return *new NoScheduler(name, cpu, p);
@@ -82,7 +84,7 @@ class SA
     scheduler(initSched(name, cpu, p)),
     isa(cpu, "sa.i", false),
     osa(cpu, "sa.o", false),
-    regalloc(4096),
+    regalloc(p.renameSize),
     stats(cpu) { }
 
   private:

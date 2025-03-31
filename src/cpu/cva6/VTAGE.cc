@@ -16,7 +16,6 @@
 namespace gem5 {
 namespace cva6 {
 
-
 void
 Folded_history::init(int original_length, int compressed_length) {
     comp = 0;
@@ -33,31 +32,67 @@ Folded_history::update(std::deque<hist_entry_t> &globHist) {
     comp &= (1 << clength) - 1;
 }
 
+FoldedHistories::FoldedHistories(
+  uint64_t size_,
+  std::vector<unsigned> logg,
+  std::vector<unsigned> m
+){
+  size = size_;
+  assert(size == 5);
+  // i.resize(size);
+  // t[0].resize(size);
+  // t[1].resize(size);
+  for (int k = 1; k < size; ++k) {
+    i[k].init(m[k], logg[k]);
+    t[0][k].init(m[k], 12 + k);
+    t[1][k].init(m[k], 12 + k - 1);
+  }
+}
 
-VTageVP::VTageVP(const std::string &name, unsigned _numHistComponents,
-                 unsigned numLogBaseEntry, unsigned minHistSize,
-                 unsigned maxHistSize, unsigned _baseHystShift,
-                 unsigned counterWidth, unsigned _instShiftAmt,
-                 std::vector<unsigned> &_filterProbability, ghist_t *ghist_)
-    : Named(name), numHistComponents(_numHistComponents),
-      baseHystShift(0), useAltOnNA(0), logCTick(19),
-      cTick((1 << (logCTick - 1))), seed(0), instShiftAmt(1), ghist(ghist_) {
-  proba = _filterProbability;
+void
+FoldedHistories::updatefull(ghist_t &ghist){
+  // Fix ch
+  for (int k = 0; k < size; k++){
+    i[k].comp = ghist.getDirFold(i[k].olength, i[k].clength);
+    t[0][k].comp = ghist.getDirFold(t[0][k].olength, t[0][k].clength);
+    t[1][k].comp = ghist.getDirFold(t[1][k].olength, t[1][k].clength);
+  }
+  path = ghist.getPath();
+  // for (int k = 1; k < size; ++k) {
+  //   i[k].update(ghist->getRaw());
+  //   t[0][k].update(ghist->getRaw());
+  //   t[1][k].update(ghist->getRaw());
+  // }
+}
 
-  // For sanity checking.
-  created = deleted = 0;
+void
+FoldedHistories::dump(){
+  DPRINTF(ValuePredictor, "cd(%d):\n",size);
+  for (int k = 1; k < size; ++k) {
+    DPRINTF(ValuePredictor, "i[%d]=%lx t[0][%d]=%lx t[1][%d]=%lx\n",
+      k, i[k].comp,
+      k, t[0][k].comp,
+      k, t[1][k].comp);
+  }
+}
 
+VTageVP::VTageVP(const std::string &name, uint64_t size_)
+    : Named(name), numHistComponents(4),
+      useAltOnNA(0), logCTick(19),
+      cTick((1 << (logCTick - 1))), seed(0), instShiftAmt(1) {
   unsigned i;
   unsigned size = numHistComponents + 1;
+  unsigned minHistSize = 4;
+  unsigned maxHistSize = 64;
 
   /** logg */
-  numLogBaseEntry = 9;
-  assert(size == 5);
+  uint64_t logsize = std::log2(size_);
   logg.resize(size);
-  logg[4] = 8; // 256
-  logg[3] = 7; // 128
-  logg[2] = 6; // 64
-  logg[1] = 6; // 64
+  logg[0] = logsize-1; // 512
+  logg[1] = logsize-2; // 256
+  logg[2] = logsize-3; // 128
+  logg[3] = logsize-4; // 64
+  logg[4] = logsize-4; // 64
 
   // 512, 256, 128, 64, 64 ?
   // for (i = 1; i < size; ++i) {
@@ -75,37 +110,31 @@ VTageVP::VTageVP(const std::string &name, unsigned _numHistComponents,
                   pow((double)(maxHistSize) / (double)minHistSize,
                       (double)(i - 1) / (double)((numHistComponents - 1)))) +
                  0.5);
-    std::cerr << m[i] << std::endl;
   }
 
-  /** ch_i, ch_t */
-  ch_i.resize(size);
-  ch_t[0].resize(size);
-  ch_t[1].resize(size);
-
-  for (i = 1; i < size; ++i) {
-    ch_i[i].init(m[i], logg[i]);
-    ch_t[0][i].init(ch_i[i].olength, 12 + i);
-    ch_t[1][i].init(ch_i[i].olength, 12 + i - 1);
+  std::cout << "VTAGE";
+  for (int i = 0; i < size; i++){
+    std::cout << "-" << (1<<logg[i]) << "(H" << m[i] << ")";
   }
+  std::cout << std::endl;
+
+  ch = FoldedHistories(size, logg, m);
 
   /** bTable */
-  bTable.resize(1 << numLogBaseEntry, Bentry(counterWidth, proba));
+  bTable.resize(1 << logg[0], Bentry());
 
   /** gTable */
   gTable.resize(size);
   for (i = 1; i < size; ++i) {
-    gTable[i].resize(1 << logg[i], Gentry(counterWidth, proba));
+    gTable[i].resize(1 << logg[i], Gentry());
   }
 
   /** Compute masks */
-  baseMask = ((1 << (numLogBaseEntry)) - 1);
-
+  baseMask = ((1 << (logg[0])) - 1);
   tagMask.resize(size);
   for (i = 1; i < size; ++i) {
     tagMask[i] = ((1 << (i + 12)) - 1);
   }
-
   gMask.resize(size);
   for (i = 1; i < size; ++i) {
     gMask[i] = ((1 << logg[i]) - 1);
@@ -251,7 +280,6 @@ void VTageVP::regstatistics() {
 unsigned VTageVP::F(unsigned hist, unsigned size, unsigned bank) {
   uint64_t res, h1, h2;
   res = (uint64_t)hist;
-
   res = res & ((1 << size) - 1);
   h1 = (res & gMask[bank]);
   h2 = (res >> logg[bank]);
@@ -265,12 +293,12 @@ unsigned VTageVP::gIndex(uint64_t &branch_addr, unsigned bank) {
   uint64_t index;
   unsigned M = (m[bank] > 16) ? 16 : m[bank];
   index = branch_addr ^ (branch_addr >> (abs(logg[bank] - bank) + 1)) ^
-          ch_i[bank].comp ^ F(ghist->getPath(), M, bank);
+          ch.i[bank].comp ^ F(ch.path, M, bank);
   return (unsigned)(index & gMask[bank]);
 }
 
 unsigned VTageVP::gTag(uint64_t &branch_addr, unsigned bank) {
-  uint64_t tag = branch_addr ^ ch_t[0][bank].comp ^ (ch_t[1][bank].comp << 1);
+  uint64_t tag = branch_addr ^ ch.t[0][bank].comp ^ (ch.t[1][bank].comp << 1);
   return (unsigned)(tag & tagMask[bank]);
 }
 
@@ -281,14 +309,7 @@ prediction_t VTageVP::getBasePred(uint64_t &branch_addr, bool &saturated) {
   return prediction_t(bTable[index].pred, bTable[index].hyst.read());
 }
 
-void VTageVP::baseUpdate(uint64_t branch_addr, Prediction &val, bool outcome,
-                         unsigned conf, bool squashed) {
-  unsigned index = bIndex(branch_addr);
-  bTable[index].ctrupdate(outcome, val, conf);
-}
-
-prediction_t VTageVP::lookup(uint64_t &addr, void *&vp_history,
-                             uint64_t seqNum) {
+prediction_t VTageVP::lookup(uint64_t &addr, VPSave *history) {
 
   int i;
   unsigned size = numHistComponents + 1;
@@ -300,10 +321,6 @@ prediction_t VTageVP::lookup(uint64_t &addr, void *&vp_history,
   bool choseAlt;
   bool baseSaturated = false;
 
-  // Create VTageVP::VPSave. This is the history for a new instruction.
-  VPSave *history = new VPSave();
-  ++created;
-
   // TAGE prediction
   // computes the table addresses and the partial tags
   history->gI.resize(size);
@@ -311,8 +328,8 @@ prediction_t VTageVP::lookup(uint64_t &addr, void *&vp_history,
 
   uint64_t taddr = addr;
 
+  /* Tags and indices  */
   history->gI[0] = bIndex(taddr);
-
   for (i = 1; i < size; ++i) {
     history->gI[i] = gIndex(taddr, i);
     history->gTag[i] = gTag(taddr, i);
@@ -321,13 +338,16 @@ prediction_t VTageVP::lookup(uint64_t &addr, void *&vp_history,
   for (i = size - 1; i > 0; --i) {
     bool hit = gTable[i][history->gI[i]].tag == history->gTag[i];
     DPRINTF(ValuePredictor, "[%c] BANK[%x]:"
-        "index: %d, tag: %d==%d?, pred %lx\n",
+        "index: %d, tag: %d==%d?, pred %lx (%d/7)\n",
         hit ? 'X' : ' ', i, history->gI[i],
         gTable[i][history->gI[i]].tag, history->gTag[i],
-         gTable[i][history->gI[i]].pred);
+        gTable[i][history->gI[i]].pred,
+        gTable[i][history->gI[i]].hyst.read()
+    );
   }
-  DPRINTF(ValuePredictor, "[.] BANK[0]: index: %d, pred %lx\n",
-    history->gI[0], bTable[history->gI[0]].pred);
+  DPRINTF(ValuePredictor, "[.] BANK[0]:index: %d, pred %lx (%d/7)\n",
+    history->gI[0], bTable[history->gI[0]].pred,
+    bTable[history->gI[0]].hyst.read());
 
   // Look for the bank with longest matching history
   for (i = size - 1; i > 0; --i) {
@@ -391,65 +411,13 @@ prediction_t VTageVP::lookup(uint64_t &addr, void *&vp_history,
   history->tagePred = tagePred;
   history->altPred = altPred;
   history->isBranch = false;
-
   DPRINTF(ValuePredictor, "VPSave :bank: %i, altbank: %i, choseAlt: %x\n",
           history->bank, history->altBank, choseAlt);
-
-  vp_history = static_cast<void *>(history);
-  hists.insert(std::pair<void *, uint64_t>(vp_history, seqNum));
   return (choseAlt ? altPred : tagePred);
 }
 
-void VTageVP::updateFoldedHist(bool save, void *&vp_history, uint64_t seqnum) {
-  unsigned size = numHistComponents + 1;
-  unsigned i = 0;
-  DPRINTF(ValuePredictor, "Updating Folded History in VTAGE\n");
 
-  if (save) {
-    VPSave *new_record = new VPSave();
-    ++created;
-
-    new_record->ch_i_comp.resize(size);
-    new_record->ch_t_comp[0].resize(size);
-    new_record->ch_t_comp[1].resize(size);
-
-    for (i = 1; i < size; ++i) {
-      // DPRINTF(ValuePredictor, "Saving folded history %u: %lu\n", i,
-      // ch_i[i].comp);
-
-      new_record->ch_i_comp[i] = ch_i[i].comp;
-      new_record->ch_t_comp[0][i] = ch_t[0][i].comp;
-      new_record->ch_t_comp[1][i] = ch_t[1][i].comp;
-    }
-
-    new_record->bank = 0;
-    new_record->altBank = 0;
-    new_record->tagePred = prediction_t(Prediction(), 0);
-    new_record->altPred = prediction_t(Prediction(), 0);
-    new_record->isBranch = true;
-
-    vp_history = static_cast<void *>(new_record);
-  }
-
-  // prepare next index and tag computations
-
-  for (i = 1; i < size; ++i) {
-    ch_i[i].update(ghist->getRaw());
-    // DPRINTF(ValuePredictor, "VTAGE: Updated folded history %u: %lu\n", i,
-    // ch_i[i].comp);
-    ch_t[0][i].update(ghist->getRaw());
-    ch_t[1][i].update(ghist->getRaw());
-    DPRINTF(
-        ValuePredictor,
-        "Updating ch_i[%u] to %u, ch_t[0][%u] to %u and ch_t[1][%u] to %u\n",
-        i, ch_i[i].comp, i, ch_t[0][i].comp, i, ch_t[1][i].comp);
-  }
-  hists.insert(std::pair<void *, uint64_t>(vp_history, seqnum));
-  DPRINTF(ValuePredictor, "ValuePred: GlobHist size: %i, new path hist: %x\n",
-          ghist->getRaw().size(), ghist->getPath());
-}
-
-void VTageVP::updatePredictor(Prediction &val, bool outcome, void *vp_history,
+void VTageVP::updatePredictor(Prediction &val, bool outcome, VPSave *history,
                               bool squashed) {
 
   unsigned i, j;
@@ -461,19 +429,14 @@ void VTageVP::updatePredictor(Prediction &val, bool outcome, void *vp_history,
   unsigned hitBank;
   unsigned altBank;
 
-  assert(vp_history);
-
-  VPSave *history = static_cast<VPSave *>(vp_history);
+  assert(history);
   table.sample(history->bank);
-  // Propagate the confidence instead of re reading the table.
-  unsigned conf = history->tagePred.second;
 
   if (squashed) {
     if (history->bank == 0) {
-      baseUpdate(history->gI[0], val, false, 0, true);
+      bTable[history->gI[0]].ctrupdate(false, val);
     } else {
-      gTable[history->bank][history->gI[history->bank]].ctrupdate(false, val,
-                                                                  0);
+      gTable[history->bank][history->gI[history->bank]].ctrupdate(false, val);
     }
     return;
   }
@@ -483,17 +446,16 @@ void VTageVP::updatePredictor(Prediction &val, bool outcome, void *vp_history,
   hitBank = history->bank;
   altBank = history->altBank;
 
-#ifndef NOREAD_AT_COMMIT_VTAGE
+  bool valid;
   if (hitBank == 0) {
-    outcome = bTable[history->gI[0]].pred == val && outcome;
+    valid = bTable[history->gI[0]].pred == val; // && outcome;
   } else {
-    outcome = gTable[hitBank][history->gI[hitBank]].pred == val && outcome;
+    valid = gTable[hitBank][history->gI[hitBank]].pred == val; // && outcome;
   }
-#endif
 
   // VTAGE UPDATE
   // try to allocate a  new entries only if prediction was wrong
-  bool alloc = !outcome && (hitBank < numHistComponents);
+  bool alloc = !valid && (hitBank < numHistComponents);
   if (hitBank > 0) {
     // Manage the selection between longest matching and alternate matching
     // for "pseudo"-newly allocated longest matching entry
@@ -583,26 +545,23 @@ void VTageVP::updatePredictor(Prediction &val, bool outcome, void *vp_history,
 
   if (hitBank > 0) {
     accesses.sample(hitBank);
-    gTable[hitBank][history->gI[hitBank]].ctrupdate(outcome, val, conf);
+    gTable[hitBank][history->gI[hitBank]].ctrupdate(valid, val);
 
     // if the provider entry is not certified to be useful also update the
     // alternate prediction
     if (gTable[hitBank][history->gI[hitBank]].u == 0) {
       if (altBank > 0) {
         accesses.sample(altBank);
-        gTable[altBank][history->gI[altBank]].ctrupdate(outcome, val,
-                                                        altPred.second);
+        gTable[altBank][history->gI[altBank]].ctrupdate(valid, val);
       }
       if (altBank == 0) {
-        // baseUpdate(addr, val, altPred.first == val);
         accesses.sample(altBank);
-        baseUpdate(history->gI[0], val, outcome, altPred.second);
+        bTable[history->gI[0]].ctrupdate(valid, val);
       }
     }
   } else {
     accesses.sample(0);
-    // baseUpdate(addr, val, altPred.first == val);
-    baseUpdate(history->gI[0], val, outcome, conf);
+    bTable[history->gI[0]].ctrupdate(valid, val);
   }
 
   // update the u counter
@@ -615,104 +574,22 @@ void VTageVP::updatePredictor(Prediction &val, bool outcome, void *vp_history,
   } else if (altPred.second != 7 && tagePred.first == val && hitBank > 0) {
     gTable[hitBank][history->gI[hitBank]].u = 1;
   }
-  updatestatistics(*history, outcome);
+  updatestatistics(*history, valid);
 }
 
-void VTageVP::squash(void *vp_history, bool remove, bool recompute) {
-  VPSave *hist = static_cast<VPSave *>(vp_history);
-  if (!remove && !recompute) {
-    assert(!hist->isBranch);
-  }
-  if (hist->isBranch) {
-    DPRINTF(ValuePredictor, "squashing a branch in value predictor\n");
-    recoverBHist(vp_history, recompute);
-  }
-  if (remove)
-    recoverVHist(vp_history);
+void VTageVP::setch(FoldedHistories &ch_) {
+  ch = ch_;
 }
 
-void VTageVP::flush_branch(void *vp_history) {
-  VPSave *history = static_cast<VPSave *>(vp_history);
-  // DPRINTF(ValuePredictor, "Deleting 0x%lx\n", history);
-  hists.erase(vp_history);
-  delete history;
-  ++deleted;
-  assert(created - deleted < 512);
-}
-
-void VTageVP::recoverBHist(/*uint64_t &addr,*/ void *vp_history,
-                           bool recompute) {
-  unsigned size = numHistComponents + 1;
-  unsigned i;
-
-  VPSave *rollback = static_cast<VPSave *>(vp_history);
-
-  /** Restore history */
-  assert(vp_history);
-  assert(rollback->isBranch);
-
-  for (i = 1; i < size; ++i) {
-    ch_i[i].comp = rollback->ch_i_comp[i];
-    ch_t[0][i].comp = rollback->ch_t_comp[0][i];
-    ch_t[1][i].comp = rollback->ch_t_comp[1][i];
-
-    DPRINTF(
-        ValuePredictor,
-        "Restoring ch_i[%u] to %u, ch_t[0][%u] to %u and ch_t[1][%u] to %u\n",
-        i, ch_i[i].comp, i, ch_t[0][i].comp, i, ch_t[1][i].comp);
-  }
-
-  // Call to recompute the cyclic registers with the correct global branch
-  // history Only if needed.
-  if (recompute)
-    updateFoldedHist(false, vp_history);
-}
-
-void VTageVP::recoverVHist(/*uint64_t &addr,*/ void *vp_history) {
-  // Essentially we don't have much to do here.
-  VPSave *history = static_cast<VPSave *>(vp_history);
-  // DPRINTF(ValuePredictor, "Deleting 0x%lx\n", history);
-  hists.erase(vp_history);
-  delete history;
-  deleted++;
-  assert(created - deleted < 512);
-}
-
-void VTageVP::update(Prediction &val, void *vp_history, bool mispred,
+void VTageVP::update(Prediction &val, VPSave *history, bool valid,
                      bool squashed) {
-  hit += !mispred;
+  hit += valid;
   req += 1;
-  VPSave *history = static_cast<VPSave *>(vp_history);
-  assert(!history->isBranch);
-
   DPRINTF(ValuePredictor, "Updating the predictor with %x"
           " Predicted %x\n", val,
           history->tagePred.first);
 
-  updatePredictor(
-      /*addr,*/ val,
-      !mispred && /*(history->usedAlt ? (val == history->altPred.first) :*/ (
-                      val == history->tagePred.first),
-      vp_history, squashed);
-  // DPRINTF(ValuePredictor, "Deleting 0x%lx\n", history);
-  if (!squashed) {
-#ifdef DEBUG
-    assert(hists.find(vp_history) != hists.end());
-    uint64_t seqNum = hists[vp_history];
-    for (auto it = hists.begin(); it != hists.end(); ++it) {
-      if (it->second < seqNum) {
-        std::cerr << "Should not happen, inst " << std::dec << it->second
-                  << "it still here, is branch : "
-                  << static_cast<VPSave *>(it->first)->isBranch << std::endl;
-        fatal("oups");
-      }
-    }
-#endif
-    delete history;
-    hists.erase(vp_history);
-    deleted++;
-    assert(created - deleted < 512);
-  }
+  updatePredictor(val, valid, history, squashed);
 }
 
 void VTageVP::updatestatistics(VPSave &history, bool outcome) {

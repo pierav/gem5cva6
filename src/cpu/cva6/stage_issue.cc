@@ -26,8 +26,9 @@ IssueUnit::evaluate(){
     for (int i = 0; i < nb_issue_port; i++){ // Try to issue instruction
         bool is_over_serialise;
         bool is_ready;
+        Cva6DynInstPtr producer = Cva6DynInst::bubble();
         Cva6DynInstPtr inst = scoreboard.getIssueInst(0,
-            is_over_serialise, is_ready);
+            is_over_serialise, is_ready, producer);
 
         /* -1) */
         if (!scoreboard.canPush()){
@@ -61,6 +62,7 @@ IssueUnit::evaluate(){
             DPRINTF(Cva6Issue,
                 "(port %d) Read operands stall... %s\n", i, *inst);
             stats.issue_stall_iro += 1;
+            stats.typeStallProducerReg[0][getOcs(producer)]++;
             break;
         }
 
@@ -69,6 +71,7 @@ IssueUnit::evaluate(){
             DPRINTF(Cva6Issue,
                 "(port %d) Functionnal U stall... %s\n", i, *inst);
             stats.issue_stall_fu += 1;
+            stats.typeStallFU[0][getOcs(inst)]++;
             break;
         }
 
