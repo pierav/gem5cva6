@@ -174,6 +174,11 @@ class ArchRegFile
   iterator end() { return array.end(); }
   const_iterator end() const { return array.end(); }
   const_iterator cend() const { return array.cend(); }
+  void setall(T val){
+    for (auto& x: array){
+      x = val;
+    }
+  }
 };
 
 
@@ -333,7 +338,7 @@ class Cva6DynInst : public RefCounted
     std::vector<PhysicalReg> regs_src_phy;
     uint64_t bb_idx;
     uint64_t delta; // DELME LATER, annotate each register
-    std::vector<uint64_t> phys_reg_to_free;
+    std::vector<PhysicalReg> phys_reg_to_free;
 
     /** Next pc */
     std::unique_ptr<PCStateBase> pc_next; // Next PC

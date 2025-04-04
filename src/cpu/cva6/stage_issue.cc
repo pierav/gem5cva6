@@ -24,11 +24,10 @@ IssueUnit::evaluate(){
     int nb_issued = 0;
     int cnt_push_load = 0;
     for (int i = 0; i < nb_issue_port; i++){ // Try to issue instruction
-        bool is_over_serialise;
-        bool is_ready;
+        bool is_over_serialise, is_raw, is_waw;
         Cva6DynInstPtr producer = Cva6DynInst::bubble();
-        Cva6DynInstPtr inst = scoreboard.getIssueInst(0,
-            is_over_serialise, is_ready, producer);
+        Cva6DynInstPtr inst = scoreboard.getIssueInst(
+            is_over_serialise, is_raw, producer, is_waw);
 
         /* -1) */
         if (!scoreboard.canPush()){
@@ -57,12 +56,24 @@ IssueUnit::evaluate(){
             inst->issue_start_ts = cpu.curCycle();
         }
 
-        /* 1) Is operands ready ? */
-        if (!is_ready){
+        /* 1) RaW : Is operands ready ? */
+        if (is_raw){
+            assert(!producer->isBubble());
             DPRINTF(Cva6Issue,
-                "(port %d) Read operands stall... %s\n", i, *inst);
+                "(port %d) RaW stall ............ %s\n", i, *inst);
+            // DPRINTF(Cva6Issue,
+            //     "(port %d) Producer is %s\n", i, *producer);
             stats.issue_stall_iro += 1;
             stats.typeStallProducerReg[0][getOcs(producer)]++;
+            break;
+        }
+
+        /* 1.1) WaW */
+        // TODO care OoO Commit ! Ignore WaW for now
+        if (is_waw){
+            DPRINTF(Cva6Issue,
+                "(port %d) WaW stall ............ %s\n", i, *inst);
+            stats.issue_stall_waw += 1;
             break;
         }
 
@@ -139,6 +150,7 @@ IssueUnit::evaluate(){
         }
         nb_issued += 1;
     }
+    stats.issue_stall_port += nb_issued == nb_issue_port;
     stats.numIssued.sample(nb_issued);
 }
 

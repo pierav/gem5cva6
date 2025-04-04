@@ -29,6 +29,7 @@ inline OCS getOcs(Cva6DynInstPtr &inst){
   if (inst->isFault()){
     return OCS::NoOp;
   }
+  assert(inst->staticInst);
   if (inst->staticInst->isControl()){
     return OCS::Control;
   }
@@ -70,7 +71,9 @@ class IssueUnit : public Named
 
       statistics::Scalar issue_stall_lambdaorder;
       statistics::Scalar issue_stall_iro;
+      statistics::Scalar issue_stall_waw;
       statistics::Scalar issue_stall_fu;
+      statistics::Scalar issue_stall_port;
       statistics::Scalar issue_pass;
 
       statistics::Distribution issue_stall_raw;
@@ -79,7 +82,6 @@ class IssueUnit : public Named
 
       statistics::Vector2d typeStallFU;
       statistics::Vector2d typeStallProducerReg;
-
 
       IssueStats(const std::string &name, BaseCPU &cpu,
         const BaseCva6CPUParams &params) :
@@ -91,7 +93,9 @@ class IssueUnit : public Named
         ADD_STAT(issue_stall_full, "Scoreboard is full"),
         ADD_STAT(issue_stall_lambdaorder, "Issue stall : lambda order"),
         ADD_STAT(issue_stall_iro, "Issue read operands stall"),
+        ADD_STAT(issue_stall_waw, "WaW dependancy"),
         ADD_STAT(issue_stall_fu, "Issue functional unit stall"),
+        ADD_STAT(issue_stall_port, "No more issue port"),
         ADD_STAT(issue_pass, "Nothing stall issue"),
         ADD_STAT(issue_stall_raw, "Delta Cycles between sb enter and issue"),
         ADD_STAT(typeStallOnLoad, "typeStallOnLoad"),

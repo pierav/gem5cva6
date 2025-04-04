@@ -331,7 +331,7 @@ class DTLBRequest :
       static inline SingletonStats *ss = nullptr;
       SingletonStats *getSS(){
         if (ss == nullptr){
-          printf("New SING!!\n");
+          // printf("New SING!!\n");
           ss = new SingletonStats(cpu.name() + ".dreqfsm", cpu);
         }
         return ss;

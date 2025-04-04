@@ -124,48 +124,19 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg,
     #endif
 }
 
-bool
-Scoreboard::canInstIssue(Cva6DynInstPtr inst, Cva6DynInstPtr &producer) {
-
-    /* Fault does not have register dependancies */
-    if (inst->isFault()){ return true; }
-
-    if (inst->vp_data.addr_taken){
-        assert(inst->staticInst->isLoad());
-        inst->regs_src_phy[0].set(inst->vp_data.t1_addr);
-        return true;
-    }
-
-    /* Available source registers */
-    // RaW dependencies
-    int ok = 1;
-    for (PhysicalReg &reg: inst->regs_src_phy){
-        ok &= getRegState(inst, reg, producer);
-    }
-    if (!ok){ return false; }
-
-    /* Available destination registers */
-    // WaW dependencies
-
-    // WaR dependencies
-    // Nothing to do
-
-    // RaR dependencies
-    // Nothing to do
-
-    return true;
-}
 
 Cva6DynInstPtr
 Scoreboard::getIssueInst(
-    size_t index,
     bool &is_over_serialise,
-    bool &is_ready,
-    Cva6DynInstPtr &producer
+    bool &is_raw,
+    Cva6DynInstPtr &producer,
+    bool &is_waw
 ){
     Cva6DynInstPtr inst = Cva6DynInst::bubble();
     is_over_serialise = false;
-    is_ready = false;
+    is_raw = false;
+    is_waw = false;
+
     if (!canPush()){
         return Cva6DynInst::bubble();
     }
@@ -182,7 +153,34 @@ Scoreboard::getIssueInst(
         return Cva6DynInst::bubble();
     }
     inst = cpu.pipeline->sa.front_scheduler();
-    is_ready = canInstIssue(inst, producer);
+
+    /* Available source registers */
+    // RaW dependencies
+    for (PhysicalReg &reg: inst->regs_src_phy){
+        is_raw |= !getRegState(inst, reg, producer);
+    }
+    /* Fault does not have register dependancies */
+    if (inst->isFault()){
+        is_raw = false;
+    }
+    if (inst->vp_data.addr_taken){ // Bypass IRO
+        assert(inst->staticInst->isLoad());
+        inst->regs_src_phy[0].set(inst->vp_data.t1_addr);
+        is_raw = false;
+    }
+
+    /* Available destination registers */
+    // WaW dependencies
+    for (PhysicalReg &reg: inst->regs_dst_phy){
+        is_waw |= sb[reg] == IN_USE; // Cannot be true in full RR
+    }
+
+    // WaR dependencies
+    // Nothing to do
+    // Solved at pre-scheduling
+
+    // RaR dependencies
+    // Nothing to do
     return inst;
 }
 
@@ -199,7 +197,9 @@ Scoreboard::issueInst(Cva6DynInstPtr inst){
         if (prf_isvp[reg]){ /* Nothing to do */
             continue;
         }
-        fatal_if(sb[reg] != FREE, "Reg %s must be freed\n", reg);
+        // fatal_if(sb[reg] != FREE, "Reg %s must be freed\n", reg);
+        // v2 with waw overlap
+        fatal_if(sb[reg] == IN_USE, "Reg %s must not be pending\n", reg);
         sb[reg] = IN_USE;
         _sb_producer[reg] = inst;
     }
@@ -214,7 +214,7 @@ Scoreboard::completeInst(Cva6DynInstPtr inst) {
             assert(sb[reg] == FWABLE);
             prf_isvp[reg] = false;
         } else {
-            assert(sb[reg] == IN_USE);
+            assert(sb[reg] == IN_USE); // We must expect a WB
             sb[reg] = FWABLE;
         }
         /* Set value and fault */
@@ -232,7 +232,6 @@ Scoreboard::getCommitInst(size_t index){
         DPRINTF(Cva6Scoreboard, "commit stall: no instruction\n");
         return Cva6DynInst::bubble();
     }
-
     Cva6DynInstPtr inst = issue_queue[index];
     return inst;
 }
@@ -241,11 +240,12 @@ void
 Scoreboard::commitInst(Cva6DynInstPtr inst) {
     assert(!inst->commit_completed); // Already commited
     inst->commit_completed = true;
+    /* There is no need to free the register !! */
     /* Free registers  */
-    for (PhysicalReg &reg: inst->regs_dst_phy){
-        assert(sb[reg] == FWABLE);
-        sb[reg] = FREE;
-    }
+    // for (PhysicalReg &reg: inst->regs_dst_phy){
+    //     assert(sb[reg] == FWABLE);
+    //     sb[reg] = FREE;
+    // }
 }
 
 void

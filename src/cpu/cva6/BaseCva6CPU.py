@@ -52,6 +52,8 @@ class BaseCva6CPU(BaseCPU):
     issueWidth = Param.Unsigned(4, "Issue width")
     commitWidth = Param.Unsigned(4, "Commit Width")
     renameSize = Param.Unsigned(64, "Rename size")
+    renameIncArchReg = Param.Unsigned(0, "Sb arch(0) or Full RR(1)")
+    renameFreeRegDead = Param.Unsigned(0, "Free Dead registers")
 
     # Lambda
     userelf = Param.String("", "Main user elf")

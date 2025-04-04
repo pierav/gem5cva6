@@ -53,6 +53,28 @@ class Scoreboard : public Named
     /* this is the FIFO struct of the issue queue  */
     std::deque<Cva6DynInstPtr> issue_queue;
 
+    // FSM reg_state_t
+    //                                            ┌───────────┐
+    //                           Commit           │           │
+    //        │                  ┌─────┐          │   ERROR   │
+    //        │                  │     │          │           │
+    //  ┌─────▼────┐          ┌──┴─────▼──┐       └─────▲─────┘
+    //  │          │          │           │             │
+    //  │   FREE   ├──────────►   InUSE   ├─────────────┘
+    //  │          │ Issue    │           │        Issue
+    //  └──────────┘          └──┬─────▲──┘
+    //                           │     │
+    //               ExComplete  │     │ Issue
+    //                           │     │
+    //                        ┌──▼─────┴──┐
+    //                        │           │
+    //                        │    FW     │
+    //                        │           │
+    //                        └──┬─────▲──┘
+    //                           │     │
+    //                           └─────┘
+    //                           Commit
+
     enum reg_state_t
     {
       FREE,
@@ -97,10 +119,6 @@ class Scoreboard : public Named
     bool getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg,
       Cva6DynInstPtr &producer);
   protected:
-    /** Can this instruction be issued.  Are any of its source registers
-     *  due to be written by other marked-up instructions in flight */
-    bool canInstIssue(Cva6DynInstPtr inst,
-      Cva6DynInstPtr &producer);
 
   public:
     /** Is Available space in scoreboard */
@@ -110,8 +128,15 @@ class Scoreboard : public Named
 
     /** Issue Stage */
     /* Return the instruction to issue. Bubble if none. */
-    Cva6DynInstPtr getIssueInst(size_t index, bool &is_oser, bool &is_ready,
-      Cva6DynInstPtr &producer);
+    /** Can this instruction be issued.  Are any of its source registers
+     *  due to be written by other marked-up instructions in flight */
+    Cva6DynInstPtr getIssueInst(
+      bool &is_over_serialise,
+      bool &is_raw,
+      Cva6DynInstPtr &producer,
+      bool &is_waw
+    );
+
     /** Issue the instruction (notify instruction is issued) */
     void issueInst(Cva6DynInstPtr inst);
 

@@ -15,6 +15,7 @@
 #include "base/statistics.hh"
 #include "cpu/cva6/dyn_inst.hh"
 #include "cpu/cva6/store_set.hh"
+#include "debug/Cva6Rename.hh"
 #include "debug/Cva6Sched.hh"
 #include "debug/Cva6SchedSched.hh"
 
@@ -62,13 +63,24 @@ class PhysicalRegAllocator
   std::deque<uint64_t> free_list_popped;
 
   ArchRegFile<uint64_t> rmt;
+  ArchRegFile<Cva6DynInstPtr> rmt_owner;
   ArchRegFile<uint64_t> rmt_checkpoint;
 
+  bool incarchreg; // Scoreboard arch or Full RR
+  bool freeregdead;
   public:
-  PhysicalRegAllocator(uint64_t nb_regs) : n(nb_regs) {
-    assert(nb_regs >= NB_I2ID);
+  PhysicalRegAllocator(uint64_t nb_regs, bool incarchreg_, bool freeregdead_) :
+    n(nb_regs), incarchreg(incarchreg_), freeregdead(freeregdead_) {
+    fatal_if(!incarchreg && nb_regs >= NB_I2ID, "Need more preg");
+    // Default RMT
+    for (int i = 0; i < 64; i++){
+      RegId regid = i2id(i);
+      PhysicalReg reg(regid);
+      rmt[reg] = 1000;
+    }
+    /* Initialise all arch regs to physical mapping */
     for (int i = 0; i < nb_regs; i++){
-      if (i < NB_I2ID){  /* Initialise all arch regs to physical mapping */
+      if (incarchreg && i < NB_I2ID){
         RegId regid = i2id(i);
         PhysicalReg reg(regid);
         rmt[reg] = i;
@@ -80,6 +92,9 @@ class PhysicalRegAllocator
   }
 
   bool canRename(){
+    if (!free_list.size()){
+      DPRINTF(Cva6Rename, "Out of PREG\n");
+    }
     return free_list.size();
   }
 
@@ -92,7 +107,9 @@ class PhysicalRegAllocator
     /* Allocate destinations regs and rename */
     for (PhysicalReg& reg: inst->regs_dst_phy){
       /* Keep track of old mapping for reg free */
-      inst->phys_reg_to_free.push_back(rmt[reg]);
+      PhysicalReg freereg = reg; // Ok because rmt [ ArchReg ]
+      freereg.doRename(rmt[reg]);
+      inst->phys_reg_to_free.push_back(freereg);
       /* pop register from free list */
       fatal_if(!free_list.size(), "No more entry in FL\n");
       uint64_t pregidx = free_list.front();
@@ -101,27 +118,80 @@ class PhysicalRegAllocator
       free_list_popped.push_back(pregidx);
       /* Finally rename the register */
       reg.doRename(pregidx);
+      DPRINTF(Cva6Rename, "Alloc reg %s\n", reg);
+
       /* Setup the speculative mapping in RMT */
       /* Secure check */
-      // std::cout << "renamed " << reg << std::endl;
-      for (int i = 0; i < NB_I2ID; i++){
-        RegId regid = i2id(i);
-        PhysicalReg r2(regid);
-        fatal_if(rmt[r2] == pregidx, "(try rename %s to %d) "
-          "Reg %s already mapped to %s\n", reg, pregidx, r2, pregidx);
+      if (incarchreg){
+        // std::cout << "renamed " << reg << std::endl;
+        for (int i = 0; i < NB_I2ID; i++){
+          RegId regid = i2id(i);
+          PhysicalReg r2(regid);
+          fatal_if(rmt[r2] == pregidx, "(try rename %s to %d) "
+            "Reg %s already mapped to %s\n", reg, pregidx, r2, pregidx);
+        }
       }
       rmt[reg] = pregidx;
+      rmt_owner[reg] = inst;
+    }
+  }
+  private:
+
+  void free_reg(PhysicalReg& reg){
+    // std::cout << "Free " << idx << std::endl;
+    DPRINTF(Cva6Rename, "Free reg %s\n", reg);
+    if (reg.phys_reg_idx != 1000){
+      free_list.push_back(reg.phys_reg_idx);
+      /* Invalidate RMT */
+      // TODO : is this mandatory (Could we wait until next realloc)?
+
+      // rmt[reg] = 1000;
+      // rmt_owner[reg] = Cva6DynInst::bubble();
     }
   }
 
+  void free(Cva6DynInstPtr& inst){
+    /* Free registers WaW */
+    for (PhysicalReg& reg: inst->phys_reg_to_free){
+      free_reg(reg);
+    }
+    /* Can we free RDeadaW ? */
+    if (freeregdead){
+      for (PhysicalReg& reg: inst->regs_src_phy){
+        if (reg.is_reg_dead){ // TODO
+          free_reg(reg);
+        }
+      }
+    }
+  }
+  public:
+  void speculative_update(Cva6DynInstPtr& inst){
+    if (!incarchreg){ // If no arch reg
+      free(inst);
+    }
+  }
   /* Free all registers */
   void commit(Cva6DynInstPtr& inst){
-    /* Free registers */
-    for (uint64_t idx: inst->phys_reg_to_free){
-      // std::cout << "Free " << idx << std::endl;
-      /* Assumme in order commit */
-      free_list.push_back(idx);
+    if (!incarchreg){ // If no arch reg
+      /* free_rd_at_commit */
+      for (PhysicalReg& reg: inst->regs_dst_phy){
+        if (rmt_owner[reg] == inst){ // We are the owner
+          free_reg(reg);
+          rmt[reg] = 1000;
+          /* !!! Avoid duplicate in RMT !!! */
+          /* If there is duplicate
+           * -> Multiple FREE of the same preg
+           * -> Duplicate in FL
+           * -> 2 arch reg may have the same preg !
+           */
+          // Instead of this we may defer the RMT invalidation.
+          // This can be done at allocate. Do do this, it requires
+          // to know the old arch reg.
+        }
+      }
+      return;
     }
+    free(inst);
     /* Update checkpoint with new allocations */
     for (PhysicalReg& reg: inst->regs_dst_phy){
       /* Assume InO commit */
@@ -135,13 +205,25 @@ class PhysicalRegAllocator
 
   void flush(){
     /* Mv rmt_checkpoint to rmt */
-    rmt = rmt_checkpoint;
-    /* Fix free list */
-    /* [...|...|...]FL.front() <- FLP.back()[...|...] */
-    while (free_list_popped.size()){ /* Both revsersed */
-      free_list.push_front(free_list_popped.back());
-      free_list_popped.pop_back();
+    if (incarchreg){ // Restore a valid RMT
+      rmt = rmt_checkpoint;
+      /* Fix free list */
+      /* [...|...|...]FL.front() <- FLP.back()[...|...] */
+      while (free_list_popped.size()){ /* Both revsersed */
+        free_list.push_front(free_list_popped.back());
+        free_list_popped.pop_back();
+      }
+    } else {
+      // Symply clear the rmt
+      rmt.setall(1000);
+      // And reset FL
+      free_list_popped.clear();
+      free_list.clear();
+      for (int i = 0; i < n; i++){
+        free_list.push_back(i);
+      }
     }
+
   }
 };
 
@@ -674,6 +756,8 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   StoreSet<Cva6DynInstPtr> mdp;
 
   PhysicalRegFile<unsigned int> timeofregready;
+  // ArchRegFile<unsigned int> timeofregready;
+  PhysicalRegFile<uint64_t> maxtimeoflasttouch;
 
   MinLineAnalyserV2 mla;
   MinLineAnalyserBB mlabb;
@@ -732,135 +816,6 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
       mla(16), mlabb(6) {
         scheduler_entry_t::width = p.schedWidth;
       }
-};
-
-
-
-/**
- * My custom Basic Block scheduler
- */
-class SchedulerVP : public BaseScheduler
-{
-  struct Stats : public statistics::Group
-  {
-    statistics::Scalar req;
-    statistics::Scalar rescheduled;
-
-    Stats(Cva6CPU &cpu) :
-      statistics::Group(&cpu, "SchedulerVP"),
-      ADD_STAT(req, ""),
-      ADD_STAT(rescheduled, "")
-    { }
-  } stats;
-
-  /* Scheduler onternals */
-  Cva6CPU &cpu;
-  uint64_t size;
-  uint64_t width;
-
-  uint64_t base_time = 0;
-  uint64_t inflight_insts_count = 0;
-
-  MinLineAnalyserV2 mla;
-  uint64_t last_store_time = 0;
-  uint64_t last_serialisation_time = 0;
-
-  // struct cycle_entry_t {
-  //   Cva6DynInstPtr insts[4] = { nullptr };
-  // };
-  std::deque<scheduler_entry_t> s2d;
-  PhysicalRegFile<unsigned int> timeofregready;
-
-  PhysicalRegFile<unsigned int> sliceofreg;
-  std::vector<uint64_t> time_of_slice_ready;
-
-  uint64_t cur_slice_idx = 0;
-
-  public:
-  SchedulerVP(const std::string &name,
-              Cva6CPU &cpu_,
-              const BaseCva6CPUParams &p) :
-    stats(cpu_), cpu(cpu_), size(p.schedSize), width(p.schedWidth),
-    mla(16) {
-      scheduler_entry_t::width = p.schedWidth;
-      time_of_slice_ready.resize(p.schedWidth);
-    }
-  /* Interface */
-  bool canPush() override { return inflight_insts_count < size; }
-  uint64_t getSourceUseLine(PhysicalReg &reg){
-    uint64_t alt_line = timeofregready[reg] > base_time ?
-                        timeofregready[reg] - base_time : 0;
-    return alt_line;
-  }
-
-  uint64_t getSliceUseLine(uint64_t slice){
-    uint64_t alt_line = time_of_slice_ready[slice] > base_time ?
-                        time_of_slice_ready[slice] - base_time : 0;
-    return alt_line;
-  }
-
-  uint64_t getSLSTORE(Cva6DynInstPtr &inst){
-    uint64_t schedule_line = 0;
-    /* Store order : do not allow store store bypass */
-    if (!inst->isFault() && inst->staticInst->isStore()){
-      /* Is there a store dependancy */
-      if (last_store_time > base_time){
-        uint64_t store_schedule_line = last_store_time - base_time + 1;
-        // +1 to avoid Store leak ??!
-        schedule_line = std::max(schedule_line, store_schedule_line);
-        DPRINTF(Cva6Sched, "Schedule (Store order  ): line %d T %d for %s\n",
-          schedule_line, schedule_line + base_time, dumpInstPreg(inst));
-      }
-    }
-    if (mla.isConstraints(inst)){
-      uint64_t mla_time = mla.getMinSchedulerTime(inst);
-      if (mla_time > base_time){
-        uint64_t store_schedule_line = mla_time - base_time + 1;
-        schedule_line = std::max(schedule_line, store_schedule_line);
-        DPRINTF(Cva6Sched, "Schedule (Store NOLOCK ): line %d T %d for %s\n",
-          schedule_line, schedule_line + base_time, dumpInstPreg(inst));
-      }
-    }
-    return schedule_line;
-  }
-
-  uint64_t getScheduleLine(Cva6DynInstPtr inst, uint64_t& ready_slice);
-  void push(Cva6DynInstPtr inst);
-
-  Cva6DynInstPtr pop() override {
-    inflight_insts_count --;
-    /* Pop entry in scheduler */
-    assert(s2d.size());
-    scheduler_entry_t &se = s2d.front();
-    assert(!se.empty());
-    Cva6DynInstPtr inst = se.pop();
-    while (!s2d.empty() && s2d.front().empty()){
-      s2d.pop_front();
-      base_time ++;
-    }
-    DPRINTF(Cva6Sched, "SCHEDPOP: %s\n", dumpInstPreg(inst));
-    return inst;
-  }
-  Cva6DynInstPtr front() override {
-    assert(inflight_insts_count);
-    assert(s2d.size());
-    assert(s2d.front().size());
-    return s2d.front().front();
-  };
-  bool canPop() override { return inflight_insts_count;}
-  void flush() override {
-    inflight_insts_count = 0;
-    /* Set base time to final time (clean debug)*/
-    base_time += s2d.size();
-    /* Clear everything */
-    s2d.clear();
-    timeofregready.setall(0);
-    for (int i = 0; i < width; i++){
-      time_of_slice_ready[i] = 0;
-    }
-    last_serialisation_time = 0;
-    last_store_time = 0;
-  }
 };
 
 

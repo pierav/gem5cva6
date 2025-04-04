@@ -25,7 +25,9 @@ Decode::evaluate(){
   while (inp.canPop() && cpu.pipeline->sa.can_push_scheduler()){
     Cva6DynInstPtr inst = inp.pop();
     inst->stage_decode_enter = true;
+    /* Push in the prediction pipeline */
     cpu.pipeline->dpe.insert(inst);
+    /* Push in the scheduler stage */
     cpu.pipeline->sa.push_scheduler(inst);
     /* Push also in rob to keep track of instruction order */
     cpu.pipeline->rob.push(inst);

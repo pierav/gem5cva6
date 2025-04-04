@@ -69,7 +69,9 @@ cva6_config = {
     "schedSize" : DEFAULT(128),
     "schedWidth" : DEFAULT(4),
     "userelf": DEFAULT(""), # User elf for symbols only
-    "renameSize": DEFAULT(64)
+    "renameSize": DEFAULT(64),
+    "renameIncArchReg": DEFAULT(0),
+    "renameFreeRegDead": DEFAULT(0)
 }
 o3_config = {
     "numIQEntries": DEFAULT(32),

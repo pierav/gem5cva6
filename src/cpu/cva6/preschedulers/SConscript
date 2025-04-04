@@ -1,0 +1,7 @@
+# -*- mode:python -*-
+
+Import('*')
+
+if env['CONF']['BUILD_ISA']:
+    Source('schedulervp.cc')
+

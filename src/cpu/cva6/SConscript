@@ -69,6 +69,7 @@ if env['CONF']['BUILD_ISA']:
     DebugFlag("Cva6SchedSched", 'Cva6Sched scheduled instructions')
 
     DebugFlag("Cva6MDP", "Memory dependancy prediction related")
+    DebugFlag("Cva6Rename", "Register renamming")
 
     DebugFlag('Cva6Partition', 'Instruction BB sub k1 partition')
     CompoundFlag('Cva6Lambda', ['Cva6LambdaCommit',
@@ -86,5 +87,6 @@ if env['CONF']['BUILD_ISA']:
                           'Cva6Commit',
                           'Cva6Minicache',
                           'Cva6VP',
-                          'Cva6Plugin'])
+                          'Cva6Plugin',
+                          'Cva6Rename'])
 

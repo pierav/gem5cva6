@@ -14,6 +14,7 @@
 #include "base/named.hh"
 #include "base/statistics.hh"
 #include "cpu/cva6/dyn_inst.hh"
+#include "cpu/cva6/preschedulers/schedulervp.hh"
 #include "cpu/cva6/scheduler.hh"
 #include "cpu/cva6/store_set.hh"
 #include "cpu/cva6/vp.hh"
@@ -33,8 +34,8 @@ inline BaseScheduler& initSched(
       return *new NoScheduler(name, cpu, p);
     case 2:
       return *new SchedulerPierreMichaud(name, cpu, p);
-    case 3:
-      return *new SchedulerVP(name, cpu, p);
+    // case 3:
+    //   return *new SchedulerVP(name, cpu, p);
   }
   fatal("Invalid Scheduler type: %d\n", p.schedType);
   return *new NoScheduler(name, cpu, p);
@@ -84,7 +85,7 @@ class SA
     scheduler(initSched(name, cpu, p)),
     isa(cpu, "sa.i", false),
     osa(cpu, "sa.o", false),
-    regalloc(p.renameSize),
+    regalloc(p.renameSize, p.renameIncArchReg, p.renameFreeRegDead),
     stats(cpu) { }
 
   private:
@@ -133,6 +134,8 @@ class SA
     scheduler.push(inst);
     /* Some static statistics */
     isa.commit(inst);
+    /* If required perform speculative free */
+    regalloc.speculative_update(inst);
   }
   bool can_pop_scheduled(){ return scheduler.canPop(); }
   Cva6DynInstPtr front_scheduler() { return scheduler.front(); }
