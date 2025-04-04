@@ -54,24 +54,17 @@ class Scoreboard : public Named
     std::deque<Cva6DynInstPtr> issue_queue;
 
     // FSM reg_state_t
-    //                                            ┌───────────┐
-    //                           Commit           │           │
+    //                          Commit            ┌───────────┐
     //        │                  ┌─────┐          │   ERROR   │
-    //        │                  │     │          │           │
     //  ┌─────▼────┐          ┌──┴─────▼──┐       └─────▲─────┘
-    //  │          │          │           │             │
     //  │   FREE   ├──────────►   InUSE   ├─────────────┘
-    //  │          │ Issue    │           │        Issue
-    //  └──────────┘          └──┬─────▲──┘
+    //  └──────────┘ Issue    └──┬─────▲──┘    Issue
     //                           │     │
     //               ExComplete  │     │ Issue
     //                           │     │
     //                        ┌──▼─────┴──┐
-    //                        │           │
     //                        │    FW     │
-    //                        │           │
     //                        └──┬─────▲──┘
-    //                           │     │
     //                           └─────┘
     //                           Commit
 

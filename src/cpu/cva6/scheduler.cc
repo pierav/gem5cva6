@@ -219,12 +219,14 @@ SchedulerPierreMichaud::find_inst_line(Cva6DynInstPtr inst){
 uint64_t
 SchedulerPierreMichaud::getSLRR(Cva6DynInstPtr &inst){
   uint64_t schedule_line = 0;
+  // RaW
   for (auto &reg: inst->regs_src_phy){
     uint64_t sli = getSourceUseLine(reg);
     DPRINTF(Cva6Sched, "Schedule (RR: %s): line %d T %d for %s\n",
       reg, sli, sli + base_time, dumpInstPreg(inst));
     schedule_line = std::max(schedule_line, sli);
   }
+  // WaR and WaW
   for (auto &reg: inst->regs_dst_phy){
     uint64_t tlr = maxtimeoflasttouch[reg];
     if (tlr > base_time){ // Apply serialisation
@@ -232,6 +234,7 @@ SchedulerPierreMichaud::getSLRR(Cva6DynInstPtr &inst){
       schedule_line = std::max(schedule_line, sli);
     }
   }
+  // Ignore RaR
   DPRINTF(Cva6Sched, "Schedule (RR:          ): line %d T %d for %s\n",
     schedule_line, schedule_line + base_time, dumpInstPreg(inst));
   return schedule_line;
@@ -427,7 +430,7 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
     timeofregready[reg] = base_time + schedule_line + delta;
   }
 
-  // RaW dep
+  // WaR dep
   for (auto &reg: inst->regs_src_phy){
     maxtimeoflasttouch[reg] =
       std::max(maxtimeoflasttouch[reg], base_time + schedule_line);

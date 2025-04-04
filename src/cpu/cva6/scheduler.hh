@@ -63,14 +63,22 @@ class PhysicalRegAllocator
   std::deque<uint64_t> free_list_popped;
 
   ArchRegFile<uint64_t> rmt;
-  ArchRegFile<Cva6DynInstPtr> rmt_owner;
   ArchRegFile<uint64_t> rmt_checkpoint;
+
+  // Owner of the physical reg !!!
+  PhysicalRegFile<uint64_t> rmt_owner;
 
   bool incarchreg; // Scoreboard arch or Full RR
   bool freeregdead;
+  bool specrelease;
   public:
-  PhysicalRegAllocator(uint64_t nb_regs, bool incarchreg_, bool freeregdead_) :
-    n(nb_regs), incarchreg(incarchreg_), freeregdead(freeregdead_) {
+  PhysicalRegAllocator(uint64_t nb_regs,
+    bool incarchreg_,
+    bool freeregdead_,
+    bool specrelease_) :
+    n(nb_regs), incarchreg(incarchreg_),
+    freeregdead(freeregdead_),
+    specrelease(specrelease_) {
     fatal_if(!incarchreg && nb_regs >= NB_I2ID, "Need more preg");
     // Default RMT
     for (int i = 0; i < 64; i++){
@@ -132,7 +140,7 @@ class PhysicalRegAllocator
         }
       }
       rmt[reg] = pregidx;
-      rmt_owner[reg] = inst;
+      rmt_owner[reg] = inst->id.fetchSeqNum;
     }
   }
   private:
@@ -141,12 +149,22 @@ class PhysicalRegAllocator
     // std::cout << "Free " << idx << std::endl;
     DPRINTF(Cva6Rename, "Free reg %s\n", reg);
     if (reg.phys_reg_idx != 1000){
+      // Safe check: do not release twice
+      for (uint64_t id: free_list){
+        fatal_if(id == reg.phys_reg_idx, "PREG %d is already freed\n", id);
+      }
       free_list.push_back(reg.phys_reg_idx);
       /* Invalidate RMT */
       // TODO : is this mandatory (Could we wait until next realloc)?
-
+      if (rmt[reg] == reg.phys_reg_idx){
+        rmt[reg] = 1000;
+      }
       // rmt[reg] = 1000;
-      // rmt_owner[reg] = Cva6DynInst::bubble();
+      rmt_owner[reg] = 0; // Do not let think the owner own the rmt
+      // Safe check: do not let multiple allocation
+      for (uint64_t id: rmt){
+        fatal_if(id == reg.phys_reg_idx, "PREG %d is mapped in RMT\n", id);
+      }
     }
   }
 
@@ -167,7 +185,9 @@ class PhysicalRegAllocator
   public:
   void speculative_update(Cva6DynInstPtr& inst){
     if (!incarchreg){ // If no arch reg
-      free(inst);
+      if (specrelease){
+        free(inst);
+      }
     }
   }
   /* Free all registers */
@@ -175,9 +195,18 @@ class PhysicalRegAllocator
     if (!incarchreg){ // If no arch reg
       /* free_rd_at_commit */
       for (PhysicalReg& reg: inst->regs_dst_phy){
-        if (rmt_owner[reg] == inst){ // We are the owner
+        if (rmt_owner[reg] == inst->id.fetchSeqNum){ // We are the owner
+          // fatal_if(rmt[reg] != reg.phys_reg_idx,
+          //   "As owner rmt[%s]=%d must be equal to %d\n",
+          //   reg, rmt[reg], reg.phys_reg_idx);
           free_reg(reg);
-          rmt[reg] = 1000;
+          // rmt[where rmg[x] == preg ]= 0
+
+          /* Even if no one allocated the same PREG, someone may
+           have allocate the VREG */
+          if (rmt[reg] == reg.phys_reg_idx){
+            rmt[reg] = 1000;
+          }
           /* !!! Avoid duplicate in RMT !!! */
           /* If there is duplicate
            * -> Multiple FREE of the same preg
@@ -223,7 +252,6 @@ class PhysicalRegAllocator
         free_list.push_back(i);
       }
     }
-
   }
 };
 

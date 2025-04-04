@@ -266,7 +266,28 @@ Execute::evaluate() {
                 memcheck.invalidate(addr);
             }
         }
-
+        // Reg checker
+        {
+            static ArchRegFile<char> rfinit;
+            static ArchRegFile<uint64_t> rf;
+            if (!inst->isFault()){
+                // 0) Check src
+                for (auto& reg: inst->regs_src_phy){
+                    if (!rfinit[reg]){ // For simpoint
+                        rf[reg] = reg.value;
+                        rfinit[reg] = true;
+                    }
+                    fatal_if(rf[reg] != reg.value,
+                        "reg %s must be equal to %lx not %lx\n",
+                        reg, rf[reg], reg.value);
+                }
+                // 1) Apply dsts
+                for (auto& reg: inst->regs_dst_phy){
+                    rf[reg] = reg.value;
+                    rfinit[reg] = true;
+                }
+            }
+        }
         bool misspred_value = dpe.commit(inst);
         if (misspred_value){
             ThreadContext *thread = cpu.getContext();

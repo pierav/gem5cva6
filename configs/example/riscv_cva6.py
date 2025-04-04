@@ -71,7 +71,8 @@ cva6_config = {
     "userelf": DEFAULT(""), # User elf for symbols only
     "renameSize": DEFAULT(64),
     "renameIncArchReg": DEFAULT(0),
-    "renameFreeRegDead": DEFAULT(0)
+    "renameFreeRegDead": DEFAULT(0),
+    "renameSpecRelease": DEFAULT(1)
 }
 o3_config = {
     "numIQEntries": DEFAULT(32),

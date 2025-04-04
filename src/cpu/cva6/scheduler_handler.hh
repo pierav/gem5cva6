@@ -85,7 +85,8 @@ class SA
     scheduler(initSched(name, cpu, p)),
     isa(cpu, "sa.i", false),
     osa(cpu, "sa.o", false),
-    regalloc(p.renameSize, p.renameIncArchReg, p.renameFreeRegDead),
+    regalloc(p.renameSize, p.renameIncArchReg,
+      p.renameFreeRegDead, p.renameSpecRelease),
     stats(cpu) { }
 
   private:
