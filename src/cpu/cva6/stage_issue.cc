@@ -22,7 +22,7 @@ const char* OCSNames[] = {"NoOp", "Alu", "Fpu", "Control", "Read", "Write"};
 void
 IssueUnit::evaluate(){
     int nb_issued = 0;
-    int cnt_push_load = 0;
+    // int cnt_push_load = 0;
     for (int i = 0; i < nb_issue_port; i++){ // Try to issue instruction
         bool is_over_serialise, is_raw, is_waw;
         Cva6DynInstPtr producer = Cva6DynInst::bubble();

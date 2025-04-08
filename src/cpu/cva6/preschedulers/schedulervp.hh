@@ -56,7 +56,9 @@ class SchedulerVP : public BaseScheduler
       time_of_slice_ready.resize(p.schedWidth);
     }
   /* Interface */
-  bool canPush() override { return inflight_insts_count < size; }
+  bool canPush(Cva6DynInstPtr inst) override {
+    return inflight_insts_count < size;
+  }
   uint64_t getSourceUseLine(PhysicalReg &reg){
     uint64_t alt_line = timeofregready[reg] > base_time ?
                         timeofregready[reg] - base_time : 0;

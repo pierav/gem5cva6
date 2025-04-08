@@ -273,9 +273,12 @@ Execute::evaluate() {
             if (!inst->isFault()){
                 // 0) Check src
                 for (auto& reg: inst->regs_src_phy){
+                    if (reg.is_reg_dead){
+                        rfinit[reg] = false;
+                    }
                     if (!rfinit[reg]){ // For simpoint
                         rf[reg] = reg.value;
-                        rfinit[reg] = true;
+                        // rfinit[reg] = true;
                     }
                     fatal_if(rf[reg] != reg.value,
                         "reg %s must be equal to %lx not %lx\n",

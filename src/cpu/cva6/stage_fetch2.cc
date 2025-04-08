@@ -218,6 +218,38 @@ Fetch2::output_inst(Cva6DynInstPtr inst){
             }
         }
     }
+    /* BB idx */
+    static uint64_t bbcnt = 0;
+    inst->bb_idx = bbcnt;
+    bbcnt += !inst->isFault() && inst->staticInst->isControl();
+    /* REG API */
+    if (!inst->isFault()){
+      /* Rename instruction : default is no renamming */
+      BinaryRegisterFile rf;
+      for (uint8_t i = 0; i < inst->staticInst->numSrcRegs(); i++) {
+        RegId regid = inst->staticInst->srcRegIdx(i);
+        if ((regid.classValue() != InvalidRegClass) && !rf.isSet(regid)){
+          PhysicalReg reg(regid);
+          reg.is_reg_dead = inst->exec_data.is_reg_dead[i];
+          inst->regs_src_phy.push_back(reg);
+          rf.set(regid);
+        }
+      }
+      rf.clear();
+      for (uint8_t i = 0; i < inst->staticInst->numDestRegs(); i++) {
+        RegId regid = inst->staticInst->destRegIdx(i);
+        if ((regid.classValue() != InvalidRegClass) && !rf.isSet(regid)){
+          inst->regs_dst_phy.push_back(PhysicalReg(regid));
+          rf.set(regid);
+        }
+      }
+      /* Annotate missing Reg Dead */
+      for (auto& reg: inst->regs_src_phy){
+        if (rf.isSetRaw(reg.virt_reg_idx)){ /* Rf contains rd regs */
+          reg.is_reg_dead = true;
+        }
+      }
+    }
     out.push(inst);
 }
 

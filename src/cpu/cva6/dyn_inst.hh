@@ -45,6 +45,8 @@ struct PhysicalReg
   bool valid = false;       /* Is value valid */
   bool fromrf = false;      /* Is read from register file */
   uint64_t value = 0xdeaddeaddeaddead;
+  /* Metadata */
+  uint64_t producer_id = 0;
 
   PhysicalReg() {}
   PhysicalReg(RegId regid_) {
@@ -138,6 +140,15 @@ class PhysicalRegFile
       array.resize(reg.phys_reg_idx + 1);
     }
     return array[reg.phys_reg_idx];
+  }
+
+  /* Direst access from preg index */
+  T& operator[](uint64_t preg){
+    // Fix size;
+    if (array.size() <= preg){
+      array.resize(preg + 1);
+    }
+    return array[preg];
   }
 
   void setall(T val){

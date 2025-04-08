@@ -22,7 +22,9 @@ Decode::evaluate(){
   }
 
   // Decode stage :
-  while (inp.canPop() && cpu.pipeline->sa.can_push_scheduler()){
+  while (inp.canPop() &&
+    cpu.pipeline->sa.can_push_scheduler(inp.front()))
+  {
     Cva6DynInstPtr inst = inp.pop();
     inst->stage_decode_enter = true;
     /* Push in the prediction pipeline */

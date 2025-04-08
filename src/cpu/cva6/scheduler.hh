@@ -56,8 +56,22 @@ inline bool isBBend(Cva6DynInstPtr& inst){
 //   return false;
 // }
 
-class PhysicalRegAllocator
+class PhysicalRegAllocator : public Named
 {
+  struct PhysicalRegAllocatorStats : public statistics::Group
+  {
+    statistics::Scalar reg_alloc;
+    statistics::Scalar reg_free;
+    statistics::Scalar reg_free_spec;
+    statistics::Scalar reg_free_commit;
+    PhysicalRegAllocatorStats(const std::string &name, BaseCPU &cpu):
+    statistics::Group(&cpu, name.c_str()),
+    ADD_STAT(reg_alloc, "Number of reg allocated"),
+    ADD_STAT(reg_free, "Number of insts freed"),
+    ADD_STAT(reg_free_spec, "Number of insts freed spec"),
+    ADD_STAT(reg_free_commit, "Number of insts freed commit") {}
+  } stats;
+
   size_t n;
   std::deque<uint64_t> free_list;
   std::deque<uint64_t> free_list_popped;
@@ -67,19 +81,27 @@ class PhysicalRegAllocator
 
   // Owner of the physical reg !!!
   PhysicalRegFile<uint64_t> rmt_owner;
+  PhysicalRegFile<char> isbuzy;
+
 
   bool incarchreg; // Scoreboard arch or Full RR
   bool freeregdead;
   bool specrelease;
   public:
-  PhysicalRegAllocator(uint64_t nb_regs,
+  PhysicalRegAllocator(
+    const std::string &name_,
+    Cva6CPU &cpu_,
+    const BaseCva6CPUParams &p,
+    uint64_t nb_regs,
     bool incarchreg_,
     bool freeregdead_,
     bool specrelease_) :
+    Named(name_),
+    stats(name_, cpu_),
     n(nb_regs), incarchreg(incarchreg_),
     freeregdead(freeregdead_),
     specrelease(specrelease_) {
-    fatal_if(!incarchreg && nb_regs >= NB_I2ID, "Need more preg");
+    fatal_if(incarchreg && nb_regs <= NB_I2ID, "Need more preg");
     // Default RMT
     for (int i = 0; i < 64; i++){
       RegId regid = i2id(i);
@@ -92,6 +114,7 @@ class PhysicalRegAllocator
         RegId regid = i2id(i);
         PhysicalReg reg(regid);
         rmt[reg] = i;
+        isbuzy[reg] = true;
       } else { /* Let the register for future use */
         free_list.push_back(i);
       }
@@ -106,87 +129,109 @@ class PhysicalRegAllocator
     return free_list.size();
   }
 
-  void rename(Cva6DynInstPtr& inst){
+  void rename_one_secure(PhysicalReg& reg){
+    if (!reg.isRenammed){
+      reg.doRename(rmt[reg]);
+      reg.producer_id = rmt_owner[reg];
+    }
+  }
+
+  void rename_src(Cva6DynInstPtr& inst){
     /* Rename srcs */
     for (PhysicalReg& reg: inst->regs_src_phy){
-      reg.doRename(rmt[reg]);
+      rename_one_secure(reg);
     }
+  }
 
-    /* Allocate destinations regs and rename */
-    for (PhysicalReg& reg: inst->regs_dst_phy){
-      /* Keep track of old mapping for reg free */
-      PhysicalReg freereg = reg; // Ok because rmt [ ArchReg ]
-      freereg.doRename(rmt[reg]);
-      inst->phys_reg_to_free.push_back(freereg);
-      /* pop register from free list */
-      fatal_if(!free_list.size(), "No more entry in FL\n");
-      uint64_t pregidx = free_list.front();
-      free_list.pop_front();
-      /* Maintain speculative state */
-      free_list_popped.push_back(pregidx);
-      /* Finally rename the register */
-      reg.doRename(pregidx);
-      DPRINTF(Cva6Rename, "Alloc reg %s\n", reg);
-
-      /* Setup the speculative mapping in RMT */
-      /* Secure check */
-      if (incarchreg){
-        // std::cout << "renamed " << reg << std::endl;
-        for (int i = 0; i < NB_I2ID; i++){
-          RegId regid = i2id(i);
-          PhysicalReg r2(regid);
-          fatal_if(rmt[r2] == pregidx, "(try rename %s to %d) "
-            "Reg %s already mapped to %s\n", reg, pregidx, r2, pregidx);
-        }
-      }
-      rmt[reg] = pregidx;
-      rmt_owner[reg] = inst->id.fetchSeqNum;
+  std::deque<uint64_t>& getFL(){
+    return free_list;
+  }
+  void rename_dst(Cva6DynInstPtr& inst, uint64_t preg){
+    assert(inst->regs_dst_phy.size() == 1);
+    PhysicalReg& reg = inst->regs_dst_phy.front();
+    /* Keep track of old mapping for reg free */
+    PhysicalReg freereg = reg; // Ok because rmt [ ArchReg ]
+    rename_one_secure(freereg); // Clean rename of dst
+    inst->phys_reg_to_free.push_back(freereg);
+    /* pop register from free list */
+    fatal_if(!free_list.size(), "No more entry in FL\n");
+    // OLD
+    // uint64_t pregidx = free_list.front();
+    // free_list.pop_front();
+    // NEW : pop everywhere
+    auto it = std::find(free_list.begin(), free_list.end(), preg);
+    fatal_if(it==free_list.end(), "Preg %d must be in FL\n", preg);
+    it = free_list.erase(it);
+    /* Mark many things */
+    rmt[reg] = preg; /* 1) Update the RMT */
+    rmt_owner[preg] = inst->id.fetchSeqNum; /* 2) The owner */
+    isbuzy[preg] = true; /* 3) RMT or FREE list (mute be exclusive)*/
+    stats.reg_alloc += 1;
+    /* Finally rename the register */
+    rename_one_secure(reg);
+    std::ostringstream os;
+    for (auto pregi: free_list){
+      os << pregi << ", ";
     }
+    DPRINTF(Cva6Rename, "Alloc reg %s :: FL = [%s]\n", reg, os.str());
   }
   private:
 
-  void free_reg(PhysicalReg& reg){
+  bool free_reg(PhysicalReg& reg){
     // std::cout << "Free " << idx << std::endl;
-    DPRINTF(Cva6Rename, "Free reg %s\n", reg);
     if (reg.phys_reg_idx != 1000){
+        DPRINTF(Cva6Rename,
+          "Free reg %s : isbuzy[%s]=%d rmt_owner[%s]=%lx (prod=%lx)\n",
+          reg, reg, isbuzy[reg], reg, rmt_owner[reg], reg.producer_id);
       // Safe check: do not release twice
-      for (uint64_t id: free_list){
-        fatal_if(id == reg.phys_reg_idx, "PREG %d is already freed\n", id);
-      }
-      free_list.push_back(reg.phys_reg_idx);
-      /* Invalidate RMT */
-      // TODO : is this mandatory (Could we wait until next realloc)?
-      if (rmt[reg] == reg.phys_reg_idx){
-        rmt[reg] = 1000;
-      }
-      // rmt[reg] = 1000;
-      rmt_owner[reg] = 0; // Do not let think the owner own the rmt
-      // Safe check: do not let multiple allocation
-      for (uint64_t id: rmt){
-        fatal_if(id == reg.phys_reg_idx, "PREG %d is mapped in RMT\n", id);
+      // Is the reg still in use and we are the owner
+      if (isbuzy[reg] && rmt_owner[reg] == reg.producer_id){
+        isbuzy[reg] = false;
+        for (uint64_t id: free_list){
+          fatal_if(id == reg.phys_reg_idx, "PREG %d is already freed\n", id);
+        }
+        free_list.push_back(reg.phys_reg_idx);
+        /* Invalidate RMT */
+        // TODO : is this mandatory (Could we wait until next realloc)?
+        // fatal_if(rmt[reg] != reg.phys_reg_idx,
+        // "rmt[%s]=%s must be equal to %s",
+        //   reg, rmt[reg], reg.phys_reg_idx);
+
+        // If someone do not have allocated the same ArchReg !
+        if (rmt[reg] == reg.phys_reg_idx){
+          rmt[reg] = 1000;
+        }
+        // Instead of this we may defer the RMT invalidation.
+        // This can be done at allocate. Do do this, it requires
+        // to know the old arch reg.
+        // rmt[reg] = 1000;
+        rmt_owner[reg] = 0; // Do not let think the owner own the rmt
+        // Safe check: do not let multiple allocation
+        for (uint64_t id: rmt){
+          fatal_if(id == reg.phys_reg_idx, "PREG %d is mapped in RMT\n", id);
+        }
+        return true;
       }
     }
+    return false;
   }
 
-  void free(Cva6DynInstPtr& inst){
-    /* Free registers WaW */
-    for (PhysicalReg& reg: inst->phys_reg_to_free){
-      free_reg(reg);
-    }
-    /* Can we free RDeadaW ? */
-    if (freeregdead){
-      for (PhysicalReg& reg: inst->regs_src_phy){
-        if (reg.is_reg_dead){ // TODO
-          free_reg(reg);
-        }
-      }
-    }
-  }
   public:
   void speculative_update(Cva6DynInstPtr& inst){
     if (!incarchreg){ // If no arch reg
       if (specrelease){
-        free(inst);
+        /* Free registers WaW */
+        for (PhysicalReg& reg: inst->phys_reg_to_free){
+          stats.reg_free_spec += free_reg(reg);
+        }
+        /* Can we free RDeadaW ? */
+        if (freeregdead){
+          for (PhysicalReg& reg: inst->regs_src_phy){
+            if (reg.is_reg_dead){ // TODO
+              stats.reg_free_spec + free_reg(reg);
+            }
+          }
+        }
       }
     }
   }
@@ -195,32 +240,14 @@ class PhysicalRegAllocator
     if (!incarchreg){ // If no arch reg
       /* free_rd_at_commit */
       for (PhysicalReg& reg: inst->regs_dst_phy){
-        if (rmt_owner[reg] == inst->id.fetchSeqNum){ // We are the owner
-          // fatal_if(rmt[reg] != reg.phys_reg_idx,
-          //   "As owner rmt[%s]=%d must be equal to %d\n",
-          //   reg, rmt[reg], reg.phys_reg_idx);
-          free_reg(reg);
-          // rmt[where rmg[x] == preg ]= 0
-
-          /* Even if no one allocated the same PREG, someone may
-           have allocate the VREG */
-          if (rmt[reg] == reg.phys_reg_idx){
-            rmt[reg] = 1000;
-          }
-          /* !!! Avoid duplicate in RMT !!! */
-          /* If there is duplicate
-           * -> Multiple FREE of the same preg
-           * -> Duplicate in FL
-           * -> 2 arch reg may have the same preg !
-           */
-          // Instead of this we may defer the RMT invalidation.
-          // This can be done at allocate. Do do this, it requires
-          // to know the old arch reg.
-        }
+        stats.reg_free_commit += free_reg(reg);
       }
       return;
     }
-    free(inst);
+    /* Free registers WaW */
+    for (PhysicalReg& reg: inst->phys_reg_to_free){
+      stats.reg_free_commit += free_reg(reg);
+    }
     /* Update checkpoint with new allocations */
     for (PhysicalReg& reg: inst->regs_dst_phy){
       /* Assume InO commit */
@@ -245,6 +272,7 @@ class PhysicalRegAllocator
     } else {
       // Symply clear the rmt
       rmt.setall(1000);
+      isbuzy.setall(false);
       // And reset FL
       free_list_popped.clear();
       free_list.clear();
@@ -256,228 +284,10 @@ class PhysicalRegAllocator
 };
 
 
-struct waitqueue_t
-{
-  std::deque<Cva6DynInstPtr> holdqueue;
-  PhysicalRegFile<unsigned int> holdregs;
-
-  waitqueue_t() {}
-
-  void push(Cva6DynInstPtr inst){
-
-    /* Try to rename to flying registers */
-    /* Must be done before inserting instruction in the queue */
-    // tryRenameInst(inst);
-
-    /* finally insert instruction in queue */
-    holdqueue.push_back(inst);
-  }
-
-  bool isW(PhysicalReg &reg){
-    for (auto it = holdqueue.rbegin(); it != holdqueue.rend(); ++it){
-      for (PhysicalReg &ireg: (*it)->regs_dst_phy){
-        if (ireg.virt_reg_idx == reg.virt_reg_idx){
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  void tryRenameInst(Cva6DynInstPtr inst){
-    #if 0
-    if (inst->isFault()){
-      return;
-    }
-    /* Try to rename all src registers */
-    for (PhysicalReg &reg: inst->regs_src_phy) {
-      if (!reg.is_reg_dead || /* Is a reg dead */
-          !isW(reg) || /* Is the producer in the BB before */
-          !regalloc.can_alloc() /* Is free physical reg */
-      ){ continue; }
-      // std::cout << "*** Rename reg " << reg.str()
-      // << " on " << dumpInstPreg(inst) << "\n";
-      assert(!reg.isRenammed);
-      /* Allocate physical register */
-      uint64_t pidx = regalloc.reg_alloc();
-       /* Also rename inst reg */
-      bool isrenamed = reg.doRenameIfMatchVreg(reg, pidx);
-      assert(isrenamed);
-      reg.isLastRename = true; /* Also mark the register deallocated */
-      /* Rename regs on path */
-      for (auto it = holdqueue.rbegin(); it!= holdqueue.rend(); ++it){
-        // std::cout << "* try Rename " << dumpInstPreg(*it) << "\n";
-        bool reach_writter = false;
-        /* Leave condition */
-        for (PhysicalReg &ireg: (*it)->regs_dst_phy){
-          reach_writter |= ireg.doRenameIfMatchVreg(reg, pidx);
-        }
-        if (reach_writter){
-          break; // Reack end
-        }
-        for (PhysicalReg &ireg: (*it)->regs_src_phy){
-          ireg.doRenameIfMatchVreg(reg, pidx);
-        }
-      }
-    }
-    #endif
-  }
-
-  Cva6DynInstPtr front(){
-    return holdqueue.front();
-  }
-
-  Cva6DynInstPtr pop(){
-    Cva6DynInstPtr inst = holdqueue.front();
-    holdqueue.pop_front();
-
-    /* Free allocated registers */
-    if (!inst->isFault()){
-      for (PhysicalReg& reg: inst->regs_src_phy){
-        if (reg.isLastRename){ /* Is responsible for an allocation */
-          assert(reg.isRenammed);
-          // regalloc.reg_free(reg.phys_reg_idx);
-        }
-      }
-    }
-    return inst;
-  }
-
-  // bool isRWaW(Cva6DynInstPtr inst){
-  //   if (inst->isFault()){
-  //     return false;
-  //   }
-  //   for (uint8_t i = 0; i < inst->numSrcRegs(); i++) {
-  //     if (inst->srcRegIdx(i).classValue() != InvalidRegClass){
-  //       if (holdregs[inst->srcRegIdx(i)]){
-  //         return true;
-  //       }
-  //     }
-  //   }
-  //   return false;
-  // }
-
-  // bool isWaW(Cva6DynInstPtr inst){
-  //   if (inst->isFault()){
-  //     return false;
-  //   }
-  //   for (uint8_t i = 0; i < inst->numDstRegs(); i++) {
-  //     if (inst->dstRegIdx(i).classValue() != InvalidRegClass){
-  //       if (holdregs[inst->dstRegIdx(i)]){
-  //         return true;
-  //       }
-  //     }
-  //   }
-  //   return false;
-  // }
-  template<class T>
-  bool intersect(std::vector<T>& v0, std::vector<T>& v1){
-    for (const T& x0: v0){
-      for (const T& x1: v1){
-        if (x0 == x1){
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-  /* Returns if instructions have dependancy with the queue */
-  bool isDependancy(Cva6DynInstPtr inst){
-    for (Cva6DynInstPtr &i2: holdqueue){
-      /* Check registers dependancies */
-      if (SCHED_IGNORE_BRANCH){
-        if (isBBend(inst) || isBBend(i2)){
-          continue;
-        }
-      }
-      if (intersect(inst->regs_dst_phy, i2->regs_src_phy) /* WaR*/
-       ||intersect(inst->regs_dst_phy, i2->regs_dst_phy) /* WaW*/
-       ||intersect(inst->regs_src_phy, i2->regs_dst_phy) /* RaW */
-      ){
-        return true;
-      }
-      /* TODO: Check memory dependancies */
-    }
-    return false;
-  }
-
-  bool empty(){
-    return holdqueue.empty();
-  }
-
-};
-
-class StreamAnalyser
-{
-  public:
-  uint64_t subclock = 0;
-  uint64_t clock = 0;
-  PhysicalRegFile<uint64_t> reglive;
-  bool ignorebranch;
-  struct Stats : public statistics::Group
-  {
-    statistics::Scalar stall;
-    Stats(BaseCPU &cpu, const char *name) :
-      statistics::Group(&cpu, name), ADD_STAT(stall, "") { }
-  } stats;
-
-  StreamAnalyser(BaseCPU &cpu, const char *name, bool ignorebranch_)
-    : ignorebranch(ignorebranch_), stats(cpu, name) {}
-
-  uint64_t getInstReadyDeltaTime(Cva6DynInstPtr inst){
-    if (inst->isFault()){
-      return 0;
-    }
-    if (ignorebranch && isBBend(inst)){
-      return 0;
-    }
-    uint64_t ready_time = clock;
-    for (const PhysicalReg& reg: inst->regs_src_phy){
-      ready_time = std::max(reglive[reg], ready_time);
-    }
-    if (clock >= ready_time){
-      return 0;
-    } else {
-      return ready_time - clock;
-    }
-  }
-
-  uint64_t commit(Cva6DynInstPtr inst){
-    /* Read register availability */
-    uint64_t delta_time = getInstReadyDeltaTime(inst);
-    /* Increase clock until instruction ready */
-    uint64_t clock_before = clock;
-    if (delta_time == 0){
-      subclock += 1;
-      const int issueWidth = 4;
-      if (subclock == issueWidth){
-        clock += 1;
-        subclock = 1;
-      }
-    } else {
-      clock += delta_time;
-      subclock = 0;
-    }
-    /* Use clock derivation to handle stats reset */
-    stats.stall += clock - clock_before;
-    /* Set Rd nes ts */
-    uint64_t delta_finish = instructioncoststatic(inst);
-    uint64_t readytime = clock + delta_finish;
-    if (!inst->isFault()){
-      for (const PhysicalReg& reg: inst->regs_dst_phy){
-        reglive[reg] = readytime;
-      }
-    }
-    // DPRINTF(Cva6Sched, "CLOCK(%d) += STALL(%d) :: -> +READY(%d):%d : %s\n",
-    //   clock, delta_time, delta_finish, readytime, *inst);
-    return delta_time;
-  }
-};
-
 class BaseScheduler
 {
   public:
-  virtual bool canPush() = 0;
+  virtual bool canPush(Cva6DynInstPtr inst) = 0;
   virtual void push(Cva6DynInstPtr inst) = 0;
   virtual bool canPop() = 0;
   virtual Cva6DynInstPtr front() = 0;
@@ -485,6 +295,10 @@ class BaseScheduler
   virtual void flush() = 0;
   virtual void violation(uint64_t store_pc, uint64_t load_pc){
     /* Default: do nothing */
+  }
+  virtual bool canRenameDest(Cva6DynInstPtr &inst,
+    std::deque<uint64_t> &FL, uint64_t &preg){
+    return true; /* Default: ok */
   }
 };
 
@@ -496,7 +310,7 @@ class NoScheduler : public BaseScheduler
   NoScheduler(const std::string &name,
       Cva6CPU &cpu,
       const BaseCva6CPUParams &params) : size(params.schedSize) {}
-  bool canPush() override { return fifo.size() < size; }
+  bool canPush(Cva6DynInstPtr inst) override { return fifo.size() < size; }
   void push(Cva6DynInstPtr inst) override { fifo.push_back(inst); };
   bool canPop() override { return fifo.size(); };
   Cva6DynInstPtr front() override {return fifo.front(); };
@@ -506,116 +320,6 @@ class NoScheduler : public BaseScheduler
     return ret;
   };
   void flush() override { fifo.clear(); };
-};
-
-/**
- * My custom Basic Block scheduler
- */
-class SchedulerBB : public BaseScheduler
-{
-  struct Stats : public statistics::Group
-  {
-    statistics::Scalar req;
-    statistics::Scalar rescheduled;
-
-    Stats(Cva6CPU &cpu) :
-      statistics::Group(&cpu, "SchedulerBB"),
-      ADD_STAT(req, ""),
-      ADD_STAT(rescheduled, "")
-    { }
-  } stats;
-
-  /* Scheduler onternals */
-  std::deque<waitqueue_t*> bbq;
-  std::deque<Cva6DynInstPtr> tempoq;
-  bool wait_drain = false;
-  StreamAnalyser mainsa;
-  public:
-  SchedulerBB(const std::string &name,
-      Cva6CPU &cpu,
-      const BaseCva6CPUParams &params) :
-    stats(cpu),
-    mainsa(cpu, "stream.sa", SCHED_IGNORE_BRANCH){
-    for (int i = 0; i < NBBBQ; i++){
-        bbq.push_back(new waitqueue_t());
-      }
-    }
-  /* Interface */
-  bool canPush() override { return true; /* TODO */ }
-  void push(Cva6DynInstPtr inst) override;
-  Cva6DynInstPtr pop() override;
-  // TODO
-  Cva6DynInstPtr front() override { return Cva6DynInst::bubble(); };
-  bool canPop() override { return true; /* TODO */}
-  private:
-  Cva6DynInstPtr internal_pop();
-};
-
-// template<class T>
-// class RibbonBuffer {
-//   uint64_t base_index = 0;
-//   std::deque<T> ribbon;
-
-//   inline uint64_t norm_index(uint64_t idx){
-//     assert(idx >= base_index);
-//     return idx - base_index;
-//   }
-//   T& operator[](uint64_t idx){
-//     return ribbon[norm_index(idx)];
-//   }
-
-//   void push(T& e){
-
-//   }
-// };
-class scheduler_entry_t
-{
-  uint64_t pushed = 0;
-  std::deque<Cva6DynInstPtr> slots;
-  // PhysicalRegFile<unsigned int> holdregs;
-  // PhysicalRegFile<unsigned int> latencyregs;
-
-  public:
-  inline static int width = 0;
-  // std::map<uint64_t/* Addr */, uint64_t/* Count */> idealstoremap;
-  bool canPush(){ return pushed < width; }
-  void push(Cva6DynInstPtr inst, uint64_t latency=0){
-    pushed++;
-    slots.push_back(inst);
-  }
-
-  Cva6DynInstPtr front(){ return slots.front(); }
-  size_t size(){ return slots.size(); }
-
-  Cva6DynInstPtr pop(){
-    Cva6DynInstPtr inst = slots.front();
-    slots.pop_front();
-
-    return inst;
-  }
-  bool contains(Cva6DynInstPtr inst){
-    return find(slots.begin(), slots.end(), inst) != slots.end();
-  }
-  bool empty(){ return slots.empty(); }
-
-  #if 0
-  bool isRaWMem(uint64_t addr, Cva6DynInstPtr *store_inst) {
-    bool ret = idealstoremap[addr | 0b111];
-    if (ret){
-      for (auto it = slots.rbegin(); it != slots.rend(); ++it){
-        Cva6DynInstPtr inst = *it;
-        uint64_t iaddr;
-        if (isMemWrite(inst, iaddr) && ((iaddr | 0b111) == (addr | 0b111))){
-          *store_inst = inst;
-          return ret;
-        }
-      }
-      fatal("Unrecheable: must hit inst");
-    }
-    return ret;
-  }
-  #endif
-  // uint64_t execution_latency(PhysicalReg &reg){ return latencyregs[reg]; }
 };
 
 class MinLineAnalyserV2
@@ -664,6 +368,56 @@ class MinLineAnalyserV2
     themll = 0;
     times.clear();
   }
+};
+
+class scheduler_entry_t
+{
+  uint64_t pushed = 0;
+  std::deque<Cva6DynInstPtr> slots;
+  // PhysicalRegFile<unsigned int> holdregs;
+  // PhysicalRegFile<unsigned int> latencyregs;
+
+  public:
+  inline static int width = 0;
+  // std::map<uint64_t/* Addr */, uint64_t/* Count */> idealstoremap;
+  bool canPush(){ return pushed < width; }
+  void push(Cva6DynInstPtr inst, uint64_t latency=0){
+    pushed++;
+    slots.push_back(inst);
+  }
+
+  Cva6DynInstPtr front(){ return slots.front(); }
+  size_t size(){ return slots.size(); }
+
+  Cva6DynInstPtr pop(){
+    Cva6DynInstPtr inst = slots.front();
+    slots.pop_front();
+
+    return inst;
+  }
+  bool contains(Cva6DynInstPtr inst){
+    return find(slots.begin(), slots.end(), inst) != slots.end();
+  }
+  bool empty(){ return slots.empty(); }
+
+  #if 0
+  bool isRaWMem(uint64_t addr, Cva6DynInstPtr *store_inst) {
+    bool ret = idealstoremap[addr | 0b111];
+    if (ret){
+      for (auto it = slots.rbegin(); it != slots.rend(); ++it){
+        Cva6DynInstPtr inst = *it;
+        uint64_t iaddr;
+        if (isMemWrite(inst, iaddr) && ((iaddr | 0b111) == (addr | 0b111))){
+          *store_inst = inst;
+          return ret;
+        }
+      }
+      fatal("Unrecheable: must hit inst");
+    }
+    return ret;
+  }
+  #endif
+  // uint64_t execution_latency(PhysicalReg &reg){ return latencyregs[reg]; }
 };
 
 class SchedulerPierreMichaud : public BaseScheduler, public Named
@@ -808,12 +562,13 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
 
   public:
   /* Interface */
-  bool canPush() override {
+  bool canPush(Cva6DynInstPtr inst) override {
+
     return inflight_insts_count < size &&
            s2d.size() < size; // Avoid huge array
   }
   void push(Cva6DynInstPtr inst) override;
-  Cva6DynInstPtr front() {
+  Cva6DynInstPtr front() override {
     assert(inflight_insts_count);
     assert(s2d.size());
     assert(s2d.front().size());
@@ -831,9 +586,14 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
     last_serialisation_time = 0;
     timeofregready.setall(0);
   }
+
   void violation(uint64_t store_pc, uint64_t load_pc) override {
     mdp.violation(store_pc, load_pc);
   }
+
+  bool canRenameDest(Cva6DynInstPtr &inst,
+    std::deque<uint64_t> &FL, uint64_t &preg) override;
+
   /* Constructor */
   SchedulerPierreMichaud(
     const std::string &name,

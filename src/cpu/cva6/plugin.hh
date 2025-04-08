@@ -233,66 +233,6 @@ class PluginMemConst : public Plugin
 
 };
 
-
-class PluginScheduler : public Plugin
-{
-  protected:
-  struct Stats : public statistics::Group
-  {
-    statistics::Scalar req;
-    statistics::Scalar rescheduled;
-
-    Stats(Cva6CPU &cpu) :
-      statistics::Group(&cpu, "sched"),
-      ADD_STAT(req, ""),
-      ADD_STAT(rescheduled, "")
-    { }
-  } stats;
-
-  /* Statistics only */
-  StreamAnalyser instats;
-  StreamAnalyser instatsnobr;
-  StreamAnalyser outstats;
-  std::deque<Cva6DynInstPtr> fifo;
-  // SA sa;
-
-  public:
-  PluginScheduler(const std::string &name,
-    Cva6CPU &cpu,
-    const BaseCva6CPUParams &p) :
-    Plugin(name, cpu),
-    stats(cpu),
-    instats(cpu, "stream.in", false),
-    instatsnobr(cpu, "stream.innobr", true),
-    outstats(cpu, "stream.out", SCHED_IGNORE_BRANCH) { }
-
-  /* Insert instruction in scheduler */
-  void push(Cva6DynInstPtr inst){
-    /* Push in scheduler */
-    // DPRINTF(Cva6SchedSched, "Push: %s\n", dumpInstPreg(inst));
-    // sa.push(inst);
-  }
-
-  void commit(Cva6DynInstPtr inst){
-
-    fifo.push_back(inst);
-    push(inst); // Push Inst in scheduler
-    if (fifo.size() > NB_INFLIGHTS){
-      Cva6DynInstPtr unschedisnt = fifo.front();
-      instats.commit(unschedisnt);
-      instatsnobr.commit(unschedisnt);
-      fifo.pop_front();
-
-      // Cva6DynInstPtr schedinst = sa.pop(); // Pop inst from scheduler
-      // schedinst->delta = outstats.commit(schedinst);
-      // DPRINTF(Cva6SchedSched, "Schedule: %s (+%d)\n",
-      //   dumpInstPreg(schedinst), schedinst->delta);
-
-    }
-  }
-};
-
-
 } // namespace cva6
 } // namespace gem5
 
