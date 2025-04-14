@@ -107,6 +107,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
 
     /** Push the record into the history buffer */
     predHist[tid].push_front(bpu_history);
+    last_ph = bpu_history;
 
     DPRINTF(Branch, "[tid:%i] [sn:%llu] History entry added. "
             "predHist.size(): %i\n", tid, seqNum, predHist[tid].size());

@@ -25,6 +25,7 @@
 namespace gem5 {
 namespace cva6 {
 
+
 /** Execute stage. */
 class Execute : public Named
 {
@@ -53,6 +54,32 @@ class Execute : public Named
     /* Checker */
     InfiniteMemory64 memcheck;
 
+    struct ExStats : public statistics::Group
+    {
+      statistics::Scalar flush;
+      statistics::Scalar flush_cond_direct;
+      statistics::Scalar flush_cond_indirect;
+      statistics::Scalar flush_uncond_direct;
+      statistics::Scalar flush_uncond_indirect;
+      statistics::Scalar flush_fault;
+
+      statistics::Scalar ConfMatch;
+      statistics::Scalar NoConfNoMatch;
+      statistics::Scalar ConfNoMatch;
+      statistics::Scalar NoConfMatch;
+      ExStats(Cva6CPU &cpu) :
+        statistics::Group(&cpu, "exec"),
+        ADD_STAT(flush, ""),
+        ADD_STAT(flush_cond_direct, ""),
+        ADD_STAT(flush_cond_indirect, ""),
+        ADD_STAT(flush_uncond_direct, ""),
+        ADD_STAT(flush_uncond_indirect, ""),
+        ADD_STAT(flush_fault, ""),
+        ADD_STAT(ConfMatch, ""),
+        ADD_STAT(NoConfNoMatch, ""),
+        ADD_STAT(ConfNoMatch, ""),
+        ADD_STAT(NoConfMatch, "") {  }
+    } stats;
   protected:
 
     /** Generate Branch data based (into branch) on an observed (or not)
@@ -86,7 +113,8 @@ class Execute : public Named
         dpe(dpe_),
         commitWidth(params.commitWidth),
         vpFlush(params.vpFlush),
-        memcheck("memcheck", cpu_)
+        memcheck("memcheck", cpu_),
+        stats(cpu_)
     {
       if (params.plugin_memtrace_path != ""){
         plugins.push_back(new PluginMemtrace(

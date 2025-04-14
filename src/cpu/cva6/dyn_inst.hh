@@ -127,7 +127,13 @@ class PhysicalRegFile
     }
   };
 
-  std::vector<T> array;
+  private:
+  using arr_t = std::vector<T>;
+  arr_t array;
+  public:
+  using iterator = typename arr_t::iterator;
+  using const_iterator = typename arr_t::const_iterator;
+
   // std::unordered_map<PhysicalReg, T, PhysicalRegHash_t> map;
   public:
   PhysicalRegFile() {}
@@ -150,6 +156,13 @@ class PhysicalRegFile
     }
     return array[preg];
   }
+
+  iterator begin() { return array.begin(); }
+  const_iterator begin() const { return array.begin(); }
+  const_iterator cbegin() const { return array.cbegin(); }
+  iterator end() { return array.end(); }
+  const_iterator end() const { return array.end(); }
+  const_iterator cend() const { return array.cend(); }
 
   void setall(T val){
     for (auto& x: array){
@@ -189,6 +202,14 @@ class ArchRegFile
     for (auto& x: array){
       x = val;
     }
+  }
+  bool isall(T val){
+    for (auto& x: array){
+      if (x != val){
+        return false;
+      }
+    }
+    return true;
   }
 };
 
@@ -294,6 +315,7 @@ class Cva6DynInst : public RefCounted
     /** Tried to predict the destination of this inst (if a control
      *  instruction or a sys call) */
     bool triedToPredict = false;
+    bool isHighConf = false;
 
     /** This instruction was predicted to change control flow */
     bool predictedTaken = false;
@@ -361,6 +383,9 @@ class Cva6DynInst : public RefCounted
     mc_inst_data_t mc_data;
     /** Value prediction */
     vp_inst_metadata_t vp_data;
+
+    /* Scheduler data */
+    bool free_reg_at_commit = false;
 
     /************ Commit ******************/
     bool commit_completed = false; // Used by LSU store buffer

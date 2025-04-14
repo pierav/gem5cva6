@@ -68,6 +68,7 @@ cva6_config = {
     "schedType" : DEFAULT(0), # The type of scheduler used in frontend
     "schedSize" : DEFAULT(128),
     "schedWidth" : DEFAULT(4),
+    "schedRegBarrier": DEFAULT(32),
     "userelf": DEFAULT(""), # User elf for symbols only
     "renameSize": DEFAULT(64),
     "renameIncArchReg": DEFAULT(0),
@@ -555,6 +556,7 @@ def createHiFivePlatform(system):
 
         # Branch prediction
         cpu.branchPred = TAGE()
+        # cpu.branchPred.tage = TAGE_SC_L_TAGE()
         # cpu.branchPred = LocalBP()
         # cpu.branchPred.localCtrBits = 2
         # cpu.branchPred.localPredictorSize = 128 * 2 # x2 localCtrBits

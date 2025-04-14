@@ -57,6 +57,35 @@ Execute::tryToBranch(Cva6DynInstPtr inst, Fault fault, BranchData &branch){
         actually_taken);
 
     DPRINTF(Branch, "tryToBranch : %s\n", branch.dump());
+    /* Some stats */
+
+    bool flushbranch = !inst->isFault() && need_squash;
+    stats.flush += need_squash;
+    stats.flush_cond_direct += flushbranch
+        && inst->staticInst->isCondCtrl()
+        && inst->staticInst->isDirectCtrl();
+    stats.flush_cond_indirect += flushbranch
+        && inst->staticInst->isCondCtrl()
+        && inst->staticInst->isIndirectCtrl();
+    stats.flush_uncond_direct += flushbranch
+        && inst->staticInst->isUncondCtrl()
+        && inst->staticInst->isDirectCtrl();
+    stats.flush_uncond_indirect += flushbranch
+        && inst->staticInst->isUncondCtrl()
+        && inst->staticInst->isIndirectCtrl();
+    stats.flush_fault += is_fault || is_serialise;
+
+    if (!inst->isFault() && inst->staticInst->isCondCtrl()){
+        bool match = !is_addr_unmatch;
+        bool conf = inst->isHighConf;
+        stats.ConfMatch += conf && match;
+        stats.NoConfNoMatch += !conf && !match;
+        stats.ConfNoMatch += conf && !match;
+        stats.NoConfMatch += !conf && match;
+        // mat[conf][match] ++;
+        // printf("TP=%ld, TN=%ld :: FP=%ld, FN=%ld\n",
+        //     mat[1][1], mat[0][0], mat[1][0], mat[0][1]);
+    }
 }
 
 void

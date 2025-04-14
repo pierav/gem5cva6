@@ -24,6 +24,12 @@ bool needSerialise(Cva6DynInstPtr inst){
       inst->staticInst->isStoreConditional()){
     return true;
   }
+  // Serialisation of low conf branch
+  // BAD !
+  // if (inst->staticInst->isCondCtrl() &&
+  //   !inst->isHighConf){
+  //   return true;
+  // }
   return false;
 }
 uint64_t instructioncoststatic(Cva6DynInstPtr inst){
@@ -390,8 +396,19 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
 
   // Perform speculative register free
 
-
 }
+
+// void apply_reg_barrier(){
+//   // Bend scheduling to alloc sometimes a valid arch state
+//   static ArchRegFile<char> isinflights;
+//   DPRINTF(Cva6Sched, "Schedule reg barriere for %s\n", inst);
+//   uint64_t top_time = base_time + s2d.size();
+//   for (int i = 0; i < cpu.pipeline->sa.regalloc.size(); i++){
+//     if (isinflights[i]){
+//       maxtimeoflasttouch[i] = top_time;
+//     }
+//   }
+// }
 
 Cva6DynInstPtr
 SchedulerPierreMichaud::pop() {

@@ -337,6 +337,7 @@ class TAGEBase : public SimObject
      * @param cond_branch True if the branch is conditional.
      * @param bi Pointer to the BranchInfo
      */
+    static inline bool last_high_conf;
     bool tagePredict(
         ThreadID tid, Addr branch_pc, bool cond_branch, BranchInfo* bi);
 

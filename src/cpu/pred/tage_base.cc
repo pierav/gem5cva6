@@ -363,6 +363,8 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
     Addr pc = branch_pc;
     bool pred_taken = true;
 
+    bool high_conf;
+
     if (cond_branch) {
         // TAGE prediction
 
@@ -412,10 +414,12 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
                 || ! bi->pseudoNewAlloc) {
                 bi->tagePred = bi->longestMatchPred;
                 bi->provider = TAGE_LONGEST_MATCH;
+
             } else {
                 bi->tagePred = bi->altTaken;
                 bi->provider = bi->altBank ? TAGE_ALT_MATCH
                                            : BIMODAL_ALT_MATCH;
+
             }
         } else {
             bi->altTaken = getBimodePred(pc, bi);
@@ -425,9 +429,28 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
         }
         //end TAGE prediction
 
+        /* Compute high conf */
+        if (bi->provider == BIMODAL_ONLY || bi->provider == BIMODAL_ALT_MATCH){
+            int bim = (btablePrediction[bi->bimodalIndex] << 1)
+            + btableHysteresis[bi->bimodalIndex >> logRatioBiModalHystEntries];
+            high_conf = (bim == 0) || (bim == 3);
+        } else {
+            int selBank = bi->provider == TAGE_LONGEST_MATCH ?
+                          bi->hitBank : bi->altBank;
+            uint8_t ctr = gtable[selBank][tableIndices[selBank]].ctr;
+            if ((ctr == ((1 << (tagTableCounterBits - 1)) - 1)) ||
+                (ctr == -(1 << (tagTableCounterBits - 1)))){
+                high_conf = true;
+            } else {
+                high_conf = false;
+            }
+        }
         pred_taken = (bi->tagePred);
-        DPRINTF(Tage, "Predict for %lx: taken?:%d, tagePred:%d, altPred:%d\n",
-                branch_pc, pred_taken, bi->tagePred, bi->altTaken);
+        DPRINTF(Tage, "Predict for %lx: taken?:%d, tagePred:%d, altPred:%d"
+                    "(HIGHCONF=%d)\n",
+                branch_pc, pred_taken, bi->tagePred, bi->altTaken,
+                high_conf);
+        last_high_conf = high_conf;
     }
     bi->branchPC = branch_pc;
     bi->condBranch = cond_branch;

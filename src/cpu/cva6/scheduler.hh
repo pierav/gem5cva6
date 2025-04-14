@@ -58,6 +58,7 @@ inline bool isBBend(Cva6DynInstPtr& inst){
 
 class PhysicalRegAllocator : public Named
 {
+  Cva6CPU &cpu;
   struct PhysicalRegAllocatorStats : public statistics::Group
   {
     statistics::Scalar reg_alloc;
@@ -81,8 +82,35 @@ class PhysicalRegAllocator : public Named
 
   // Owner of the physical reg !!!
   PhysicalRegFile<uint64_t> rmt_owner;
-  PhysicalRegFile<char> isbuzy;
+  enum state_t
+  {
+    FREE_COMMIT,
+    FREE_SPEC,
+    BUZY
+  };
+  PhysicalRegFile<state_t> isbuzy;
+  PhysicalRegFile<char> cannotbefreed;
 
+
+  std::string dump(){
+    std::ostringstream os;
+    os << '[';
+    for (int i = 0; i < n; i++){
+      switch (isbuzy[i]){
+        case FREE_COMMIT:
+          os << i << "C ";
+          break;
+        case FREE_SPEC:
+          os << i << "S ";
+          break;
+        case BUZY:
+          os << " . ";
+          break;
+      }
+    }
+    os << ']';
+    return os.str();
+  }
 
   bool incarchreg; // Scoreboard arch or Full RR
   bool freeregdead;
@@ -97,6 +125,7 @@ class PhysicalRegAllocator : public Named
     bool freeregdead_,
     bool specrelease_) :
     Named(name_),
+    cpu(cpu_),
     stats(name_, cpu_),
     n(nb_regs), incarchreg(incarchreg_),
     freeregdead(freeregdead_),
@@ -114,14 +143,16 @@ class PhysicalRegAllocator : public Named
         RegId regid = i2id(i);
         PhysicalReg reg(regid);
         rmt[reg] = i;
-        isbuzy[reg] = true;
+        isbuzy[reg] = BUZY;
       } else { /* Let the register for future use */
         free_list.push_back(i);
       }
     }
     rmt_checkpoint = rmt; // Default rmt !
   }
-
+  uint64_t size(){
+    return n;
+  }
   bool canRename(){
     if (!free_list.size()){
       DPRINTF(Cva6Rename, "Out of PREG\n");
@@ -165,28 +196,37 @@ class PhysicalRegAllocator : public Named
     /* Mark many things */
     rmt[reg] = preg; /* 1) Update the RMT */
     rmt_owner[preg] = inst->id.fetchSeqNum; /* 2) The owner */
-    isbuzy[preg] = true; /* 3) RMT or FREE list (mute be exclusive)*/
+    isbuzy[preg] = BUZY; /* 3) RMT or FREE list (mute be exclusive)*/
     stats.reg_alloc += 1;
     /* Finally rename the register */
     rename_one_secure(reg);
-    std::ostringstream os;
-    for (auto pregi: free_list){
-      os << pregi << ", ";
-    }
-    DPRINTF(Cva6Rename, "Alloc reg %s :: FL = [%s]\n", reg, os.str());
+    DPRINTF(Cva6Rename, "Alloc reg %s :: FL=[%s]\n", reg, dump());
   }
   private:
 
-  bool free_reg(PhysicalReg& reg){
+  bool is_allocated(PhysicalReg& reg){
+    return reg.phys_reg_idx != 1000 &&
+           isbuzy[reg] == BUZY &&
+           rmt_owner[reg] == reg.producer_id;
+  }
+  bool free_reg(PhysicalReg& reg, bool speculative=false){
     // std::cout << "Free " << idx << std::endl;
     if (reg.phys_reg_idx != 1000){
+      if (speculative && cannotbefreed[reg]){
+        return false;
+      }
         DPRINTF(Cva6Rename,
-          "Free reg %s : isbuzy[%s]=%d rmt_owner[%s]=%lx (prod=%lx)\n",
-          reg, reg, isbuzy[reg], reg, rmt_owner[reg], reg.producer_id);
+          "Free reg  %s : isbuzy[%s]=%d rmt_owner[%s]=%lx"
+          "(prod=%lx) :: FL=[%s]\n",
+          reg, reg, isbuzy[reg], reg, rmt_owner[reg],
+          reg.producer_id, dump());
       // Safe check: do not release twice
       // Is the reg still in use and we are the owner
-      if (isbuzy[reg] && rmt_owner[reg] == reg.producer_id){
-        isbuzy[reg] = false;
+      if (isbuzy[reg] == BUZY &&
+        (rmt_owner[reg] == reg.producer_id ||
+         rmt_owner[reg] == 0)){
+        cannotbefreed[reg] = false;
+        isbuzy[reg] = speculative ? FREE_SPEC : FREE_COMMIT;
         for (uint64_t id: free_list){
           fatal_if(id == reg.phys_reg_idx, "PREG %d is already freed\n", id);
         }
@@ -222,25 +262,53 @@ class PhysicalRegAllocator : public Named
       if (specrelease){
         /* Free registers WaW */
         for (PhysicalReg& reg: inst->phys_reg_to_free){
-          stats.reg_free_spec += free_reg(reg);
+          stats.reg_free_spec += free_reg(reg, true);
         }
         /* Can we free RDeadaW ? */
         if (freeregdead){
           for (PhysicalReg& reg: inst->regs_src_phy){
             if (reg.is_reg_dead){ // TODO
-              stats.reg_free_spec + free_reg(reg);
+              stats.reg_free_spec + free_reg(reg, true);
             }
           }
         }
       }
     }
   }
+
+  void reg_barrier(){ // Move all speculative freed to BUZY
+    // DPRINTF(Cva6Rename, "reg_barrier before %s\n", dump());
+    // for (auto it = free_list.begin(); it != free_list.end();){
+    //   uint64_t preg = *it;
+    //   // if (isbuzy[preg] == FREE_SPEC){
+    //   //   isbuzy[preg] = BUZY;
+    //   //   it = free_list.erase(it);
+    //   // } else {
+    //   //   it++;
+    //   // }
+    //   if (isbuzy[preg] == BUZY){ // Park buzy reg
+    //     cannotbefreed[preg] = true; //
+    //   }
+    // }
+    // Safe check
+    // for (state_t s: isbuzy){
+    //   assert(s != FREE_SPEC);
+    // }
+    // DPRINTF(Cva6Rename, "reg_barrier after %s\n", dump());
+    for (int preg = 0; preg < n; preg++){
+      if (isbuzy[preg] == BUZY){ // Park buzy reg
+        cannotbefreed[preg] = true; //
+      }
+    }
+  }
+
   /* Free all registers */
   void commit(Cva6DynInstPtr& inst){
     if (!incarchreg){ // If no arch reg
       /* free_rd_at_commit */
       for (PhysicalReg& reg: inst->regs_dst_phy){
-        stats.reg_free_commit += free_reg(reg);
+        inst->free_reg_at_commit = free_reg(reg);
+        stats.reg_free_commit += inst->free_reg_at_commit;
       }
       return;
     }
@@ -272,7 +340,8 @@ class PhysicalRegAllocator : public Named
     } else {
       // Symply clear the rmt
       rmt.setall(1000);
-      isbuzy.setall(false);
+      isbuzy.setall(FREE_COMMIT);
+      cannotbefreed.setall(false);
       // And reset FL
       free_list_popped.clear();
       free_list.clear();

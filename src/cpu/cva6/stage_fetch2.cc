@@ -44,6 +44,8 @@
 #include "base/trace.hh"
 #include "cpu/cva6/pipeline.hh"
 #include "cpu/pred/bpred_unit.hh"
+#include "cpu/pred/tage.hh"
+#include "cpu/pred/tage_sc_l.hh"
 #include "debug/Branch.hh"
 #include "debug/Cva6Trace.hh"
 #include "debug/Cva6X.hh"
@@ -177,6 +179,15 @@ Fetch2::predictBranch(Cva6DynInstPtr inst, BranchData &branch){
 
         inst->predictedTaken = branchPredictor.predict(
             si, inst->id.fetchSeqNum, *inst_pc, 0);
+
+
+        using pred_t = branch_prediction::TAGEBase;
+        if (si->isCondCtrl()){
+            inst->isHighConf = pred_t::last_high_conf;
+            // printf("PC=%16lx, taken=%d, HC=%d\n", inst_pc->instAddr(),
+            //     inst->predictedTaken,  inst->isHighConf);
+        }
+
 
         /* Force a valid branch if Uncond Direct */
         if (si->isUncondCtrl() && si->isDirectCtrl()){

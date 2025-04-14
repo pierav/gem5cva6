@@ -81,6 +81,7 @@ class TAGE_SC_L_TAGE : public TAGEBase
     const bool truncatePathHist;
 
   public:
+    static inline int last_bim_tage_sc_l;
     struct BranchInfo : public TAGEBase::BranchInfo
     {
         bool lowConf;
