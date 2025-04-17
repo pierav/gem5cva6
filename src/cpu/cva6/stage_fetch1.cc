@@ -74,10 +74,10 @@ Fetch1::changeStream(const BranchData &branch)
     DPRINTF(Fetch, "changeStream : %s\n", branch.dump().c_str());
 
     /* Update the PC and the fetch addr */
-    set(fetchInfo.pc, branch.target);
+    set(fetchInfo.pc, branch.squash_target);
     fetchInfo.fetchAddr = fetchInfo.pc->instAddr();
 
-    if (branch.need_squash){
+    if (branch.isStreamChange()){
         flush();
     }
 }

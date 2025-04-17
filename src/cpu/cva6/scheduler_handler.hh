@@ -43,60 +43,6 @@ inline BaseScheduler& initSched(
   return *new NoScheduler(name, cpu, p);
 }
 
-struct OoOCommitHandler
-{
-  struct Stats : public statistics::Group
-  {
-    statistics::Scalar lost;
-    statistics::Scalar committed;
-    statistics::Distribution committed_block_size;
-    Stats(Cva6CPU &cpu) :
-      statistics::Group(&cpu, "OOOCA"),
-      ADD_STAT(lost, ""),
-      ADD_STAT(committed, ""),
-      ADD_STAT(committed_block_size, "")
-    {
-      committed_block_size
-        .init(1,64,1)
-        .flags(statistics::pdf);
-    }
-  } stats;
-
-  OoOCommitHandler(Cva6CPU &cpu) :
-    stats(cpu) {}
-
-  std::deque<Cva6DynInstPtr> fifo;
-  ArchRegFile<char> preg_in_flight;
-
-  void clear(){
-    fifo.clear();
-    preg_in_flight.setall(false);
-  }
-
-  // Ideal commit Ino
-  void commit(Cva6DynInstPtr& inst){
-    /* Push and increment spec commit pointer */
-    fifo.push_back(inst);
-    if (inst->regs_dst_phy.size()){
-      PhysicalReg& reg = inst->regs_dst_phy.front();
-      bool inrf = inst->free_reg_at_commit;
-      preg_in_flight[reg] = !inrf;
-    }
-    /* Try to push everything */
-    if (preg_in_flight.isall(false)){ // All are ready to be commited
-      stats.committed_block_size.sample(fifo.size());
-      stats.committed += fifo.size();
-      /* Reset */
-      clear();
-    }
-  }
-
-  void flush(){
-    stats.lost += fifo.size();
-    clear();
-  }
-};
-
 class SA
 {
   public:
@@ -113,7 +59,7 @@ class SA
   public:
   /* Renamming */
   PhysicalRegAllocator regalloc;
-  OoOCommitHandler oooch;
+  // OoOCommitHandler oooch;
 
   uint64_t schedRegBarrier;
   struct Stats : public statistics::Group
@@ -148,9 +94,9 @@ class SA
       name + ".rr", cpu, p,
       p.renameSize, p.renameIncArchReg,
       p.renameFreeRegDead, p.renameSpecRelease),
-    oooch(cpu),
-    schedRegBarrier(p.schedRegBarrier),
-    stats(cpu) { }
+    // oooch(cpu),
+    stats(cpu),
+    rbh(name, cpu, p) { }
 
   public:
   bool can_push_scheduler(Cva6DynInstPtr inst){
@@ -172,7 +118,94 @@ class SA
     }
     return true;
   }
+
+  class fixer_t
+  {
+    uint64_t last_pc_fault = 0;
+    std::unique_ptr<PCStateBase> last_pc_next_fault;
+    enum state_t
+    {
+      IDLE, NEED_FIX_STEP_1, NEED_FIX_STEP_2
+    } state = IDLE;
+    public:
+    fixer_t() {}
+
+    void apply_fix_for(Cva6DynInstPtr &inst, bool fixbp=false){
+      last_pc_fault = inst->pc->instAddr();
+      set(last_pc_next_fault, inst->pc_next);
+      // assert(state == IDLE); // The previous fix must have success
+      state = fixbp ? NEED_FIX_STEP_1 : NEED_FIX_STEP_2;
+    }
+
+    void on_predict(Cva6DynInstPtr &inst){
+      if (state == NEED_FIX_STEP_1 && last_pc_fault == inst->pc->instAddr()){
+        state = NEED_FIX_STEP_2;
+        /* If weed need to */
+        if (!inst->isFault() && inst->staticInst->isControl()){
+          inst->predictedTaken = true;
+          set(inst->predictedTarget, last_pc_next_fault);
+        }
+      }
+    }
+
+    bool on_schedule_need_rb(Cva6DynInstPtr &inst){
+      if (state == NEED_FIX_STEP_2 && last_pc_fault == inst->pc->instAddr()){
+        state = IDLE;
+        return true;
+      }
+      return false;
+    }
+  } fixer;
+
+  class RegBarrierhandler
+  {
+    uint64_t cpt_inst = 0;
+    uint64_t cpt_stores = 0;
+    uint64_t cpt_branch = 0;
+
+    uint64_t tringinsts;
+    uint64_t tringstores;
+    public:
+    RegBarrierhandler(const std::string &name,
+                      Cva6CPU &cpu_,
+                      const BaseCva6CPUParams &p) :
+      tringinsts(p.schedRegBarrier),
+      tringstores(p.lsuSQCWidth) /* CARE HERE THE SQ SIZE !*/
+      {}
+
+    bool on_push_need_rb(Cva6DynInstPtr& inst){
+      /* Compute new scores */
+      cpt_inst += 1;
+      cpt_stores += !inst->isFault() && inst->staticInst->isStore();
+      cpt_branch += !inst->isFault() && inst->staticInst->isControl();
+      /* Compte triggers based on previous count */
+      /* OPTIONAL : TODO: have to be fine tunnet */
+      // bool trig_cpt = cpt_inst == tringinsts;
+      /* MANDATORY : Deadlock otherwise ! */
+      bool trig_stores = cpt_stores == tringstores;
+      /* OPTIONAL : Avoid strong flushs */
+      bool trig_no_hc = !inst->isFault() &&
+                        inst->staticInst->isCondCtrl() &&
+                        !inst->isHighConf;
+      bool trig_branch = cpt_branch == tringinsts;
+      /* MANDATORY ! */
+      bool trig_serial = needSerialise(inst);
+      return trig_branch || trig_stores || trig_no_hc || trig_serial;
+    }
+
+    void reset(){
+      cpt_inst = 0;
+      cpt_stores = 0;
+      cpt_branch = 0;
+    }
+  } rbh;
+
   void push_scheduler(Cva6DynInstPtr inst){
+    /* Serialise before fault to have a valid replay */
+    // need serialsie before for AMO only ?
+    if (fixer.on_schedule_need_rb(inst) || needSerialise(inst)){
+      regalloc.reg_barrier();
+    }
     /* Schedule */
     scheduler.push(inst);
     /* Some static statistics */
@@ -180,20 +213,12 @@ class SA
     /* If required perform speculative free */
     regalloc.speculative_update(inst);
 
+    // TODO: ensure that the SQ will always contain enought space
     // static uint64_t cntbranch = 0;
     // cntbranch += !inst->isFault() && inst->staticInst->isControl();
-    // static uint64_t cpt = 0;
-    // bool do_reg_barriere =
-    //   (cpt++ % schedRegBarrier == (schedRegBarrier-1))
-    // || needSerialise(inst);
-    // if (do_reg_barriere){
-    //   cpt = 0;
-    //   DPRINTF(Cva6Sched, "Schedule reg barriere for %s\n", inst);
-    //   // cpu.pipeline->sa.regalloc.reg_barrier();
-    //   regalloc.reg_barrier();
-    // }
-    if (!inst->isFault() && inst->staticInst->isCondCtrl() &&
-      !inst->isHighConf){
+    if (rbh.on_push_need_rb(inst)){
+      rbh.reset();
+      DPRINTF(Cva6Sched, "Schedule reg barriere for %s\n", *inst);
       regalloc.reg_barrier();
     }
   }
@@ -212,9 +237,17 @@ class SA
     return inst;
   }
 
+
+  /* Annotate if instruction can commit (rd ready) */
+  void pre_commit(Cva6DynInstPtr& inst){
+    for (PhysicalReg& reg: inst->regs_dst_phy){
+      inst->free_reg_at_commit = regalloc.reg_available(reg);
+    }
+  }
+
   void commit(Cva6DynInstPtr inst){
     regalloc.commit(inst);
-    oooch.commit(inst); /* Must be after regalloc commit ! */
+    // oooch.commit(inst); /* Must be after regalloc commit ! */
   }
 
   void flushfrom(Cva6DynInstPtr inst){
@@ -223,7 +256,7 @@ class SA
     }
     scheduler.flush();
     regalloc.flush();
-    oooch.flush();
+    // oooch.flush();
   }
 
   bool canInterrupts(){

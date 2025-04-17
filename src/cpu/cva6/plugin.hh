@@ -38,6 +38,59 @@ class Plugin : public Named
     virtual void commit(Cva6DynInstPtr inst) = 0;
 };
 
+class PluginChecker : public Plugin
+{
+  InfiniteMemory64 memcheck;
+  ArchRegFile<char> rfinit;
+  ArchRegFile<uint64_t> rf;
+  public:
+  PluginChecker(const std::string &name,
+      Cva6CPU &cpu_,
+      const BaseCva6CPUParams &params) :
+      Plugin(name, cpu_),
+      memcheck("memcheck", cpu) {}
+  void commit(Cva6DynInstPtr inst){
+    /*  Mem Checker */
+    if (!inst->isFault() && inst->staticInst->isMemRef()){
+      uint64_t addr = inst->dreq->getPaddr();
+      uint8_t size = inst->dreq->getSize();
+      uint64_t value = inst->dreq->getData();
+      if (inst->dreq->isBufferable()){ /* Bufferable load or store */
+          if (inst->staticInst->isLoad()){ /* Load checker */
+              bool isconst = memcheck.check_load(addr, size, value);
+              inst->exec_data.is_const_load = isconst;
+          } else { /* Update store*/
+              bool indempotant = memcheck.check_store(addr, size, value);
+              inst->exec_data.is_silent_store = indempotant;
+          }
+      } else { /* Not bufferable */
+          memcheck.invalidate(addr);
+      }
+    }
+    // Reg checker
+    if (!inst->isFault()){
+      // 0) Check src
+      for (auto& reg: inst->regs_src_phy){
+        if (reg.is_reg_dead){
+          rfinit[reg] = false;
+        }
+        if (!rfinit[reg]){ // For simpoint
+          rf[reg] = reg.value;
+          // rfinit[reg] = true;
+        }
+        fatal_if(rf[reg] != reg.value,
+          "reg %s must be equal to %lx not %lx\n",
+          reg, rf[reg], reg.value);
+      }
+      // 1) Apply dsts
+      for (auto& reg: inst->regs_dst_phy){
+        rf[reg] = reg.value;
+        rfinit[reg] = true;
+      }
+    }
+  }
+};
+
 class PluginMemtrace : public Plugin
 {
   protected:
@@ -80,7 +133,6 @@ class PluginSimpointBar : public Plugin
     { init(params); }
     void init(const BaseCva6CPUParams &params);
     void commit(Cva6DynInstPtr inst);
-
 };
 
 class PluginVPP : public Plugin
@@ -231,6 +283,36 @@ class PluginMemConst : public Plugin
       Plugin(name, cpu_), stats(cpu_) { }
     void commit(Cva6DynInstPtr inst);
 
+};
+
+
+class Plugins
+{
+  /** Plugins */
+  std::list<Plugin*> plugins;
+  public:
+  Plugins(const std::string &name_,
+        Cva6CPU &cpu,
+        const BaseCva6CPUParams &params){
+    if (params.plugin_memtrace_path != ""){
+      plugins.push_back(new PluginMemtrace(
+          name_ + "memtrace", cpu, params));
+    }
+    plugins.push_back(new PluginSimpointBar(name_ + "simbar", cpu, params));
+    // plugins.push_back(new PluginVPP(name_ + "vpp", cpu, params));
+    // plugins.push_back(new PluginMCVP(name_ + "mcvp", cpu, params));
+    plugins.push_back(new PluginGoodbadTrap(name_ + "gbt", cpu, params));
+    // plugins.push_back(new PluginLambda(name_ + "lambda", cpu, params));
+    // plugins.push_back(new PluginMemConst(name_ + "memc", cpu, params));
+    // plugins.push_back(new PluginScheduler(name_ + ".sched", cpu, params));
+    plugins.push_back(new PluginHMP(name_ + ".hmp", cpu, params));
+    plugins.push_back(new PluginChecker(name_ + ".checker", cpu, params));
+  }
+  void commit(Cva6DynInstPtr inst){
+    for (Plugin *plugin: plugins){
+      plugin->commit(inst);
+    }
+  }
 };
 
 } // namespace cva6

@@ -204,11 +204,12 @@ class PhysicalRegAllocator : public Named
   }
   private:
 
-  bool is_allocated(PhysicalReg& reg){
-    return reg.phys_reg_idx != 1000 &&
-           isbuzy[reg] == BUZY &&
-           rmt_owner[reg] == reg.producer_id;
-  }
+  // bool is_allocated(PhysicalReg& reg){
+  //   return reg.phys_reg_idx != 1000 &&
+  //          isbuzy[reg] == BUZY &&
+  //          rmt_owner[reg] == reg.producer_id;
+  // }
+
   bool free_reg(PhysicalReg& reg, bool speculative=false){
     // std::cout << "Free " << idx << std::endl;
     if (reg.phys_reg_idx != 1000){
@@ -245,7 +246,7 @@ class PhysicalRegAllocator : public Named
         // This can be done at allocate. Do do this, it requires
         // to know the old arch reg.
         // rmt[reg] = 1000;
-        rmt_owner[reg] = 0; // Do not let think the owner own the rmt
+        // rmt_owner[reg] = 0; // Do not let think the owner own the rmt
         // Safe check: do not let multiple allocation
         for (uint64_t id: rmt){
           fatal_if(id == reg.phys_reg_idx, "PREG %d is mapped in RMT\n", id);
@@ -300,6 +301,12 @@ class PhysicalRegAllocator : public Named
         cannotbefreed[preg] = true; //
       }
     }
+  }
+
+  bool reg_available(PhysicalReg& reg){
+    assert(reg.phys_reg_idx != 1000);
+    // TODO use cannotbefreed ?
+    return rmt_owner[reg] == reg.producer_id;
   }
 
   /* Free all registers */

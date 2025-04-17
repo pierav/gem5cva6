@@ -57,6 +57,8 @@ parser.add_argument("--pf2Size", action='store', type=str, default='256')
 STORE_TRUE = { "action": "store_true" }
 DEFAULT = lambda x : { "default":x }
 cva6_config = {
+    "lsuSQCWidth" : DEFAULT(16), # SQCommit size
+    "lsuSQSWidth" : DEFAULT(16), # SQSpecualtive size
     "mcSize" : DEFAULT(0), # The minicache size
     "vpSize" : DEFAULT(0), # The Value Predictor Size
     "vpType" : DEFAULT(0), # The Value Predictor Type

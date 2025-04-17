@@ -32,6 +32,10 @@ class BaseCva6CPU(BaseCPU):
         numThreads = Parent.numThreads), "Branch Predictor")
 
 
+    # LSU
+    lsuSQCWidth = Param.Unsigned(16, "Store Queue Commit size")
+    lsuSQSWidth = Param.Unsigned(16, "Store Queue Speculative size")
+
     mcSize = Param.Unsigned(16, "Minicache size; 0 for disable")
     # VP
     vpSize = Param.Unsigned(2048, "Value prediction size; 0 for disable")

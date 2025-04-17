@@ -12,6 +12,7 @@
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/func_unit.hh"
 #include "cpu/cva6/lambda.hh"
+#include "cpu/cva6/plugin.hh"
 #include "cpu/cva6/scheduler_handler.hh"
 #include "cpu/cva6/stage_decode.hh"
 #include "cpu/cva6/stage_execute.hh"
@@ -153,6 +154,9 @@ class Pipeline : public Ticked
 
   MemOrderChecker mdpc;
 
+  /* Plugins */
+  Plugins plugins;
+
   protected:
   /** Pipeline registers */
   Latch<ForwardLineData> f1ToF2;      /* fetched line */
@@ -212,6 +216,7 @@ class Pipeline : public Ticked
       iq(cpu.name() + ".iq", cpu, p, fus),
       rob(cpu.name() + ".rob"),
       mdpc(cpu.name() + "mdpc", cpu),
+      plugins(cpu.name(), cpu, p),
       f1ToF2(cpu.name() + ".f1ToF2", "lines"),
       f2ToD(p.issueWidth),
       dToIssue(p.issueWidth),

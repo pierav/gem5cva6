@@ -25,6 +25,60 @@
 namespace gem5 {
 namespace cva6 {
 
+/* Update the arch state */
+bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst);
+
+struct BlockCommit
+{
+  Cva6CPU& cpu;
+  struct Stats : public statistics::Group
+  {
+    statistics::Scalar lost;
+    statistics::Scalar committed;
+    statistics::Distribution committed_block_size;
+    Stats(Cva6CPU &cpu) :
+      statistics::Group(&cpu, "BC"),
+      ADD_STAT(lost, ""),
+      ADD_STAT(committed, ""),
+      ADD_STAT(committed_block_size, "")
+    {
+      committed_block_size
+        .init(1,64,1)
+        .flags(statistics::pdf);
+    }
+  } stats;
+
+  Cva6DynInstChunk fifo;
+  ArchRegFile<char> preg_in_flight;
+
+  BlockCommit(Cva6CPU &cpu_) :
+    cpu(cpu_),
+    stats(cpu_),
+    fifo("rbc") {}
+
+
+  void clear(){ /* Reset everything */
+    fifo.flush();
+    preg_in_flight.setall(false);
+  }
+
+  void pre_commit(Cva6DynInstPtr& inst);
+
+  void flush(){
+    stats.lost += fifo.size();
+    clear();
+  }
+
+  bool canInterrupts(){ // Dont trow committed jobs
+    return fifo.empty();
+  }
+
+  bool empty(){
+    return fifo.empty();
+  }
+
+  void dump();
+};
 
 /** Execute stage. */
 class Execute : public Named
@@ -45,14 +99,10 @@ class Execute : public Named
     /** Pointer to the value predictor */
     VPDPE &dpe;
 
-    /** Plugins */
-    std::list<Plugin*> plugins;
-
     unsigned int commitWidth;
     bool vpFlush;
 
-    /* Checker */
-    InfiniteMemory64 memcheck;
+    BlockCommit bc;
 
     struct ExStats : public statistics::Group
     {
@@ -85,17 +135,10 @@ class Execute : public Named
     /** Generate Branch data based (into branch) on an observed (or not)
      *  change in PC while executing an instruction.
      *  Also handles branch prediction information within the inst. */
-    void tryToBranch(Cva6DynInstPtr inst, Fault fault, BranchData &branch);
+    void tryToBranch(Cva6DynInstPtr inst, BranchData &branch);
 
     /** Check possible interrupts. */
     bool checkInterrupts();
-
-    /** Do the stats handling and instruction count and PC event events
-     *  related to the new instruction/op counts */
-    void doInstCommitAccounting(Cva6DynInstPtr inst);
-
-    /** Commit a single instruction. */
-    bool commitInst(Cva6DynInstPtr inst, BranchData &branch);
 
   public:
     Execute(const std::string &name_,
@@ -113,23 +156,9 @@ class Execute : public Named
         dpe(dpe_),
         commitWidth(params.commitWidth),
         vpFlush(params.vpFlush),
-        memcheck("memcheck", cpu_),
+        bc(cpu_),
         stats(cpu_)
-    {
-      if (params.plugin_memtrace_path != ""){
-        plugins.push_back(new PluginMemtrace(
-            name_ + "memtrace", cpu_, params));
-      }
-      plugins.push_back(new PluginSimpointBar(name_ + "simbar", cpu, params));
-      // plugins.push_back(new PluginVPP(name_ + "vpp", cpu, params));
-      // plugins.push_back(new PluginMCVP(name_ + "mcvp", cpu, params));
-      plugins.push_back(new PluginGoodbadTrap(name_ + "gbt", cpu, params));
-
-      // plugins.push_back(new PluginLambda(name_ + "lambda", cpu, params));
-      // plugins.push_back(new PluginMemConst(name_ + "memc", cpu, params));
-      // plugins.push_back(new PluginScheduler(name_ + ".sched", cpu, params));
-      plugins.push_back(new PluginHMP(name_ + ".hmp", cpu, params));
-    }
+    { }
 
     ~Execute() {}
 

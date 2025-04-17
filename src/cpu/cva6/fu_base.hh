@@ -143,6 +143,8 @@ class Cva6DynInstChunk : public Named, public MatchAddrIntf
       }
     }
 
+    void flush(){ flushfrom(Cva6DynInst::bubble()); }
+
     bool empty()                 { return chunk.empty(); }
     size_t size()                { return chunk.size(); }
     Cva6DynInstPtr front()       { return chunk.front(); }

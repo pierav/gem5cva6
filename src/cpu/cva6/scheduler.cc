@@ -443,12 +443,11 @@ SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
   uint64_t delta;
   uint64_t schedule_line = getScheduleLine(inst, delta);
   uint64_t schedule_time = schedule_line + base_time;
-  DPRINTF(Cva6Sched, "canRenameDest line %d T %d : %s\n",
-    schedule_line, schedule_time, dumpInstPreg(inst));
-
+  // DPRINTF(Cva6Sched, "canRenameDest line %d T %d : %s\n",
+  //   schedule_line, schedule_time, dumpInstPreg(inst));
   for (uint64_t pregi: FL){
     uint64_t preg_use_time = maxtimeoflasttouch[pregi];
-    DPRINTF(Cva6Sched, "Try preg : %d : T=%d\n", pregi, preg_use_time);
+    // DPRINTF(Cva6Sched, "Try preg : %d : T=%d\n", pregi, preg_use_time);
     if (preg_use_time > schedule_time){
       /* Suboptimal schedule */
       continue;

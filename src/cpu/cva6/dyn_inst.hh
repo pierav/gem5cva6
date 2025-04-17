@@ -177,6 +177,7 @@ class ArchRegFile
   private:
   using arr_t = std::vector<T>;
   arr_t array;
+
   public:
   using iterator = typename arr_t::iterator;
   using const_iterator = typename arr_t::const_iterator;
@@ -210,6 +211,18 @@ class ArchRegFile
       }
     }
     return true;
+  }
+  std::string dump_match(T val){
+    std::stringstream ss;
+    ss << "{ ";
+    assert(array.size() <= NB_I2ID);
+    for (int i = 0; i < array.size(); i++){
+      if (array[i] == val){
+        ss << registerName(i) << ' ';
+      }
+    }
+    ss << '}';
+    return ss.str();
   }
 };
 

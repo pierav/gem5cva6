@@ -20,12 +20,13 @@ namespace cva6 {
 class BranchData
 {
   public:
-    bool is_predicted = false;
+    /* Squash informations */
     bool need_squash = false;
-    /** Sequence number of new stream/prediction to be adopted */
-    InstSeqNum num = 0;
+    std::unique_ptr<PCStateBase> squash_target;
 
-    /** Starting PC of that stream */
+    /* Bpred informations */
+    InstSeqNum num = 0;
+    bool is_predicted = false;
     std::unique_ptr<PCStateBase> target;
     bool actually_taken = false;
 
@@ -44,23 +45,28 @@ class BranchData
       InstSeqNum num_,
       const PCStateBase &target_,
       bool actually_taken_) :
-      is_predicted(is_predicted_),
       need_squash(need_squash_),
       num(num_),
+      is_predicted(is_predicted_),
       actually_taken(actually_taken_)
     {
         set(target, target_);
+        set(squash_target, target_);
     }
 
     BranchData(const BranchData &other) :
-        is_predicted(other.is_predicted),
         need_squash(other.need_squash),
         num(other.num),
+        is_predicted(other.is_predicted),
         actually_taken(other.actually_taken)
     {
         set(target, other.target);
+        set(squash_target, other.squash_target);
     }
 
+    void setSquashTarget(const PCStateBase &target_){
+      set(squash_target, target_);
+    }
     static BranchData
     SquashAt(const PCStateBase &target){
       return BranchData(
@@ -79,6 +85,7 @@ class BranchData
         num = other.num;
         actually_taken = other.actually_taken;
         set(target, other.target);
+        set(squash_target, other.squash_target);
         return *this;
     }
 
@@ -96,16 +103,19 @@ class BranchData
           if (is_predicted){
             os << "prediction ";
             if (need_squash){
-              os << "invalid";
+              os << "KO";
             } else {
-              os << "valid";
+              os << "OK";
             }
-          } else {
-            os << "squash";
           }
           os << ";num=" << num;
           os << ";0x" << std::hex << target->instAddr() << std::dec;
           os << ';';
+          if (need_squash){
+            os << " [squash:0x" << std::hex
+               << squash_target->instAddr() << std::dec
+               << "]";
+          }
         }
         os << ")";
         return os.str();

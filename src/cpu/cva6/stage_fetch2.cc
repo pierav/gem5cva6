@@ -161,7 +161,6 @@ Fetch2::updateBranchPrediction(const BranchData &branch){
     if (branch.is_predicted) {
         branchPredictor.update(branch.num, 0);
     }
-
 }
 
 void
@@ -200,6 +199,10 @@ Fetch2::predictBranch(Cva6DynInstPtr inst, BranchData &branch){
         }
 
         set(inst->predictedTarget, inst_pc);
+
+        /* For a fixup (Anti deadlock) */
+        cpu.pipeline->sa.fixer.on_predict(inst);
+
 
         if (inst->predictedTaken){
             branch = BranchData(inst->triedToPredict,

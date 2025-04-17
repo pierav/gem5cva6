@@ -27,10 +27,47 @@ namespace gem5 {
 namespace cva6 {
 
 void
-Execute::tryToBranch(Cva6DynInstPtr inst, Fault fault, BranchData &branch){
-    ThreadContext *thread = cpu.getContext();
-    const std::unique_ptr<PCStateBase> pc_before(inst->pc->clone());
-    std::unique_ptr<PCStateBase> target(thread->pcState().clone());
+BlockCommit::pre_commit(Cva6DynInstPtr& inst){
+    DPRINTF(Cva6Execute, "PRECOMMIT %s (#%d : %s)\n",
+        *inst, fifo.size(),
+        preg_in_flight.dump_match(true));
+    /* Push and increment spec commit pointer */
+    fifo.push(inst);
+    if (inst->regs_dst_phy.size()){
+        PhysicalReg& reg = inst->regs_dst_phy.front();
+        bool inrf = inst->free_reg_at_commit;
+        preg_in_flight[reg] = !inrf;
+    }
+    /* Try to push everything */
+    if (preg_in_flight.isall(false)){ // All are ready to be commited
+        stats.committed_block_size.sample(fifo.size());
+        stats.committed += fifo.size();
+        /* Commit everything */
+        for (auto& i2: fifo){
+            commitInst(cpu, i2);
+        }
+        /* Reset */
+        clear();
+    }
+}
+
+void
+BlockCommit::dump(){
+    if (!(GEM5_UNLIKELY(TRACING_ON && ::gem5::debug::Cva6Execute))) {
+        return;
+    }
+    DPRINTF(Cva6Execute, "BlockCommit FIFO (#%d : %s)\n",
+        fifo.size(),  preg_in_flight.dump_match(true));
+    for (Cva6DynInstPtr inst: fifo){
+        DPRINTF(Cva6Execute, "%s\n", *inst);
+    }
+}
+
+void
+Execute::tryToBranch(Cva6DynInstPtr inst, BranchData &branch){
+    // ThreadContext *thread = cpu.getContext();
+    // const std::unique_ptr<PCStateBase> pc_before(inst->pc->clone());
+    std::unique_ptr<PCStateBase> &target = inst->pc_next;
 
     InstSeqNum num = inst->isBubble() ? 0 : inst->id.fetchSeqNum;
     // bool taken_match = inst->pc_next_taken == inst->predictedTaken;
@@ -43,7 +80,7 @@ Execute::tryToBranch(Cva6DynInstPtr inst, Fault fault, BranchData &branch){
 
     bool is_addr_unmatch = inst->triedToPredict &&
                           *inst->predictedTarget != *target;
-    bool is_fault = fault != NoFault;
+    bool is_fault = inst->isFault();
 
     bool need_squash = is_addr_unmatch ||
                        is_fault ||
@@ -55,6 +92,9 @@ Execute::tryToBranch(Cva6DynInstPtr inst, Fault fault, BranchData &branch){
         num,
         *target,
         actually_taken);
+    // Squash at latest valid pc
+    branch.setSquashTarget(cpu.getContext()->pcState());
+
 
     DPRINTF(Branch, "tryToBranch : %s\n", branch.dump());
     /* Some stats */
@@ -88,12 +128,11 @@ Execute::tryToBranch(Cva6DynInstPtr inst, Fault fault, BranchData &branch){
     }
 }
 
-void
-Execute::doInstCommitAccounting(Cva6DynInstPtr inst){
+/** Do the stats handling and instruction count and PC event events
+ *  related to the new instruction/op counts */
+void doInstCommitAccounting(Cva6CPU& cpu, Cva6DynInstPtr inst){
     assert(!inst->isFault());
-
     Cva6Thread *thread = cpu.thread;
-
     /* Increment the many and various inst and op counts in the
      *  thread and system */
     if (!inst->staticInst->isMicroop() || inst->staticInst->isLastMicroop())
@@ -101,7 +140,6 @@ Execute::doInstCommitAccounting(Cva6DynInstPtr inst){
         thread->numInst++;
         thread->threadStats.numInsts++;
         cpu.stats.numInsts++;
-
         /* Act on events related to instruction counts */
         thread->comInstEventQueue.serviceEvents(thread->numInst);
     }
@@ -111,7 +149,7 @@ Execute::doInstCommitAccounting(Cva6DynInstPtr inst){
     cpu.probeInstCommit(inst->staticInst, inst->pc->instAddr());
 }
 
-std::string instDump(Cva6DynInstPtr inst, ThreadContext *thread) {
+std::string instDump(Cva6DynInstPtr inst) {
     std::ostringstream ss;
     ss << *inst;
     if (inst->staticInst->isMemRef()){
@@ -128,10 +166,8 @@ std::string instDump(Cva6DynInstPtr inst, ThreadContext *thread) {
     return ss.str();
 }
 
-
-bool
-Execute::commitInst(Cva6DynInstPtr inst, BranchData &branch){
-    ThreadContext *thread = cpu.thread->getTC(); // cpu.getContext();
+bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst){
+    // ThreadContext *thread = cpu.thread->getTC(); // cpu.getContext();
 
     DPRINTF(Cva6Execute, "executeCommit(%s)\n", *inst);
     Fault fault = inst->executeCommit(cpu, *cpu.thread);
@@ -139,32 +175,33 @@ Execute::commitInst(Cva6DynInstPtr inst, BranchData &branch){
 
     if (fault != NoFault){
         DPRINTF(Cva6Commit, "commit: %s fault: %s\n", *inst, fault->name());
-        tryToBranch(inst, fault, branch);
     } else {
         static int cpt = 0;
         if ((cpt++ % 100000) == 0){
-            DPRINTF(Cva6CommitCpt, "LLL: %s\n", instDump(inst, thread));
+            DPRINTF(Cva6CommitCpt, "LLL: %s\n", instDump(inst));
         }
         inst->exec_data.pmode = inst->readMiscReg(RiscvISA::MISCREG_PRV);
         char priv_c[] = {'U', 'S', '-', 'M'};
-        //     PRV_U = 0,
+        // PRV_U = 0,
         // PRV_S = 1,
         // PRV_M = 3
         DPRINTF(Cva6Commit, "commit: [%c] %s\n", priv_c[inst->exec_data.pmode],
-            instDump(inst, thread));
-        doInstCommitAccounting(inst);
+            instDump(inst));
+        doInstCommitAccounting(cpu, inst);
         if (inst->traceData){
             inst->traceData->dump();
         }
-        tryToBranch(inst, fault, branch);
         /*
         static bool linuxTrace = false;
         linuxTrace |= inst->pc->instAddr() > 0x80200000;
         if (linuxTrace){
-            DPRINTF(Cva6CommitCpt, "commitLLL: %s\n", instDump(inst, thread));
+            DPRINTF(Cva6CommitCpt, "commitLLL: %s\n", instDump(inst));
         }
         */
     }
+    cpu.pipeline->iq.commit(inst); /* Post-commit (for stores SQS->SQC)!*/
+    cpu.pipeline->sa.commit(inst); /* Post-commit : register release !*/
+    cpu.pipeline->plugins.commit(inst);
     return fault != NoFault;
 }
 
@@ -179,20 +216,9 @@ Execute::evaluate() {
         /* The interrupt *must* set pcState */
         cpu.getInterruptController()->updateIntrInfo();
         interrupt->invoke(cpu.getContext());
-
         DPRINTF(Cva6Interrupt, "Invoking interrupt: %s to PC: %s\n",
             interrupt->name(), cpu.getContext()->pcState());
-
-        std::unique_ptr<PCStateBase> target(
-            cpu.getContext()->pcState().clone());
-        InstSeqNum num = 0;
-        resolved_branch = BranchData(
-            false, //
-            true, // Need squash
-            num,
-            *target,
-            true // Unused
-        );
+        resolved_branch = BranchData::SquashAt(cpu.getContext()->pcState());
         flush();
         return;
     }
@@ -205,13 +231,11 @@ Execute::evaluate() {
     // Execution
     fus.advance();
     cpu.pipeline->stats.exfus += tictac();
-
     // /** Process result */
     cpu.pipeline->iq.execute();
     cpu.pipeline->stats.expop += tictac();
 
     /* Commit stage*/
-    Fault fault;
     for (int i = 0; i < commitWidth; i++){ // Dual port commit
         if (!resolved_branch.isBubble()){
             break; // Block if already jump, fault ...
@@ -263,98 +287,58 @@ Execute::evaluate() {
             return; /* EARLY FLUSH : do not commit */
         }
 
-        /* Commit everyrhings */
-        commitInst(inst, resolved_branch);
-        cpu.pipeline->iq.commit(inst);
+        /* Pre commit (that can be reversed)*/
         assert(cpu.pipeline->rob.front() == inst);
-        cpu.pipeline->rob.pop(inst);
-        cpu.pipeline->sa.commit(inst);
-        cpu.pipeline->mdpc.commit(inst);
-        /* Check if there is memory order violation */
-        // cpu.pipeline->iq.markMemoryViolation(inst);
-        // TODO: replay from load !
+        cpu.pipeline->rob.pop(inst); /* Pre-commit */
+        cpu.pipeline->mdpc.commit(inst); /* must be pre-commit ?? */
+        /* Fault have to be detected before enter BC ? */
+        cpu.pipeline->sa.pre_commit(inst); /* Annotate can commit */
 
-        // iq.commit(inst);
-        // cpu.pipeline->rob.pop(inst);
 
-        /* Checker */
-        if (!inst->isFault() && inst->staticInst->isMemRef()){
-            /* Request values */
-            uint64_t addr = inst->dreq->getPaddr();
-            uint8_t size = inst->dreq->getSize();
-            uint64_t value = inst->dreq->getData();
-            if (inst->dreq->isBufferable()){ /* Bufferable load or store */
-                if (inst->staticInst->isLoad()){ /* Load checker */
-                    bool isconst = memcheck.check_load(addr, size, value);
-                    inst->exec_data.is_const_load = isconst;
-                } else { /* Update store*/
-                    bool indempotant = memcheck.check_store(addr, size, value);
-                    inst->exec_data.is_silent_store = indempotant;
-                }
-            } else { /* Not bufferable */
-                memcheck.invalidate(addr);
-            }
+        bool is_serialise = !inst->isFault() &&
+            inst->isLastOpInInst() &&
+            (inst->staticInst->isSerializeAfter() ||
+            inst->staticInst->isSquashAfter());
+        bool is_addr_unmatch = inst->triedToPredict &&
+                            *inst->predictedTarget != *inst->pc_next;
+        bool is_fault = inst->isFault();
+        bool need_squash = is_addr_unmatch ||
+                        is_fault ||
+                        is_serialise;
+
+        /* Try to commit */
+        bc.pre_commit(inst); /* Ex CSRW ! */
+
+        if (is_serialise) {
+            assert(bc.empty()); // Check scheduler serialisation
         }
-        // Reg checker
-        {
-            static ArchRegFile<char> rfinit;
-            static ArchRegFile<uint64_t> rf;
-            if (!inst->isFault()){
-                // 0) Check src
-                for (auto& reg: inst->regs_src_phy){
-                    if (reg.is_reg_dead){
-                        rfinit[reg] = false;
-                    }
-                    if (!rfinit[reg]){ // For simpoint
-                        rf[reg] = reg.value;
-                        // rfinit[reg] = true;
-                    }
-                    fatal_if(rf[reg] != reg.value,
-                        "reg %s must be equal to %lx not %lx\n",
-                        reg, rf[reg], reg.value);
-                }
-                // 1) Apply dsts
-                for (auto& reg: inst->regs_dst_phy){
-                    rf[reg] = reg.value;
-                    rfinit[reg] = true;
-                }
-            }
-        }
+
+        if (need_squash && !bc.empty()){ /* Handle flush */
+            // We can't delay the fault as we reach stale point
+            // Annotate the scheduler to RR barrier this fault
+            // Also forward a valid prediction
+            cpu.pipeline->sa.fixer.apply_fix_for(inst);
+            resolved_branch = BranchData::SquashAt(
+                cpu.getContext()->pcState());
+            flush();
+            return;
+        } /* Otherwise take the valid path */
+
+        // We can pre-commit the instruction
+        // commitInst(inst); /* Post-commit */
+        tryToBranch(inst, resolved_branch); /* Pre-commit */
+
         bool misspred_value = dpe.commit(inst);
         if (misspred_value){
             ThreadContext *thread = cpu.getContext();
             resolved_branch = BranchData::SquashAt(thread->pcState());
         }
-        // VP commit
-        # if 0
-        if (misspred_value){
-            if (vpFlush){ //  vpFlush Flush
-                resolved_branch = BranchData::SquashAt(
-                    cpu.getContext()->pcState());
-                flush();
-                return;  /* LATE FLUSH : commit then flush */
-            } else { // Replay the scoreboard if needed
-                fatal("Unimp!\n");
-                #if 0
-                Cva6DynInstPtr vilain = scoreboard.flush_value_from(inst);
-                if (!vilain->isBubble()){ //
-                    flushfrom(vilain); // Only Flush FUS et inps
-                    i=commitWidth;
-                }
-                #endif
-            }
-        }
-        #endif
-
-        for (Plugin *plugin: plugins){
-            plugin->commit(inst);
-        }
-
     }
     // Flush in the cycle
     if (resolved_branch.isStreamChange()){
         flush();
     }
+    bc.dump();
     cpu.pipeline->stats.excommit += tictac();
 }
 
@@ -367,6 +351,7 @@ Execute::flushfrom(Cva6DynInstPtr inst){
     cpu.pipeline->sa.flushfrom(inst);
     assert(inst->isBubble());
     cpu.pipeline->dpe.flush();
+    bc.flush(); // Clear inflights pre-committed
 }
 
 bool
@@ -374,12 +359,11 @@ Execute::checkInterrupts()
 {
     assert(FullSystem && cpu.getInterruptController());
     // TODO lastCommitWasEndOfMacroop
-    if (cpu.checkInterrupts() && 1) {
+    if (cpu.checkInterrupts() && bc.canInterrupts()) {
         DPRINTF(Cva6Commit, "IT\n");
         /* lsu chech in memory instruction ! */
         return cpu.pipeline->iq.canInterrupts();
     }
-
     return false;
 }
 

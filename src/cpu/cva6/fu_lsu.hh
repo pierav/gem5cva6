@@ -34,16 +34,19 @@ class LSUStoreBuffer
     // 1. Speculative queue
     // 2. Commit queue which is non-speculative
     //  : the store will definitely happen.
-    const unsigned int depth_spec = 16;
-    const unsigned int depth_commit = 16; // WT: 4; WB: 8
+    unsigned int depth_spec = 16;
+    unsigned int depth_commit = 16; // WT: 4; WB: 8
     std::deque<Cva6DynInstPtr> speculative_queue;
     Cva6DynInstChunk commit_queue;
 
   public:
     LSUStoreBuffer(const std::string &name,
-                   Cva6CPU &cpu_) :
+                   Cva6CPU &cpu_,
+                   const BaseCva6CPUParams &p) :
         Named(name),
         cpu(cpu_),
+        depth_spec(p.lsuSQSWidth),
+        depth_commit(p.lsuSQCWidth),
         commit_queue(name + ".SQc") { ; }
 
     // there is no store pending in neither the speculative unit or
@@ -115,10 +118,12 @@ class LSUStoreUnit
   LSUAmoBuffer amo_buffer;
 
   public:
-  LSUStoreUnit(const std::string &name, Cva6CPU &cpu_)
+  LSUStoreUnit(const std::string &name,
+               Cva6CPU &cpu_,
+               const BaseCva6CPUParams &p)
       : Named(name),
         cpu(cpu_),
-        store_buffer(name + ".store_buffer", cpu),
+        store_buffer(name + ".store_buffer", cpu, p),
         amo_buffer(name + ".amo_buffer", cpu, &store_buffer) {
     rvs = { &store_buffer, &amo_buffer };
   }
@@ -227,10 +232,10 @@ class LSUBase
   public:
     LSUBase(const std::string &name,
             Cva6CPU &cpu_,
-            const BaseCva6CPUParams &params) :
+            const BaseCva6CPUParams &p) :
         Named(name),
         cpu(cpu_),
-        store_unit(name + ".store_unit", cpu),
+        store_unit(name + ".store_unit", cpu, p),
         load_unit(name + ".load_unit", &store_unit, cpu),
         lsu_fifo(name + ".LSQ") { }
 

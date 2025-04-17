@@ -217,12 +217,12 @@ Cva6DynInst::executeInitiateStatic(){
 void
 Cva6DynInst::executeInitiate(){
     DPRINTF(Cva6X, "executeInitiate... %s\n", *this);
+    // Setup default next pc. Jump instructions modify this value.
+    set(pc_next, pc);
     if (isFault()) { // Nothing to do
         DPRINTF(Cva6X, "isFault... %s\n", *this);
         return;
     }
-    // Setup default next pc. Jump instructions modify this value.
-    set(pc_next, pc);
     // Initate memory references
     if (staticInst->isMemRef()){
         DPRINTF(Cva6X, "isMemRef... %s\n", *this);
@@ -277,9 +277,10 @@ Cva6DynInst::executeComplete(){
             // delete dreq;
         }
     } else {
-        // DPRINTF(Cva6Execute, "speculative Committing inst: %s\n", *this);
         setFaultEx(staticInst->execute(&context, traceData));
     }
+    // compute next pc (Can be done speculatively)
+    staticInst->advancePC(*pc_next);
 }
 
 Fault
@@ -297,6 +298,8 @@ Cva6DynInst::executeCommit(Cva6CPU &cpu, SimpleThread &thread){
             // Execute in real context
             ExecContext context(cpu, thread, this);
             setFaultEx(staticInst->execute(&context, traceData));
+            // compute next pc
+            staticInst->advancePC(*pc_next);
             if (isFault()) {
                 if (traceData) {
                     traceData->setFaulting(true);
@@ -314,14 +317,11 @@ Cva6DynInst::executeCommit(Cva6CPU &cpu, SimpleThread &thread){
                     thread.setReg(reg, regv);
                 }
             }
-
             // Write CSR if needed
             for (auto const& p: ex_csrs){
                 thread.setMiscReg(p.first, p.second);
             }
         }
-        // compute next pc
-        staticInst->advancePC(*pc_next);
         thread.pcState(*pc_next);
     }
     return getFault();
