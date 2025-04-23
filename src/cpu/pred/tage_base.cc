@@ -392,6 +392,27 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
                 break;
             }
         }
+        for (int i = nHistoryTables; i > 0; i--) {
+            DPRINTF(Tage, " -- table[%d] %s (%d=?%d) : ctr=%d\n",
+                i, tableIndices[i],
+                gtable[i][tableIndices[i]].tag == tableTags[i] ?
+                    "HIT" : "MISS",
+                gtable[i][tableIndices[i]].tag, tableTags[i],
+                gtable[i][tableIndices[i]].ctr);
+        }
+        if (bi->hitBank){
+            DPRINTF(Tage, "-- predict HIT : (%d,%d) : cpt:%d\n",
+                bi->hitBank, bi->hitBankIndex,
+                gtable[bi->hitBank][tableIndices[bi->hitBank]].ctr);
+        }
+        if (bi->altBank){
+             DPRINTF(Tage, "-- predict ALT : (%d,%d) : cpt:%d\n",
+                bi->altBank, bi->altBankIndex,
+                gtable[bi->altBank][tableIndices[bi->altBankIndex]].ctr);
+        }
+        DPRINTF(Tage, "-- predict BIM : (%d) : taken:%d\n",
+                       bi->bimodalIndex, getBimodePred(pc, bi));
+
         //computes the prediction and the alternate prediction
         if (bi->hitBank > 0) {
             if (bi->altBank > 0) {
@@ -414,12 +435,10 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
                 || ! bi->pseudoNewAlloc) {
                 bi->tagePred = bi->longestMatchPred;
                 bi->provider = TAGE_LONGEST_MATCH;
-
             } else {
                 bi->tagePred = bi->altTaken;
                 bi->provider = bi->altBank ? TAGE_ALT_MATCH
                                            : BIMODAL_ALT_MATCH;
-
             }
         } else {
             bi->altTaken = getBimodePred(pc, bi);
@@ -445,11 +464,19 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
                 high_conf = false;
             }
         }
+
+        static const char* strs[] = {
+            "BIMODAL_ONLY",
+            "TAGE_LONGEST_MATCH",
+            "BIMODAL_ALT_MATCH",
+            "TAGE_ALT_MATCH",
+            ""
+        };
         pred_taken = (bi->tagePred);
         DPRINTF(Tage, "Predict for %lx: taken?:%d, tagePred:%d, altPred:%d"
-                    "(HIGHCONF=%d)\n",
+                    "(HIGHCONF=%d) provider=%s\n",
                 branch_pc, pred_taken, bi->tagePred, bi->altTaken,
-                high_conf);
+                high_conf, strs[bi->provider]);
         last_high_conf = high_conf;
     }
     bi->branchPC = branch_pc;
@@ -578,8 +605,10 @@ void
 TAGEBase::handleTAGEUpdate(Addr branch_pc, bool taken, BranchInfo* bi)
 {
     if (bi->hitBank > 0) {
-        DPRINTF(Tage, "Updating tag table entry (%d,%d) for branch %lx\n",
-                bi->hitBank, bi->hitBankIndex, branch_pc);
+        DPRINTF(Tage, "Updating tag table entry (%d,%d)"
+                      "for branch %lx (oldctr:%d)\n",
+                bi->hitBank, bi->hitBankIndex, branch_pc,
+                gtable[bi->hitBank][bi->hitBankIndex].ctr);
         ctrUpdate(gtable[bi->hitBank][bi->hitBankIndex].ctr, taken,
                   tagTableCounterBits);
         // if the provider entry is not certified to be useful also update

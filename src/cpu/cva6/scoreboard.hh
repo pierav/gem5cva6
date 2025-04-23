@@ -45,6 +45,21 @@ class Scoreboard : public Named
 {
   public:
     Cva6CPU &cpu;
+    struct Stats : public statistics::Group
+    {
+      statistics::Scalar reg_read;
+      statistics::Scalar reg_read_fw;
+      statistics::Scalar reg_read_commit;
+      statistics::Scalar reg_read_commit_unsafe;
+      statistics::Scalar reg_write_fw;
+      Stats(const std::string &name, BaseCPU &cpu) :
+        statistics::Group(&cpu, name.c_str()),
+        ADD_STAT(reg_read, ""),
+        ADD_STAT(reg_read_fw, ""),
+        ADD_STAT(reg_read_commit, ""),
+        ADD_STAT(reg_read_commit_unsafe, ""),
+        ADD_STAT(reg_write_fw, "") {}
+    } stats;
 
     /* number of entries un issue queue*/
     const unsigned nr_entries;
@@ -76,6 +91,7 @@ class Scoreboard : public Named
     };
     PhysicalRegFile<reg_state_t> sb;
     PhysicalRegFile<Cva6DynInstPtr> _sb_producer; /* (debug) */
+    ArchRegFile<uint8_t> _sb_is_unsafe;
 
     PhysicalRegFile<uint64_t> prf;
     PhysicalRegFile<uint8_t> prf_isfault;
@@ -98,10 +114,10 @@ class Scoreboard : public Named
 
 
   public:
-    Scoreboard(const std::string &name,
-               Cva6CPU &cpu_, uint64_t size) :
+    Scoreboard(const std::string &name, Cva6CPU &cpu_, uint64_t size) :
         Named(name),
         cpu(cpu_),
+        stats(name, cpu_),
         nr_entries(size) { }
 
   protected:
@@ -139,7 +155,25 @@ class Scoreboard : public Named
     /** Return the instruction to commit. Bubble is none. */
     Cva6DynInstPtr getCommitInst(size_t index=0);
     /** Commit the instruction */
-    void commitInst(Cva6DynInstPtr inst);
+    void pre_commit(Cva6DynInstPtr inst){
+      for (auto& reg: inst->regs_dst_phy){
+        _sb_is_unsafe[reg] = true;
+      }
+    }
+    void commitInst(Cva6DynInstPtr inst){
+      assert(!inst->commit_completed); // Already commited
+      inst->commit_completed = true;
+
+      for (auto& reg: inst->regs_dst_phy){
+        _sb_is_unsafe[reg] = false;
+      }
+      /* There is no need to free the register !! */
+      /* Free registers  */
+      // for (PhysicalReg &reg: inst->regs_dst_phy){
+      //     assert(sb[reg] == FWABLE);
+      //     sb[reg] = FREE;
+      // }
+    }
 
     /** Tick the scoreboard: evaluate flip flops*/
     void tick();

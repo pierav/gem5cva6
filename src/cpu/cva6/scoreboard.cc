@@ -59,11 +59,23 @@ Scoreboard::isUnissedStoreBefore(Cva6DynInstPtr inst_in){
 bool
 Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg,
     Cva6DynInstPtr &producer){
+    if (reg.valid){
+        return true;
+    }
     switch(sb[reg]){
         case FREE: {
             /* Read commited value */
-            reg.set(cpu.thread->getReg(reg.regid));
             reg.fromrf = true;
+            if (_sb_is_unsafe[reg]){ /* FIX IT*/
+                reg.set(cpu.pipeline->bc.preg_val[reg]);
+                reg.fromrf_unsafe = true;
+                DPRINTF(Cva6Scoreboard, "Read %s:%lx from RFU!\n", reg,
+                    reg.value);
+            } else {
+                reg.set(cpu.thread->getReg(reg.regid));
+                DPRINTF(Cva6Scoreboard, "Read %s:%lx from RF\n", reg,
+                    reg.value);
+            }
             break;
         }
         case IN_USE: {
@@ -73,6 +85,7 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg,
         }
         case FWABLE: {
             reg.set(prf[reg]);
+            DPRINTF(Cva6Scoreboard, "Read %s:%lx from FW\n", reg, reg.value);
             if (prf_isfault[reg]){ /* Forward fault */
                 Fault fault = NeverCommitFault::fault();
                 inst_in->setFaultEx(fault);
@@ -203,6 +216,16 @@ Scoreboard::issueInst(Cva6DynInstPtr inst){
         sb[reg] = IN_USE;
         _sb_producer[reg] = inst;
     }
+
+    /* Some stats */
+    for (PhysicalReg &reg: inst->regs_src_phy){
+        stats.reg_read += 1;
+        stats.reg_read_fw += !reg.fromrf;
+        stats.reg_read_commit += reg.fromrf;
+        stats.reg_read_commit_unsafe += reg.fromrf_unsafe;
+    }
+
+
 }
 
 void
@@ -222,6 +245,8 @@ Scoreboard::completeInst(Cva6DynInstPtr inst) {
         if (inst->isFault()){
             prf_isfault[reg] = true;
         }
+        /* Some stats */
+        stats.reg_write_fw += 1;
     }
 }
 
@@ -234,18 +259,6 @@ Scoreboard::getCommitInst(size_t index){
     }
     Cva6DynInstPtr inst = issue_queue[index];
     return inst;
-}
-
-void
-Scoreboard::commitInst(Cva6DynInstPtr inst) {
-    assert(!inst->commit_completed); // Already commited
-    inst->commit_completed = true;
-    /* There is no need to free the register !! */
-    /* Free registers  */
-    // for (PhysicalReg &reg: inst->regs_dst_phy){
-    //     assert(sb[reg] == FWABLE);
-    //     sb[reg] = FREE;
-    // }
 }
 
 void
@@ -271,6 +284,7 @@ Scoreboard::flush(){
     prf_isfault.setall(false);
     prf_isvp.setall(false);
     is_serialise_inflight = 0;
+    _sb_is_unsafe.setall(false);
 }
 
 #if 0

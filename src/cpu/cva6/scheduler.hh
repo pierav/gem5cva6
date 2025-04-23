@@ -184,6 +184,22 @@ class PhysicalRegAllocator : public Named
     PhysicalReg freereg = reg; // Ok because rmt [ ArchReg ]
     rename_one_secure(freereg); // Clean rename of dst
     inst->phys_reg_to_free.push_back(freereg);
+
+    /* > Invalidate RMT */
+    // > If someone do not have allocated the same ArchReg !
+    // if (rmt[reg] == reg.phys_reg_idx){
+    //   rmt[reg] = 1000;
+    // }
+    // > Instead of this we may defer the RMT invalidation.
+    // > This can be done at allocate. Do do this, it requires
+    // > to know the old arch reg.
+    // rmt_owner[reg] = 0; // Do not let think the owner own the rmt
+    // Safe check: do not let multiple allocation
+    rmt.swap_value(preg, 1000);
+    for (uint64_t id: rmt){
+      fatal_if(id == preg, "PREG %d is mapped in RMT\n", id);
+    }
+
     /* pop register from free list */
     fatal_if(!free_list.size(), "No more entry in FL\n");
     // OLD
@@ -232,25 +248,6 @@ class PhysicalRegAllocator : public Named
           fatal_if(id == reg.phys_reg_idx, "PREG %d is already freed\n", id);
         }
         free_list.push_back(reg.phys_reg_idx);
-        /* Invalidate RMT */
-        // TODO : is this mandatory (Could we wait until next realloc)?
-        // fatal_if(rmt[reg] != reg.phys_reg_idx,
-        // "rmt[%s]=%s must be equal to %s",
-        //   reg, rmt[reg], reg.phys_reg_idx);
-
-        // If someone do not have allocated the same ArchReg !
-        if (rmt[reg] == reg.phys_reg_idx){
-          rmt[reg] = 1000;
-        }
-        // Instead of this we may defer the RMT invalidation.
-        // This can be done at allocate. Do do this, it requires
-        // to know the old arch reg.
-        // rmt[reg] = 1000;
-        // rmt_owner[reg] = 0; // Do not let think the owner own the rmt
-        // Safe check: do not let multiple allocation
-        for (uint64_t id: rmt){
-          fatal_if(id == reg.phys_reg_idx, "PREG %d is mapped in RMT\n", id);
-        }
         return true;
       }
     }

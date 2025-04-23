@@ -87,6 +87,18 @@ class BPredUnit : public SimObject
     /** Perform sanity checks after a drain. */
     void drainSanityCheck() const;
 
+
+    uint64_t last_pc_fault = 0;
+    std::unique_ptr<PCStateBase> last_pc_next_fault;
+    bool last_pc_next_fault_taken;
+    bool need_fix_bp = false;
+
+    void set_fix(PCStateBase &pc, PCStateBase &npc, bool taken){
+      last_pc_fault = pc.instAddr();
+      set(last_pc_next_fault, npc);
+      last_pc_next_fault_taken = taken;
+      need_fix_bp = true;
+    }
     void* last_ph;
     /**
      * Predicts whether or not the instruction is a taken branch, and the
@@ -106,7 +118,11 @@ class BPredUnit : public SimObject
      * @param tid The thread id.
      */
     void update(const InstSeqNum &done_sn, ThreadID tid);
-
+    void update_table_only(const InstSeqNum &done_sn, ThreadID tid,
+      bool actuallyTaken, const PCStateBase &target_pc);
+    virtual void update_table_only(ThreadID tid, Addr pc,
+      bool taken, void * &bp_history,
+      Addr target) { fatal("Unimplemented!\n"); };
     /**
      * Squashes all outstanding updates until a given sequence number.
      * @param squashed_sn The sequence number to squash any younger updates up
@@ -340,6 +356,7 @@ class BPredUnit : public SimObject
     };
 
     typedef std::deque<PredictorHistory*> History;
+
 
 
     /**

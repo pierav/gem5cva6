@@ -146,11 +146,13 @@ class Pipeline : public Ticked
   VPDPE &dpe;            /** Delayed Prediction Unit */
   FUPipelines fus;       /** All functional units */
   RegDeadAnayser rda;
+  branch_prediction::BPredUnit &bp;
 
   /* New components */
   SA sa;
   IssueUnit iq;
   Cva6DynInstChunk rob;
+  BlockCommit bc;
 
   MemOrderChecker mdpc;
 
@@ -212,9 +214,11 @@ class Pipeline : public Ticked
       dpe(*new VPDPE(cpu.name() + ".dpe", cpu, p, vp)),
       fus(cpu.name() + ".fus", cpu, p),
       rda(cpu.name(), cpu_, p),
+      bp(*p.branchPred),
       sa(cpu.name() + ".sa", cpu, p),
       iq(cpu.name() + ".iq", cpu, p, fus),
       rob(cpu.name() + ".rob"),
+      bc(cpu),
       mdpc(cpu.name() + "mdpc", cpu),
       plugins(cpu.name(), cpu, p),
       f1ToF2(cpu.name() + ".f1ToF2", "lines"),
@@ -227,7 +231,8 @@ class Pipeline : public Ticked
               IssueToE,
               resolved_branch, // Ex -> Commit and Commit -> Ex
               fus,
-              dpe),
+              dpe,
+              bc),
       issue   (cpu.name() + ".issue", cpu, p,
               dToIssue,
               resolved_branch,

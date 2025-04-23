@@ -151,15 +151,15 @@ void
 Fetch2::updateBranchPrediction(const BranchData &branch){
     if (branch.need_squash){
         if (branch.is_predicted) {
-            branchPredictor.squash(branch.num,
+            cpu.pipeline->bp.squash(branch.num,
                 *branch.target, branch.actually_taken, 0);
         } else {
-            branchPredictor.squash(branch.num, 0);
+            cpu.pipeline->bp.squash(branch.num, 0);
         }
     }
 
     if (branch.is_predicted) {
-        branchPredictor.update(branch.num, 0);
+        cpu.pipeline->bp.update(branch.num, 0);
     }
 }
 
@@ -176,7 +176,7 @@ Fetch2::predictBranch(Cva6DynInstPtr inst, BranchData &branch){
         DPRINTF(Branch, "Trying to predict for inst: %s\n", *inst);
         inst->triedToPredict = true;
 
-        inst->predictedTaken = branchPredictor.predict(
+        inst->predictedTaken = cpu.pipeline->bp.predict(
             si, inst->id.fetchSeqNum, *inst_pc, 0);
 
 

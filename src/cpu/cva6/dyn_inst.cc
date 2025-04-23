@@ -147,6 +147,18 @@ Cva6DynInst::basedump(std::ostream &os) const {
             os << dreq->name();
         }
     }
+    if (triedToPredict && execute_completed){
+        os << "[taken:" << pc_next_taken
+           << " ,pcnext:" << *pc_next;
+
+        bool is_addr_unmatch = *predictedTarget != *pc_next;
+        if (is_addr_unmatch){
+            os << " MISS";
+        } else {
+            os << " HIT";
+        }
+        os << "]";
+    }
   }
   return os;
 }

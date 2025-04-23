@@ -50,6 +50,7 @@ struct BlockCommit
 
   Cva6DynInstChunk fifo;
   ArchRegFile<char> preg_in_flight;
+  ArchRegFile<uint64_t> preg_val;
 
   BlockCommit(Cva6CPU &cpu_) :
     cpu(cpu_),
@@ -78,6 +79,8 @@ struct BlockCommit
   }
 
   void dump();
+  void commitFunctionnal();
+
 };
 
 /** Execute stage. */
@@ -98,12 +101,12 @@ class Execute : public Named
 
     /** Pointer to the value predictor */
     VPDPE &dpe;
+    BlockCommit &bc;
 
     unsigned int commitWidth;
     bool vpFlush;
 
-    BlockCommit bc;
-
+  protected:
     struct ExStats : public statistics::Group
     {
       statistics::Scalar flush;
@@ -147,16 +150,17 @@ class Execute : public Named
         ForwardInstDataPopIntf &inp_,
         BranchData& resolved_branch_,
         FUPipelines &fus_,
-        VPDPE &dpe_) :
+        VPDPE &dpe_,
+        BlockCommit &bc_) :
         Named(name_),
         inp(inp_),
         resolved_branch(resolved_branch_),
         cpu(cpu_),
         fus(fus_),
         dpe(dpe_),
+        bc(bc_),
         commitWidth(params.commitWidth),
         vpFlush(params.vpFlush),
-        bc(cpu_),
         stats(cpu_)
     { }
 

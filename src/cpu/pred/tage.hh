@@ -105,6 +105,8 @@ class TAGE: public BPredUnit
     void update(ThreadID tid, Addr pc, bool taken,
                 void * &bp_history, bool squashed,
                 const StaticInstPtr & inst, Addr target) override;
+    void update_table_only(ThreadID tid, Addr pc, bool taken,
+      void * &bp_history, Addr target) override ;
     virtual void squash(ThreadID tid, void * &bp_history) override;
 };
 

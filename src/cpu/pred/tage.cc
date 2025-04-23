@@ -66,6 +66,27 @@ TAGE::TAGE(const TAGEParams &params) : BPredUnit(params), tage(params.tage)
 {
 }
 
+
+
+// PREDICTOR UPDATE
+void
+TAGE::update_table_only(ThreadID tid, Addr pc, bool taken, void * &bp_history,
+    Addr target)
+{
+    assert(bp_history);
+    TageBranchInfo *bi = static_cast<TageBranchInfo*>(bp_history);
+    TAGEBase::BranchInfo *tage_bi = bi->tageBranchInfo;
+    int nrand = random_mt.random<int>() & 3;
+    if (bi->tageBranchInfo->condBranch){
+        DPRINTF(Tage, "Updating tables ONLY for branch:%lx; taken?:%d\n",
+                pc, taken);
+        // tage->updateStats(taken, bi->tageBranchInfo);
+        tage->condBranchUpdate(tid, pc, taken, tage_bi, nrand,
+                                target, bi->tageBranchInfo->tagePred);
+    }
+}
+
+
 // PREDICTOR UPDATE
 void
 TAGE::update(ThreadID tid, Addr pc, bool taken, void * &bp_history,
@@ -74,7 +95,7 @@ TAGE::update(ThreadID tid, Addr pc, bool taken, void * &bp_history,
     assert(bp_history);
 
     TageBranchInfo *bi = static_cast<TageBranchInfo*>(bp_history);
-    TAGEBase::BranchInfo *tage_bi = bi->tageBranchInfo;
+    TAGEBase::BranchInfo *tagupdatee_bi = bi->tageBranchInfo;
 
     if (squashed) {
         // This restores the global history, then update it

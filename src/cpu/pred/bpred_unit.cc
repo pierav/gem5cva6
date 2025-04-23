@@ -294,6 +294,30 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     }
     stats.targetProvider[tid][hist->targetProvider]++;
 
+
+    /** ----------------------------------------------
+     * Fixer (PR)
+     * -----------------------------------------------
+     *  Fix branch direction and path
+     * */
+    if (need_fix_bp && pc.instAddr() == last_pc_fault){
+        need_fix_bp = false;
+        hist->predTaken = last_pc_next_fault_taken;
+        set(hist->target, last_pc_next_fault);
+        DPRINTF(Branch,
+                "[tid:%i, sn:%llu] PC:%#x FIXED to %s taken:%d\n",
+                tid, seqNum, pc.instAddr(), *hist->target,
+                hist->predTaken);
+    }
+
+
+    DPRINTF(Branch, "%s(tid:%i, sn:%i, PC:%#x, %s) -> taken:%i, target:%s "
+            "provider:%s\n", __func__, tid, seqNum, hist->pc,
+            toString(brType), hist->predTaken, *hist->target,
+            enums::TargetProviderStrings[hist->targetProvider]);
+
+
+
     // The actual prediction is done.
     // For now the BPU assume its correct. The update
     // functions will correct the branch if needed.
@@ -301,12 +325,6 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     // at commit the prediction was correct.
     hist->actuallyTaken = hist->predTaken;
     set(pc, *hist->target);
-
-    DPRINTF(Branch, "%s(tid:%i, sn:%i, PC:%#x, %s) -> taken:%i, target:%s "
-            "provider:%s\n", __func__, tid, seqNum, hist->pc,
-            toString(brType), hist->predTaken, *hist->target,
-            enums::TargetProviderStrings[hist->targetProvider]);
-
 
     /** ----------------------------------------------
      * Speculative history update
@@ -351,6 +369,33 @@ BPredUnit::update(const InstSeqNum &done_sn, ThreadID tid)
                 tid, done_sn, predHist[tid].size());
     }
 }
+
+void
+BPredUnit::update_table_only(const InstSeqNum &done_sn, ThreadID tid,
+    bool actuallyTaken, const PCStateBase &target_pc){
+    // Find hist
+    PredictorHistory* hist = nullptr;
+    for (auto &h: predHist[tid]){
+        if (h->seqNum == done_sn){
+            hist = h;
+            break;
+        }
+    }
+    assert(hist);
+
+    /* Update Predictor tables for cond  */
+    update_table_only(tid,
+        hist->pc,
+        actuallyTaken,
+        hist->bpHistory, // Retrieved history
+        target_pc.instAddr());
+
+    /* Update btb */
+    btb->update(tid, hist->pc, target_pc, hist->type, hist->inst);
+
+    // Update ras ?
+}
+
 
 void
 BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)

@@ -20,6 +20,7 @@
 #include "cpu/cva6/scheduler.hh"
 #include "cpu/cva6/store_set.hh"
 #include "cpu/cva6/vp.hh"
+#include "debug/Branch.hh"
 #include "debug/Cva6Sched.hh"
 #include "debug/Cva6SchedSched.hh"
 
@@ -96,6 +97,7 @@ class SA
       p.renameFreeRegDead, p.renameSpecRelease),
     // oooch(cpu),
     stats(cpu),
+    fixer(cpu),
     rbh(name, cpu, p) { }
 
   public:
@@ -121,36 +123,21 @@ class SA
 
   class fixer_t
   {
+    Cva6CPU& cpu;
     uint64_t last_pc_fault = 0;
     std::unique_ptr<PCStateBase> last_pc_next_fault;
-    enum state_t
-    {
-      IDLE, NEED_FIX_STEP_1, NEED_FIX_STEP_2
-    } state = IDLE;
+    bool last_pc_next_fault_taken;
+    bool need_fix_bp = false;
+    bool need_fix_rb = false;
     public:
-    fixer_t() {}
+    fixer_t(Cva6CPU& cpu_) : cpu(cpu_) {}
 
-    void apply_fix_for(Cva6DynInstPtr &inst, bool fixbp=false){
-      last_pc_fault = inst->pc->instAddr();
-      set(last_pc_next_fault, inst->pc_next);
-      // assert(state == IDLE); // The previous fix must have success
-      state = fixbp ? NEED_FIX_STEP_1 : NEED_FIX_STEP_2;
-    }
-
-    void on_predict(Cva6DynInstPtr &inst){
-      if (state == NEED_FIX_STEP_1 && last_pc_fault == inst->pc->instAddr()){
-        state = NEED_FIX_STEP_2;
-        /* If weed need to */
-        if (!inst->isFault() && inst->staticInst->isControl()){
-          inst->predictedTaken = true;
-          set(inst->predictedTarget, last_pc_next_fault);
-        }
-      }
-    }
-
+    void apply_fix_for(Cva6DynInstPtr &inst,
+      bool fixbp=false, bool dorb=false);
+    void on_predict(Cva6DynInstPtr &inst);
     bool on_schedule_need_rb(Cva6DynInstPtr &inst){
-      if (state == NEED_FIX_STEP_2 && last_pc_fault == inst->pc->instAddr()){
-        state = IDLE;
+      if (need_fix_rb && last_pc_fault == inst->pc->instAddr()){
+        need_fix_rb = false;
         return true;
       }
       return false;
@@ -180,17 +167,17 @@ class SA
       cpt_branch += !inst->isFault() && inst->staticInst->isControl();
       /* Compte triggers based on previous count */
       /* OPTIONAL : TODO: have to be fine tunnet */
-      // bool trig_cpt = cpt_inst == tringinsts;
+      bool trig_cpt = cpt_inst == tringinsts;
       /* MANDATORY : Deadlock otherwise ! */
       bool trig_stores = cpt_stores == tringstores;
       /* OPTIONAL : Avoid strong flushs */
       bool trig_no_hc = !inst->isFault() &&
                         inst->staticInst->isCondCtrl() &&
                         !inst->isHighConf;
-      bool trig_branch = cpt_branch == tringinsts;
+      // bool trig_branch = cpt_branch == tringinsts;
       /* MANDATORY ! */
       bool trig_serial = needSerialise(inst);
-      return trig_branch || trig_stores || trig_no_hc || trig_serial;
+      return trig_cpt || trig_stores || trig_no_hc || trig_serial;
     }
 
     void reset(){

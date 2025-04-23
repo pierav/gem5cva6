@@ -131,6 +131,11 @@ class Cva6DynInstChunk : public Named, public MatchAddrIntf
       chunk.erase(std::find(chunk.begin(), chunk.end(), inst));
     }
 
+    Cva6DynInstPtr pop(){
+      Cva6DynInstPtr ret = chunk.front();
+      chunk.pop_front();
+      return ret;
+    }
     ContainerT::iterator erase(ContainerT::iterator it){
       return chunk.erase(it);
     }

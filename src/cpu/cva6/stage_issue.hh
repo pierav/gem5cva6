@@ -177,6 +177,9 @@ class IssueUnit : public Named
       return scoreboard.getCommitInst(index);
     }
 
+    void pre_commit(Cva6DynInstPtr inst){
+      scoreboard.pre_commit(inst);
+    }
     void commit(Cva6DynInstPtr inst){
       scoreboard.commitInst(inst);
     }

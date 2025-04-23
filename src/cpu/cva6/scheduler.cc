@@ -7,9 +7,43 @@
 
 #include "cpu/cva6/scheduler.hh"
 #include "cpu/cva6/pipeline.hh"
+#include "cpu/cva6/scheduler_handler.hh"
 
 namespace gem5 {
 namespace cva6 {
+
+void
+SA::fixer_t::apply_fix_for(Cva6DynInstPtr &inst, bool fixbp, bool dorb){
+  last_pc_fault = inst->pc->instAddr();
+  // if (fixbp){
+  //   cpu.pipeline->bp.set_fix(*inst->pc,
+  // *inst->pc_next, inst->pc_next_taken);
+  // }
+  set(last_pc_next_fault, inst->pc_next);
+  last_pc_next_fault_taken = inst->pc_next_taken;
+  need_fix_bp = fixbp;
+  need_fix_rb = dorb;
+}
+
+void
+SA::fixer_t::on_predict(Cva6DynInstPtr &inst){
+  // Ignore
+  if (need_fix_bp && last_pc_fault == inst->pc->instAddr()){
+    need_fix_bp = false;
+    /* If weed need to */
+    if (!inst->isFault() && inst->staticInst->isControl()){
+      DPRINTF(Branch, "Fix branch from (taken:%d) %s to (taken:%s) %s\n",
+        inst->predictedTaken, *inst->predictedTarget,
+        last_pc_next_fault_taken, *last_pc_next_fault);
+      if (inst->staticInst->isDirectCtrl()){
+        assert(inst->predictedTaken == last_pc_next_fault_taken);
+        assert(*inst->predictedTarget == *last_pc_next_fault);
+      }
+      inst->predictedTaken = last_pc_next_fault_taken;
+      set(inst->predictedTarget, last_pc_next_fault);
+    }
+  }
+}
 
 bool needSerialise(Cva6DynInstPtr inst){
   if (inst->isFault()) {

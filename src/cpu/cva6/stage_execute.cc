@@ -27,28 +27,35 @@ namespace gem5 {
 namespace cva6 {
 
 void
+BlockCommit::commitFunctionnal(){
+    stats.committed_block_size.sample(fifo.size());
+    stats.committed += fifo.size();
+    DPRINTF(Cva6Commit, "Block Commit FIFO (#%d)\n", fifo.size());
+    while (!fifo.empty()){/* Commit everything */
+        commitInst(cpu, fifo.pop());
+    }
+}
+
+void
 BlockCommit::pre_commit(Cva6DynInstPtr& inst){
     DPRINTF(Cva6Execute, "PRECOMMIT %s (#%d : %s)\n",
         *inst, fifo.size(),
         preg_in_flight.dump_match(true));
     /* Push and increment spec commit pointer */
     fifo.push(inst);
+    cpu.pipeline->sa.commit(inst); /* Post-commit : register release !*/
+    cpu.pipeline->iq.pre_commit(inst);
     if (inst->regs_dst_phy.size()){
         PhysicalReg& reg = inst->regs_dst_phy.front();
         bool inrf = inst->free_reg_at_commit;
         preg_in_flight[reg] = !inrf;
+        preg_val[reg] = reg.value;
     }
     /* Try to push everything */
     if (preg_in_flight.isall(false)){ // All are ready to be commited
-        stats.committed_block_size.sample(fifo.size());
-        stats.committed += fifo.size();
-        /* Commit everything */
-        for (auto& i2: fifo){
-            commitInst(cpu, i2);
-        }
-        /* Reset */
-        clear();
+        commitFunctionnal();
     }
+
 }
 
 void
@@ -200,7 +207,6 @@ bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst){
         */
     }
     cpu.pipeline->iq.commit(inst); /* Post-commit (for stores SQS->SQC)!*/
-    cpu.pipeline->sa.commit(inst); /* Post-commit : register release !*/
     cpu.pipeline->plugins.commit(inst);
     return fault != NoFault;
 }
@@ -313,15 +319,43 @@ Execute::evaluate() {
             assert(bc.empty()); // Check scheduler serialisation
         }
 
+        // Oracle: Early commit
+        if (0){
+            bc.commitFunctionnal();
+        }
+
         if (need_squash && !bc.empty()){ /* Handle flush */
-            // We can't delay the fault as we reach stale point
-            // Annotate the scheduler to RR barrier this fault
-            // Also forward a valid prediction
-            cpu.pipeline->sa.fixer.apply_fix_for(inst);
-            resolved_branch = BranchData::SquashAt(
-                cpu.getContext()->pcState());
-            flush();
-            return;
+            if (0){
+                // Oracle: Late commit
+                bc.commitFunctionnal();
+            } else {
+                if (0){ // Oracle: Late commit and flush in place for nothing
+                    bc.commitFunctionnal();
+                }
+                // We can't delay the fault as we reach stale point
+                // Annotate the scheduler to RR barrier this fault
+                // Also forward a valid prediction
+                if (!inst->isFault() && inst->staticInst->isControl() &&
+                    inst->staticInst->isDirectCtrl()){ // Fix BP
+                    bool actually_taken = inst->pc_next_taken;
+                    std::unique_ptr<PCStateBase> &target = inst->pc_next;
+                    for (int i = 0; i < 4; i++){
+                        cpu.pipeline->bp.update_table_only(
+                            inst->id.fetchSeqNum, 0,
+                            inst->pc_next_taken, *inst->pc_next);
+                    }
+                    /* Force pc next, no barrier */
+                    cpu.pipeline->sa.fixer.apply_fix_for(inst, true, true);
+                } else {
+                    /* Force pc next, barrier */
+                    cpu.pipeline->sa.fixer.apply_fix_for(inst, true, true);
+                }
+
+                resolved_branch = BranchData::SquashAt(
+                    cpu.getContext()->pcState());
+                flush();
+                return;
+            }
         } /* Otherwise take the valid path */
 
         // We can pre-commit the instruction

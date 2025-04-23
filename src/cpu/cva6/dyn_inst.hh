@@ -42,11 +42,14 @@ struct PhysicalReg
   bool is_reg_dead = false;   /* Is this one dead */
   RegId regid;  /* The gem5 internal register identifier */
   /* Value */
-  bool valid = false;       /* Is value valid */
-  bool fromrf = false;      /* Is read from register file */
+  bool valid = false;         /* Is value valid */
+  /* Some metadata */
+  bool fromrf = false;        /* Is read from register file */
+  bool fromrf_unsafe = false; /* Is read from inflight committed  */
   uint64_t value = 0xdeaddeaddeaddead;
   /* Metadata */
   uint64_t producer_id = 0;
+
 
   PhysicalReg() {}
   PhysicalReg(RegId regid_) {
@@ -212,6 +215,17 @@ class ArchRegFile
     }
     return true;
   }
+
+  bool swap_value(T val, T newval){
+    for (int i = 0; i < array.size(); i++){
+      if (array[i] == val){
+        array[i] = newval;
+        return true;
+      }
+    }
+    return false;
+  }
+
   std::string dump_match(T val){
     std::stringstream ss;
     ss << "{ ";

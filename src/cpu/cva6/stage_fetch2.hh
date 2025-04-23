@@ -66,9 +66,6 @@ class Fetch2 : public Named
     /** Output port carrying instructions into Decode */
     ForwardInstDataPushIntf &out;
 
-    /** Branch predictor passed from Python configuration */
-    branch_prediction::BPredUnit &branchPredictor;
-
     /* uOP decoder */
     UDecoder udecoder;
 
@@ -179,7 +176,6 @@ class Fetch2 : public Named
       resolved_branch(resolved_branch_),
       predictionOut(predictionOut_),
       out(out_),
-      branchPredictor(*params.branchPred),
       udecoder(cpu_),
       dpe(dpe_),
       inputBuffer(name + ".inputBuffer", "insts"),
