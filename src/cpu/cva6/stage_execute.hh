@@ -27,6 +27,8 @@ namespace cva6 {
 
 /* Update the arch state */
 bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst);
+bool isASquash(Cva6DynInstPtr inst);
+BranchData getEffectiveBranch(Cva6DynInstPtr inst);
 
 struct BlockCommit
 {
@@ -58,28 +60,20 @@ struct BlockCommit
     fifo("rbc") {}
 
 
-  void clear(){ /* Reset everything */
-    fifo.flush();
-    preg_in_flight.setall(false);
-  }
-
-  void pre_commit(Cva6DynInstPtr& inst);
+  void clear();
+  bool pre_commit(Cva6DynInstPtr& inst);
 
   void flush(){
     stats.lost += fifo.size();
     clear();
   }
 
-  bool canInterrupts(){ // Dont trow committed jobs
-    return fifo.empty();
-  }
-
-  bool empty(){
-    return fifo.empty();
-  }
-
+  // Dont trow committed jobs ?
+  bool canInterrupts(){ return fifo.empty(); }
+  bool empty(){ return fifo.empty(); }
+  uint64_t size() { return fifo.size(); }
   void dump();
-  void commitFunctionnal();
+  bool commitFunctionnal();
 
 };
 

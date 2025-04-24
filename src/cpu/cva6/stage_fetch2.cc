@@ -168,8 +168,10 @@ Fetch2::predictBranch(Cva6DynInstPtr inst, BranchData &branch){
     assert(!inst->predictedTaken);
     StaticInstPtr si = inst->staticInst;
     /* Skip non-control/sys call instructions */
-    if ((si->isControl() || si->isSyscall()) &&
-        !si->isSerializeAfter()){
+    cpu.pipeline->sa.fixer.before_predict(inst);
+
+    if ((si->isControl() || si->isSyscall())
+        /* && !si->isSerializeAfter()*/){
         std::unique_ptr<PCStateBase> inst_pc(inst->pc->clone());
 
         /* Tried to predict */
@@ -200,10 +202,6 @@ Fetch2::predictBranch(Cva6DynInstPtr inst, BranchData &branch){
 
         set(inst->predictedTarget, inst_pc);
 
-        /* For a fixup (Anti deadlock) */
-        cpu.pipeline->sa.fixer.on_predict(inst);
-
-
         if (inst->predictedTaken){
             branch = BranchData(inst->triedToPredict,
                         inst->predictedTaken, // Squash if taken !
@@ -215,6 +213,9 @@ Fetch2::predictBranch(Cva6DynInstPtr inst, BranchData &branch){
     } else {
         DPRINTF(Branch, "Not attempting prediction for inst: %s\n", *inst);
     }
+
+    /* For a fixup (Anti deadlock) */
+    cpu.pipeline->sa.fixer.after_predict(inst);
 }
 
 void

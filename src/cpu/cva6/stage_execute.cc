@@ -11,6 +11,7 @@
 #include "cpu/cva6/exec_context.hh"
 #include "cpu/op_class.hh"
 #include "debug/Branch.hh"
+#include "debug/Cva6BC.hh"
 #include "debug/Cva6Commit.hh"
 #include "debug/Cva6CommitCpt.hh"
 #include "debug/Cva6Execute.hh"
@@ -26,17 +27,24 @@
 namespace gem5 {
 namespace cva6 {
 
-void
+bool
 BlockCommit::commitFunctionnal(){
     stats.committed_block_size.sample(fifo.size());
     stats.committed += fifo.size();
-    DPRINTF(Cva6Commit, "Block Commit FIFO (#%d)\n", fifo.size());
+    DPRINTF(Cva6BC, "Block Commit FIFO (#%d)\n", fifo.size());
     while (!fifo.empty()){/* Commit everything */
-        commitInst(cpu, fifo.pop());
+        Cva6DynInstPtr inst = fifo.pop();
+        DPRINTF(Cva6BC, "Commit %s\n", *inst);
+        bool need_squash = commitInst(cpu, inst);
+        if (need_squash){ // Squash must be the last one
+            assert(fifo.empty());
+            return true;
+        }
     }
+    return false;
 }
 
-void
+bool
 BlockCommit::pre_commit(Cva6DynInstPtr& inst){
     DPRINTF(Cva6Execute, "PRECOMMIT %s (#%d : %s)\n",
         *inst, fifo.size(),
@@ -51,11 +59,21 @@ BlockCommit::pre_commit(Cva6DynInstPtr& inst){
         preg_in_flight[reg] = !inrf;
         preg_val[reg] = reg.value;
     }
-    /* Try to push everything */
+    /* We can commit everything */
     if (preg_in_flight.isall(false)){ // All are ready to be commited
-        commitFunctionnal();
+        return commitFunctionnal();
     }
+    return isASquash(inst);
+}
 
+void
+BlockCommit::clear(){ /* Reset everything */
+    DPRINTF(Cva6BC, "*** Block DROP FIFO (#%d) ***\n", fifo.size());
+    while (!fifo.empty()){
+        Cva6DynInstPtr inst = fifo.pop();
+        DPRINTF(Cva6BC, "DROP   %s\n", *inst);
+    }
+    preg_in_flight.setall(false);
 }
 
 void
@@ -70,44 +88,44 @@ BlockCommit::dump(){
     }
 }
 
-void
-Execute::tryToBranch(Cva6DynInstPtr inst, BranchData &branch){
-    // ThreadContext *thread = cpu.getContext();
-    // const std::unique_ptr<PCStateBase> pc_before(inst->pc->clone());
-    std::unique_ptr<PCStateBase> &target = inst->pc_next;
-
-    InstSeqNum num = inst->isBubble() ? 0 : inst->id.fetchSeqNum;
-    // bool taken_match = inst->pc_next_taken == inst->predictedTaken;
-
-    bool actually_taken = inst->pc_next_taken;
+bool isASquash(Cva6DynInstPtr inst){
+    assert(inst->execute_completed);
     bool is_serialise = !inst->isFault() &&
         inst->isLastOpInInst() &&
         (inst->staticInst->isSerializeAfter() ||
          inst->staticInst->isSquashAfter());
 
     bool is_addr_unmatch = inst->triedToPredict &&
-                          *inst->predictedTarget != *target;
+                          *inst->predictedTarget != *inst->pc_next;
     bool is_fault = inst->isFault();
 
     bool need_squash = is_addr_unmatch ||
                        is_fault ||
                        is_serialise;
+    return need_squash;
+}
 
-    branch = BranchData(
+BranchData getEffectiveBranch(Cva6DynInstPtr inst){
+    return BranchData(
         inst->triedToPredict,
-        need_squash,
-        num,
-        *target,
-        actually_taken);
+        isASquash(inst),
+        inst->id.fetchSeqNum,
+        *inst->pc_next,
+        inst->pc_next_taken);
+}
+void
+Execute::tryToBranch(Cva6DynInstPtr inst, BranchData &branch){
+
+    branch = getEffectiveBranch(inst);
     // Squash at latest valid pc
     branch.setSquashTarget(cpu.getContext()->pcState());
-
 
     DPRINTF(Branch, "tryToBranch : %s\n", branch.dump());
     /* Some stats */
 
-    bool flushbranch = !inst->isFault() && need_squash;
-    stats.flush += need_squash;
+    bool flushbranch = !inst->isFault() && branch.need_squash;
+    stats.flush += branch.need_squash;
+    stats.flush_fault += !flushbranch;
     stats.flush_cond_direct += flushbranch
         && inst->staticInst->isCondCtrl()
         && inst->staticInst->isDirectCtrl();
@@ -120,8 +138,9 @@ Execute::tryToBranch(Cva6DynInstPtr inst, BranchData &branch){
     stats.flush_uncond_indirect += flushbranch
         && inst->staticInst->isUncondCtrl()
         && inst->staticInst->isIndirectCtrl();
-    stats.flush_fault += is_fault || is_serialise;
 
+    bool is_addr_unmatch = inst->triedToPredict &&
+                          *inst->predictedTarget != *inst->pc_next;
     if (!inst->isFault() && inst->staticInst->isCondCtrl()){
         bool match = !is_addr_unmatch;
         bool conf = inst->isHighConf;
@@ -208,7 +227,21 @@ bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst){
     }
     cpu.pipeline->iq.commit(inst); /* Post-commit (for stores SQS->SQC)!*/
     cpu.pipeline->plugins.commit(inst);
-    return fault != NoFault;
+    /* Update BP */
+    BranchData branch = getEffectiveBranch(inst);
+    if (branch.need_squash){
+        if (branch.is_predicted) {
+            cpu.pipeline->bp.squash(branch.num,
+                *branch.target, branch.actually_taken, 0);
+        } else {
+            cpu.pipeline->bp.squash(branch.num, 0);
+        }
+    }
+
+    if (branch.is_predicted) {
+        cpu.pipeline->bp.update(branch.num, 0);
+    }
+    return branch.need_squash;
 }
 
 void
@@ -225,6 +258,7 @@ Execute::evaluate() {
         DPRINTF(Cva6Interrupt, "Invoking interrupt: %s to PC: %s\n",
             interrupt->name(), cpu.getContext()->pcState());
         resolved_branch = BranchData::SquashAt(cpu.getContext()->pcState());
+        cpu.pipeline->sa.fixer.clear_on_it();
         flush();
         return;
     }
@@ -305,18 +339,14 @@ Execute::evaluate() {
             inst->isLastOpInInst() &&
             (inst->staticInst->isSerializeAfter() ||
             inst->staticInst->isSquashAfter());
-        bool is_addr_unmatch = inst->triedToPredict &&
-                            *inst->predictedTarget != *inst->pc_next;
-        bool is_fault = inst->isFault();
-        bool need_squash = is_addr_unmatch ||
-                        is_fault ||
-                        is_serialise;
 
         /* Try to commit */
-        bc.pre_commit(inst); /* Ex CSRW ! */
+        bool need_squash = bc.pre_commit(inst); /* Ex CSRW ! */
 
         if (is_serialise) {
-            assert(bc.empty()); // Check scheduler serialisation
+            // Check scheduler serialisation
+            // Everything must be comitted
+            assert(bc.empty());
         }
 
         // Oracle: Early commit
@@ -324,43 +354,46 @@ Execute::evaluate() {
             bc.commitFunctionnal();
         }
 
-        if (need_squash && !bc.empty()){ /* Handle flush */
-            if (0){
-                // Oracle: Late commit
+        if (need_squash){ /* Handle flush */
+            if (0){ // Oracle: Late commit and flush in place for nothing
                 bc.commitFunctionnal();
-            } else {
-                if (0){ // Oracle: Late commit and flush in place for nothing
-                    bc.commitFunctionnal();
-                }
-                // We can't delay the fault as we reach stale point
-                // Annotate the scheduler to RR barrier this fault
-                // Also forward a valid prediction
-                if (!inst->isFault() && inst->staticInst->isControl() &&
-                    inst->staticInst->isDirectCtrl()){ // Fix BP
-                    bool actually_taken = inst->pc_next_taken;
-                    std::unique_ptr<PCStateBase> &target = inst->pc_next;
-                    for (int i = 0; i < 4; i++){
-                        cpu.pipeline->bp.update_table_only(
-                            inst->id.fetchSeqNum, 0,
-                            inst->pc_next_taken, *inst->pc_next);
-                    }
-                    /* Force pc next, no barrier */
-                    cpu.pipeline->sa.fixer.apply_fix_for(inst, true, true);
-                } else {
-                    /* Force pc next, barrier */
-                    cpu.pipeline->sa.fixer.apply_fix_for(inst, true, true);
-                }
-
-                resolved_branch = BranchData::SquashAt(
-                    cpu.getContext()->pcState());
-                flush();
-                return;
             }
+            if (!bc.empty()){
+                cpu.pipeline->sa.fixer.apply_fix_for(inst,
+                    true, true, bc.size());
+            }
+
+            // // We can't delay the fault as we reach stale point
+            // // Annotate the scheduler to RR barrier this fault
+            // // Also forward a valid prediction
+            // if (!inst->isFault() && inst->staticInst->isControl() &&
+            //     inst->staticInst->isDirectCtrl()){ // Fix BP
+            //     bool actually_taken = inst->pc_next_taken;
+            //     std::unique_ptr<PCStateBase> &target = inst->pc_next;
+            //     // for (int i = 0; i < 4; i++){
+            //     //     cpu.pipeline->bp.update_table_only(
+            //     //         inst->id.fetchSeqNum, 0,
+            //     //         inst->pc_next_taken, *inst->pc_next);
+            //     // }
+            //     /* Force pc next, no barrier */
+            //     // PR: CARE w/o BARRIER : tryToBranch drop hists!
+            // } else {
+            //     /* Force pc next, barrier */
+            //     cpu.pipeline->sa.fixer.apply_fix_for(inst, true, true);
+            // }
+
+            resolved_branch = BranchData::SquashAt(
+                cpu.getContext()->pcState());
+                flush();
+            return;
         } /* Otherwise take the valid path */
 
         // We can pre-commit the instruction
         // commitInst(inst); /* Post-commit */
-        tryToBranch(inst, resolved_branch); /* Pre-commit */
+        // Already done is commitInst !
+        // if (need_squash){ // And not handled by bc
+        //     tryToBranch(inst, resolved_branch); /* POST-commit */
+        // }
 
         bool misspred_value = dpe.commit(inst);
         if (misspred_value){

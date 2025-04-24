@@ -95,7 +95,7 @@ TAGE::update(ThreadID tid, Addr pc, bool taken, void * &bp_history,
     assert(bp_history);
 
     TageBranchInfo *bi = static_cast<TageBranchInfo*>(bp_history);
-    TAGEBase::BranchInfo *tagupdatee_bi = bi->tageBranchInfo;
+    TAGEBase::BranchInfo *tage_bi = bi->tageBranchInfo;
 
     if (squashed) {
         // This restores the global history, then update it
@@ -114,7 +114,7 @@ TAGE::update(ThreadID tid, Addr pc, bool taken, void * &bp_history,
     }
 
     // optional non speculative update of the histories
-    tage->updateHistories(tid, pc, taken, tage_bi, false, inst, target);
+    // tage->updateHistories(tid, pc, taken, tage_bi, false, inst, target);
     delete bi;
     bp_history = nullptr;
 }
@@ -123,6 +123,7 @@ void
 TAGE::squash(ThreadID tid, void * &bp_history)
 {
     TageBranchInfo *bi = static_cast<TageBranchInfo*>(bp_history);
+    tage->restoreHistories(tid, bi->tageBranchInfo);
     DPRINTF(Tage, "Deleting branch info: %lx\n", bi->tageBranchInfo->branchPC);
     delete bi;
     bp_history = nullptr;

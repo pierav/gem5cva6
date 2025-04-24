@@ -125,6 +125,8 @@ class SA
   {
     Cva6CPU& cpu;
     uint64_t last_pc_fault = 0;
+    uint64_t last_deltat;
+    uint64_t cpt_bp, cpt_rb;
     std::unique_ptr<PCStateBase> last_pc_next_fault;
     bool last_pc_next_fault_taken;
     bool need_fix_bp = false;
@@ -133,15 +135,17 @@ class SA
     fixer_t(Cva6CPU& cpu_) : cpu(cpu_) {}
 
     void apply_fix_for(Cva6DynInstPtr &inst,
-      bool fixbp=false, bool dorb=false);
-    void on_predict(Cva6DynInstPtr &inst);
-    bool on_schedule_need_rb(Cva6DynInstPtr &inst){
-      if (need_fix_rb && last_pc_fault == inst->pc->instAddr()){
-        need_fix_rb = false;
-        return true;
-      }
-      return false;
+      bool fixbp, bool dorb, uint64_t deltat);
+    void before_predict(Cva6DynInstPtr &inst);
+    void after_predict(Cva6DynInstPtr &inst);
+    bool on_schedule_need_rb(Cva6DynInstPtr &inst);
+
+    void clear_on_it(){
+      need_fix_rb = false;
+      need_fix_bp = false;
+      last_pc_fault = false;
     }
+
   } fixer;
 
   class RegBarrierhandler
@@ -160,6 +164,10 @@ class SA
       tringstores(p.lsuSQCWidth) /* CARE HERE THE SQ SIZE !*/
       {}
 
+    void commit(Cva6DynInstPtr& inst){
+
+    }
+
     bool on_push_need_rb(Cva6DynInstPtr& inst){
       /* Compute new scores */
       cpt_inst += 1;
@@ -177,7 +185,7 @@ class SA
       // bool trig_branch = cpt_branch == tringinsts;
       /* MANDATORY ! */
       bool trig_serial = needSerialise(inst);
-      return trig_cpt || trig_stores || trig_no_hc || trig_serial;
+      return trig_cpt || trig_stores || trig_serial || (cpt_branch==2);
     }
 
     void reset(){
@@ -234,6 +242,7 @@ class SA
 
   void commit(Cva6DynInstPtr inst){
     regalloc.commit(inst);
+    rbh.commit(inst);
     // oooch.commit(inst); /* Must be after regalloc commit ! */
   }
 

@@ -367,7 +367,7 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
 
     if (cond_branch) {
         // TAGE prediction
-
+        dumptHist();
         calculateIndicesAndTags(tid, pc, bi);
 
         bi->bimodalIndex = bindex(pc);
@@ -393,7 +393,7 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
             }
         }
         for (int i = nHistoryTables; i > 0; i--) {
-            DPRINTF(Tage, " -- table[%d] %s (%d=?%d) : ctr=%d\n",
+            DPRINTF(Tage, " -- table[%d][%d] %s (%d=?%d) : ctr=%d\n",
                 i, tableIndices[i],
                 gtable[i][tableIndices[i]].tag == tableTags[i] ?
                     "HIT" : "MISS",
@@ -408,7 +408,7 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
         if (bi->altBank){
              DPRINTF(Tage, "-- predict ALT : (%d,%d) : cpt:%d\n",
                 bi->altBank, bi->altBankIndex,
-                gtable[bi->altBank][tableIndices[bi->altBankIndex]].ctr);
+                gtable[bi->altBank][tableIndices[bi->altBank]].ctr);
         }
         DPRINTF(Tage, "-- predict BIM : (%d) : taken:%d\n",
                        bi->bimodalIndex, getBimodePred(pc, bi));
@@ -431,6 +431,12 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
             //if the entry is recognized as a newly allocated entry and
             //useAltPredForNewlyAllocated is positive use the alternate
             //prediction
+            DPRINTF(Tage, "useAltPredForNewlyAllocated[%d]=%d"
+                "bi->pseudoNewAlloc=%d\n",
+                getUseAltIdx(bi, branch_pc),
+                useAltPredForNewlyAllocated[getUseAltIdx(bi, branch_pc)],
+                 bi->pseudoNewAlloc);
+
             if ((useAltPredForNewlyAllocated[getUseAltIdx(bi, branch_pc)] < 0)
                 || ! bi->pseudoNewAlloc) {
                 bi->tagePred = bi->longestMatchPred;
@@ -645,18 +651,23 @@ TAGEBase::updateHistories(ThreadID tid, Addr branch_pc, bool taken,
         return;
     }
     ThreadHistory& tHist = threadHistory[tid];
-    //  UPDATE HISTORIES
+
+    // First, save things
+    if (speculative) {
+        bi->ptGhist = tHist.ptGhist;
+        bi->pathHist = tHist.pathHist;
+        // DPRINTF(Tage,"Saving phist : 0x%lx, ptGHist 0x%lx\n",
+        //     bi->pathHist, bi->ptGhist);
+        bi->useAltOnNA = useAltPredForNewlyAllocated[0];
+    }
+
+    // Then, update things
     bool pathbit = ((branch_pc >> instShiftAmt) & 1);
     //on a squash, return pointers to this and recompute indices.
     //update user history
     updateGHist(tHist.gHist, taken, tHist.globalHistory, tHist.ptGhist);
     tHist.pathHist = (tHist.pathHist << 1) + pathbit;
     tHist.pathHist = (tHist.pathHist & ((1ULL << pathHistBits) - 1));
-
-    if (speculative) {
-        bi->ptGhist = tHist.ptGhist;
-        bi->pathHist = tHist.pathHist;
-    }
 
     //prepare next index and tag computations for user branchs
     for (int i = 1; i <= nHistoryTables; i++)
@@ -692,7 +703,16 @@ TAGEBase::squash(ThreadID tid, bool taken, TAGEBase::BranchInfo *bi,
     tHist.pathHist = bi->pathHist;
     tHist.ptGhist = bi->ptGhist;
     tHist.gHist = &(tHist.globalHistory[tHist.ptGhist]);
-    tHist.gHist[0] = (taken ? 1 : 0);
+
+    /* We have to shift by one ! */
+    updateGHist(tHist.gHist, taken, tHist.globalHistory, tHist.ptGhist);
+    bool pathbit = ((bi->branchPC >> instShiftAmt) & 1);
+    tHist.pathHist = (tHist.pathHist << 1) + pathbit;
+    tHist.pathHist = (tHist.pathHist & ((1ULL << pathHistBits) - 1));
+
+    // As we do not do the shift before !
+    // tHist.gHist[0] = (taken ? 1 : 0);
+
     for (int i = 1; i <= nHistoryTables; i++) {
         tHist.computeIndices[i].comp = bi->ci[i];
         tHist.computeTags[0][i].comp = bi->ct0[i];
@@ -700,6 +720,45 @@ TAGEBase::squash(ThreadID tid, bool taken, TAGEBase::BranchInfo *bi,
         tHist.computeIndices[i].update(tHist.gHist);
         tHist.computeTags[0][i].update(tHist.gHist);
         tHist.computeTags[1][i].update(tHist.gHist);
+    }
+}
+
+void
+TAGEBase::restoreHistories(ThreadID tid, TAGEBase::BranchInfo *bi)
+{
+    ThreadHistory& tHist = threadHistory[tid];
+    DPRINTF(Tage, "Restoring branch info: %lx; PathHistory:%x, "
+        "pointer:%d\n", bi->branchPC, bi->pathHist, bi->ptGhist);
+    tHist.pathHist = bi->pathHist;
+    tHist.ptGhist = bi->ptGhist;
+    tHist.gHist = &(tHist.globalHistory[tHist.ptGhist]);
+    for (int i = 1; i <= nHistoryTables; i++) {
+        tHist.computeIndices[i].comp = bi->ci[i];
+        tHist.computeTags[0][i].comp = bi->ct0[i];
+        tHist.computeTags[1][i].comp = bi->ct1[i];
+        // DPRINTF(Tage, "Restoring %i\n", i);
+        // DPRINTF(Tage, "tHist.computeIndices[%i].comp : 0x%lx\n",
+        //     i, tHist.computeIndices[i].comp);
+        // DPRINTF(Tage, "tHist.computeTags[0][%i].comp : 0x%lx\n",
+        //     i, tHist.computeTags[0][i].comp);
+        // DPRINTF(Tage, "tHist.computeTags[1][%i].comp : 0x%lx\n",
+        //     i,  tHist.computeTags[1][i].comp);
+    }
+    useAltPredForNewlyAllocated[0] = bi->useAltOnNA;
+}
+
+void
+TAGEBase::dumptHist(){
+    DPRINTF(Tage, "DUMP thist\n");
+    ThreadHistory& tHist = threadHistory[0];
+    DPRINTF(Tage, "PathHistory:%x pointer:%d\n",
+        tHist.pathHist,  tHist.ptGhist);
+     for (int i = 1; i <= nHistoryTables; i++) {
+        DPRINTF(Tage, "Restoring %i : cI=%lx cT0=%lx cT1=%lx\n", i,
+            tHist.computeIndices[i].comp,
+            tHist.computeTags[0][i].comp,
+            tHist.computeTags[1][i].comp
+        );
     }
 }
 

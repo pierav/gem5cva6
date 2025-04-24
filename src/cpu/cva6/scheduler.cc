@@ -13,36 +13,88 @@ namespace gem5 {
 namespace cva6 {
 
 void
-SA::fixer_t::apply_fix_for(Cva6DynInstPtr &inst, bool fixbp, bool dorb){
+SA::fixer_t::apply_fix_for(Cva6DynInstPtr &inst, bool fixbp, bool dorb,
+  uint64_t deltat){
   last_pc_fault = inst->pc->instAddr();
-  // if (fixbp){
-  //   cpu.pipeline->bp.set_fix(*inst->pc,
-  // *inst->pc_next, inst->pc_next_taken);
-  // }
+  last_deltat = deltat;
+  if (fixbp){
+
+  }
   set(last_pc_next_fault, inst->pc_next);
   last_pc_next_fault_taken = inst->pc_next_taken;
   need_fix_bp = fixbp;
   need_fix_rb = dorb;
+  cpt_bp = 0;
+  cpt_rb = 0;
 }
 
 void
-SA::fixer_t::on_predict(Cva6DynInstPtr &inst){
-  // Ignore
-  if (need_fix_bp && last_pc_fault == inst->pc->instAddr()){
-    need_fix_bp = false;
-    /* If weed need to */
-    if (!inst->isFault() && inst->staticInst->isControl()){
-      DPRINTF(Branch, "Fix branch from (taken:%d) %s to (taken:%s) %s\n",
-        inst->predictedTaken, *inst->predictedTarget,
-        last_pc_next_fault_taken, *last_pc_next_fault);
-      if (inst->staticInst->isDirectCtrl()){
-        assert(inst->predictedTaken == last_pc_next_fault_taken);
-        assert(*inst->predictedTarget == *last_pc_next_fault);
-      }
+SA::fixer_t::before_predict(Cva6DynInstPtr &inst){
+  /* Lets check the trigger */
+  if (!need_fix_bp){
+    return;
+  }
+  cpt_bp++;
+  bool pc_match = last_pc_fault == inst->pc->instAddr();
+  bool cpt_match = cpt_bp == last_deltat;
+  if (cpt_match && pc_match){
+    // !!! NOT ALWAYS THE SAME PATH
+    // assert(pc_match); // debug  (Must be on the same path)
+    if (!inst->isFault() && (inst->staticInst->isControl() ||
+                            inst->staticInst->isSyscall())){
+      // In case of branch, tell the BP to fix it.
+      // This is mandatory to keep a valid GHR
+      cpu.pipeline->bp.set_fix(*inst->pc,
+        *last_pc_next_fault, last_pc_next_fault_taken);
+    } else {
+      // Fix it ourself ?
       inst->predictedTaken = last_pc_next_fault_taken;
       set(inst->predictedTarget, last_pc_next_fault);
     }
+  } else {
+    if (pc_match){ // Old false positive
+      // warn("False positive trigerred!\n");
+    }
   }
+}
+
+void
+SA::fixer_t::after_predict(Cva6DynInstPtr &inst){
+  // Ignore
+  if (!need_fix_bp){
+    return;
+  }
+  bool cpt_match = cpt_bp == last_deltat;
+  if (cpt_match){
+    need_fix_bp = false;
+    /* Check fix */
+    if (!inst->isFault() && inst->staticInst->isControl()){
+      // assert(inst->predictedTaken == last_pc_next_fault_taken);
+      // assert(*inst->predictedTarget == *last_pc_next_fault);
+      // DPRINTF(Branch, "Fix branch from (taken:%d) %s to (taken:%s) %s\n",
+      //   inst->predictedTaken, *inst->predictedTarget,
+      //   last_pc_next_fault_taken, *last_pc_next_fault);
+      // if (inst->staticInst->isDirectCtrl()){
+      //   assert(inst->predictedTaken == last_pc_next_fault_taken);
+      //   assert(*inst->predictedTarget == *last_pc_next_fault);
+      // }
+    }
+  }
+}
+
+bool
+SA::fixer_t::on_schedule_need_rb(Cva6DynInstPtr &inst){
+  if (!need_fix_rb){
+    return false;
+  }
+  cpt_rb++;
+  bool cpt_match = cpt_rb == last_deltat;
+  if (cpt_match){
+    need_fix_rb = false;
+    // assert(last_pc_fault == inst->pc->instAddr());
+    return true;
+  }
+  return false;
 }
 
 bool needSerialise(Cva6DynInstPtr inst){

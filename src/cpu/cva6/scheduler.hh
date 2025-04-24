@@ -371,7 +371,11 @@ class BaseScheduler
   }
   virtual bool canRenameDest(Cva6DynInstPtr &inst,
     std::deque<uint64_t> &FL, uint64_t &preg){
-    return true; /* Default: ok */
+    if (FL.size()){ // Rename to the first
+      preg = FL.front();
+      return true;
+    }
+    return false; /* Cannot rename */
   }
 };
 

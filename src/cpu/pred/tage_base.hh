@@ -157,6 +157,7 @@ class TAGEBase : public SimObject
 
         // for stats purposes
         unsigned provider;
+        int8_t useAltOnNA=0;
 
         BranchInfo(const TAGEBase &tage)
             : pathHist(0), ptGhist(0),
@@ -313,6 +314,9 @@ class TAGEBase : public SimObject
     virtual void squash(
         ThreadID tid, bool taken, BranchInfo *bi, Addr target);
 
+
+    void dumptHist();
+    virtual void restoreHistories(ThreadID tid, BranchInfo *bi);
     /**
      * Update TAGE for conditional branches.
      * @param branch_pc The unshifted branch PC.
@@ -460,6 +464,7 @@ class TAGEBase : public SimObject
         // Speculative folded histories.
         FoldedHistory *computeIndices;
         FoldedHistory *computeTags[2];
+
     };
 
     std::vector<ThreadHistory> threadHistory;

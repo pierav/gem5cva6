@@ -72,6 +72,9 @@ if env['CONF']['BUILD_ISA']:
     DebugFlag("Cva6Rename", "Register renamming")
 
     DebugFlag('Cva6Partition', 'Instruction BB sub k1 partition')
+
+    DebugFlag('Cva6BC', 'BlockCommit events')
+
     CompoundFlag('Cva6Lambda', ['Cva6LambdaCommit',
                                 'Cva6LambdaLearn',
                                 'Cva6LambdaDump'])
@@ -88,5 +91,6 @@ if env['CONF']['BUILD_ISA']:
                           'Cva6Minicache',
                           'Cva6VP',
                           'Cva6Plugin',
-                          'Cva6Rename'])
+                          'Cva6Rename',
+                          'Cva6BC'])
 

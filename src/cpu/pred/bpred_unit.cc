@@ -300,7 +300,8 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
      * -----------------------------------------------
      *  Fix branch direction and path
      * */
-    if (need_fix_bp && pc.instAddr() == last_pc_fault){
+    if (need_fix_bp){
+        assert(pc.instAddr() == last_pc_fault);
         need_fix_bp = false;
         hist->predTaken = last_pc_next_fault_taken;
         set(hist->target, last_pc_next_fault);
