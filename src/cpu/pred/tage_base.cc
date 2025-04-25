@@ -431,7 +431,7 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
             //if the entry is recognized as a newly allocated entry and
             //useAltPredForNewlyAllocated is positive use the alternate
             //prediction
-            DPRINTF(Tage, "useAltPredForNewlyAllocated[%d]=%d"
+            DPRINTF(Tage, "useAltPredForNewlyAllocated[%d]=%d "
                 "bi->pseudoNewAlloc=%d\n",
                 getUseAltIdx(bi, branch_pc),
                 useAltPredForNewlyAllocated[getUseAltIdx(bi, branch_pc)],

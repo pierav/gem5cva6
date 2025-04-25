@@ -185,7 +185,7 @@ class SA
       // bool trig_branch = cpt_branch == tringinsts;
       /* MANDATORY ! */
       bool trig_serial = needSerialise(inst);
-      return trig_cpt || trig_stores || trig_serial || (cpt_branch==2);
+      return trig_cpt || trig_stores || trig_serial || (cpt_branch);
     }
 
     void reset(){

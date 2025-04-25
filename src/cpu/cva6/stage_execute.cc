@@ -36,6 +36,7 @@ BlockCommit::commitFunctionnal(){
         Cva6DynInstPtr inst = fifo.pop();
         DPRINTF(Cva6BC, "Commit %s\n", *inst);
         bool need_squash = commitInst(cpu, inst);
+        // cpu.pipeline->sa.commit(inst); /* Post-commit : register release !*/
         if (need_squash){ // Squash must be the last one
             assert(fifo.empty());
             return true;
