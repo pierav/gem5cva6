@@ -90,7 +90,7 @@ class MPP_TAGE : public TAGEBase
     void handleUReset() override;
     void resetUctr(uint8_t &u) override;
     int bindex(Addr pc_in) const override;
-    bool isHighConfidence(TAGEBase::BranchInfo *bi) const override;
+    // bool isHighConfidence(TAGEBase::BranchInfo *bi) const override;
 
     unsigned getUseAltIdx(TAGEBase::BranchInfo* bi, Addr branch_pc) override;
     void adjustAlloc(bool & alloc, bool taken, bool pred_taken) override;

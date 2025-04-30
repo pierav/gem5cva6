@@ -71,14 +71,6 @@ class TAGEBase : public SimObject
   protected:
     // Prediction Structures
 
-    // Tage Entry
-    struct TageEntry
-    {
-        int8_t ctr;
-        uint16_t tag;
-        uint8_t u;
-        TageEntry() : ctr(0), tag(0), u(0) { }
-    };
 
     // Folded History Table - compressed history
     // to mix with instruction PC to index partially
@@ -438,9 +430,58 @@ class TAGEBase : public SimObject
     std::vector<unsigned> tagTableTagWidths;
     std::vector<int> logTagTableSizes;
 
-    std::vector<bool> btablePrediction;
-    std::vector<bool> btableHysteresis;
-    TageEntry **gtable;
+    // TODO logRatioBiModalHystEntries
+    struct BimEntry
+    {
+        uint8_t ctr;
+        void update(bool taken){
+            if (taken) {
+                if (ctr < 3)
+                    ctr++;
+            } else if (ctr > 0) {
+                ctr--;
+            }
+        }
+        bool dir() const {
+            return ctr >> 1;
+        }
+        bool isHc() const {
+            return ctr == 0 || ctr == 3;
+        }
+    };
+    std::vector<BimEntry> bim;
+
+    // Tage Entry
+    struct TageEntry
+    {
+        unsigned nbits;
+        TageEntry(unsigned size) : nbits(size) {}
+        int8_t ctr = 0;
+        uint16_t tag = 0;
+        uint8_t u = 0;
+        void update(bool taken){
+            if (taken) {
+                if (ctr < ((1 << (nbits - 1)) - 1))
+                    ctr++;
+            } else {
+                if (ctr > -(1 << (nbits - 1)))
+                    ctr--;
+            }
+        }
+        bool dir() const {
+            return ctr >= 0;
+        }
+
+        bool isHc() const {
+            return abs(2 * ctr + 1) == ((1 << nbits) -1);
+        }
+
+        bool isLc() const {
+            return abs(2 * ctr + 1) <= 1;
+        }
+    };
+    std::vector<std::vector<TageEntry> >gtable;
+    // TageEntry **gtable;
 
     // Keep per-thread histories to
     // support SMT.

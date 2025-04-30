@@ -38,11 +38,16 @@ struct BlockCommit
     statistics::Scalar lost;
     statistics::Scalar committed;
     statistics::Distribution committed_block_size;
+    statistics::Scalar regwrite;
+    statistics::Scalar regwriteeff;
+
     Stats(Cva6CPU &cpu) :
       statistics::Group(&cpu, "BC"),
       ADD_STAT(lost, ""),
       ADD_STAT(committed, ""),
-      ADD_STAT(committed_block_size, "")
+      ADD_STAT(committed_block_size, ""),
+      ADD_STAT(regwrite, ""),
+      ADD_STAT(regwriteeff, "")
     {
       committed_block_size
         .init(1,64,1)
@@ -58,7 +63,6 @@ struct BlockCommit
     cpu(cpu_),
     stats(cpu_),
     fifo("rbc") {}
-
 
   void clear();
   bool pre_commit(Cva6DynInstPtr& inst);
@@ -97,8 +101,10 @@ class Execute : public Named
     VPDPE &dpe;
     BlockCommit &bc;
 
+    // Some config
     unsigned int commitWidth;
     bool vpFlush;
+    bool oracleEarlyCommit = false;
 
   protected:
     struct ExStats : public statistics::Group
@@ -109,11 +115,6 @@ class Execute : public Named
       statistics::Scalar flush_uncond_direct;
       statistics::Scalar flush_uncond_indirect;
       statistics::Scalar flush_fault;
-
-      statistics::Scalar ConfMatch;
-      statistics::Scalar NoConfNoMatch;
-      statistics::Scalar ConfNoMatch;
-      statistics::Scalar NoConfMatch;
       ExStats(Cva6CPU &cpu) :
         statistics::Group(&cpu, "exec"),
         ADD_STAT(flush, ""),
@@ -121,11 +122,7 @@ class Execute : public Named
         ADD_STAT(flush_cond_indirect, ""),
         ADD_STAT(flush_uncond_direct, ""),
         ADD_STAT(flush_uncond_indirect, ""),
-        ADD_STAT(flush_fault, ""),
-        ADD_STAT(ConfMatch, ""),
-        ADD_STAT(NoConfNoMatch, ""),
-        ADD_STAT(ConfNoMatch, ""),
-        ADD_STAT(NoConfMatch, "") {  }
+        ADD_STAT(flush_fault, "") {  }
     } stats;
   protected:
 
@@ -155,6 +152,7 @@ class Execute : public Named
         bc(bc_),
         commitWidth(params.commitWidth),
         vpFlush(params.vpFlush),
+        oracleEarlyCommit(params.oracleEarlyCommit),
         stats(cpu_)
     { }
 

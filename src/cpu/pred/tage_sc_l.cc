@@ -119,22 +119,23 @@ TAGE_SC_L_TAGE::calculateParameters()
     }
 }
 
-void
-TAGE_SC_L_TAGE::buildTageTables()
-{
-    // Trick! We only allocate entries for tables 1 and firstLongTagTable and
-    // make the other tables point to these allocated entries
+// void
+// TAGE_SC_L_TAGE::buildTageTables()
+// {
+//     // Trick! We only allocate entries for tables 1 and
+//     // firstLongTagTable and
+//     // make the other tables point to these allocated entries
 
-    gtable[1] = new TageEntry[shortTagsTageFactor * (1 << logTagTableSize)];
-    gtable[firstLongTagTable] =
-        new TageEntry[longTagsTageFactor * (1 << logTagTableSize)];
-    for (int i = 2; i < firstLongTagTable; ++i) {
-        gtable[i] = gtable[1];
-    }
-    for (int i = firstLongTagTable + 1; i <= nHistoryTables; ++i) {
-        gtable[i] = gtable[firstLongTagTable];
-    }
-}
+//     gtable[1] = new TageEntry[shortTagsTageFactor * (1 << logTagTableSize)];
+//     gtable[firstLongTagTable] =
+//         new TageEntry[longTagsTageFactor * (1 << logTagTableSize)];
+//     for (int i = 2; i < firstLongTagTable; ++i) {
+//         gtable[i] = gtable[1];
+//     }
+//     for (int i = firstLongTagTable + 1; i <= nHistoryTables; ++i) {
+//         gtable[i] = gtable[firstLongTagTable];
+//     }
+// }
 
 void
 TAGE_SC_L_TAGE::calculateIndicesAndTags(
@@ -348,6 +349,7 @@ TAGE_SC_L_TAGE::handleUReset()
     }
 }
 
+#if 0
 bool
 TAGE_SC_L_TAGE::getBimodePred(Addr pc, TAGEBase::BranchInfo* tage_bi) const
 {
@@ -363,6 +365,7 @@ TAGE_SC_L_TAGE::getBimodePred(Addr pc, TAGEBase::BranchInfo* tage_bi) const
     bi->medConf = false;
     return TAGEBase::getBimodePred(pc, tage_bi);
 }
+#endif
 
 void
 TAGE_SC_L_TAGE::extraAltCalc(TAGEBase::BranchInfo* bi)

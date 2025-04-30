@@ -393,6 +393,7 @@ class Cva6DynInst : public RefCounted
 
     /************ Execute stage ************/
     bool execute_completed = false;
+    bool ex_request_squash = false;
     /** Destination registers values */
     std::vector<PhysicalReg> regs_dst_phy;
     std::vector<PhysicalReg> regs_src_phy;
@@ -560,6 +561,23 @@ class Cva6DynInst : public RefCounted
       // }
       assert(!((fault != NoFault) && (fault_ex != NoFault)));
       return fault != NoFault || fault_ex != NoFault;
+    }
+
+    bool isASquash(){
+      assert(execute_completed);
+      bool is_serialise = !isFault() &&
+          isLastOpInInst() &&
+          (staticInst->isSerializeAfter() ||
+            staticInst->isSquashAfter());
+
+      bool is_addr_unmatch = triedToPredict &&
+                            *predictedTarget != *pc_next;
+      bool is_fault = isFault();
+
+      bool need_squash = is_addr_unmatch ||
+                          is_fault ||
+                          is_serialise;
+      return need_squash;
     }
 
     void setFaultFrontend(Fault fault_){

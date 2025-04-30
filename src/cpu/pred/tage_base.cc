@@ -130,16 +130,13 @@ TAGEBase::init()
         history.computeIndices = new FoldedHistory[nHistoryTables+1];
         history.computeTags[0] = new FoldedHistory[nHistoryTables+1];
         history.computeTags[1] = new FoldedHistory[nHistoryTables+1];
-
         initFoldedHistories(history);
     }
 
     const uint64_t bimodalTableSize = 1ULL << logTagTableSizes[0];
-    btablePrediction.resize(bimodalTableSize, false);
-    btableHysteresis.resize(bimodalTableSize >> logRatioBiModalHystEntries,
-                            true);
+    bim.resize(bimodalTableSize);
 
-    gtable = new TageEntry*[nHistoryTables + 1];
+    // gtable = new TageEntry*[nHistoryTables + 1];
     buildTageTables();
 
     tableIndices = new int [nHistoryTables+1];
@@ -165,8 +162,15 @@ TAGEBase::initFoldedHistories(ThreadHistory & history)
 void
 TAGEBase::buildTageTables()
 {
+    gtable.resize(nHistoryTables+1);
     for (int i = 1; i <= nHistoryTables; i++) {
-        gtable[i] = new TageEntry[1<<(logTagTableSizes[i])];
+        gtable[i].resize(1<<(logTagTableSizes[i]),
+            TageEntry(tagTableCounterBits));
+        // size_t size = 1<<(logTagTableSizes[i]);
+        // gtable[i] = new TageEntry[size];
+        // for (int j = 0; j < size; j++){
+        //     gtable[i][j].nbits = tagTableCounterBits;
+        // }
     }
 }
 
@@ -255,6 +259,7 @@ TAGEBase::gtag(ThreadID tid, Addr pc, int bank) const
 }
 
 
+
 // Up-down saturating counter
 template<typename T>
 void
@@ -292,7 +297,7 @@ TAGEBase::unsignedCtrUpdate(uint8_t & ctr, bool up, unsigned nbits)
 bool
 TAGEBase::getBimodePred(Addr pc, BranchInfo* bi) const
 {
-    return btablePrediction[bi->bimodalIndex];
+    return bim[bi->bimodalIndex].dir();
 }
 
 
@@ -301,19 +306,9 @@ TAGEBase::getBimodePred(Addr pc, BranchInfo* bi) const
 void
 TAGEBase::baseUpdate(Addr pc, bool taken, BranchInfo* bi)
 {
-    int inter = (btablePrediction[bi->bimodalIndex] << 1)
-        + btableHysteresis[bi->bimodalIndex >> logRatioBiModalHystEntries];
-    if (taken) {
-        if (inter < 3)
-            inter++;
-    } else if (inter > 0) {
-        inter--;
-    }
-    const bool pred = inter >> 1;
-    const bool hyst = inter & 1;
-    btablePrediction[bi->bimodalIndex] = pred;
-    btableHysteresis[bi->bimodalIndex >> logRatioBiModalHystEntries] = hyst;
-    DPRINTF(Tage, "Updating branch %lx, pred:%d, hyst:%d\n", pc, pred, hyst);
+    bim[bi->bimodalIndex].update(taken);
+    DPRINTF(Tage, "Updating branch %lx, newctr:%d\n",
+        pc, bim[bi->bimodalIndex].ctr);
 }
 
 // shifting the global history:  we manage the history in a big table in order
@@ -417,16 +412,14 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
         if (bi->hitBank > 0) {
             if (bi->altBank > 0) {
                 bi->altTaken =
-                    gtable[bi->altBank][tableIndices[bi->altBank]].ctr >= 0;
+                    gtable[bi->altBank][tableIndices[bi->altBank]].dir();
                 extraAltCalc(bi);
             }else {
                 bi->altTaken = getBimodePred(pc, bi);
             }
 
-            bi->longestMatchPred =
-                gtable[bi->hitBank][tableIndices[bi->hitBank]].ctr >= 0;
-            bi->pseudoNewAlloc =
-                abs(2 * gtable[bi->hitBank][bi->hitBankIndex].ctr + 1) <= 1;
+            bi->longestMatchPred = gtable[bi->hitBank][bi->hitBankIndex].dir();
+            bi->pseudoNewAlloc = gtable[bi->hitBank][bi->hitBankIndex].isLc();
 
             //if the entry is recognized as a newly allocated entry and
             //useAltPredForNewlyAllocated is positive use the alternate
@@ -456,19 +449,11 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
 
         /* Compute high conf */
         if (bi->provider == BIMODAL_ONLY || bi->provider == BIMODAL_ALT_MATCH){
-            int bim = (btablePrediction[bi->bimodalIndex] << 1)
-            + btableHysteresis[bi->bimodalIndex >> logRatioBiModalHystEntries];
-            high_conf = (bim == 0) || (bim == 3);
+            high_conf = bim[bi->bimodalIndex].isHc();
         } else {
             int selBank = bi->provider == TAGE_LONGEST_MATCH ?
                           bi->hitBank : bi->altBank;
-            uint8_t ctr = gtable[selBank][tableIndices[selBank]].ctr;
-            if ((ctr == ((1 << (tagTableCounterBits - 1)) - 1)) ||
-                (ctr == -(1 << (tagTableCounterBits - 1)))){
-                high_conf = true;
-            } else {
-                high_conf = false;
-            }
+            high_conf = gtable[selBank][tableIndices[selBank]].isHc();
         }
 
         static const char* strs[] = {
@@ -615,14 +600,14 @@ TAGEBase::handleTAGEUpdate(Addr branch_pc, bool taken, BranchInfo* bi)
                       "for branch %lx (oldctr:%d)\n",
                 bi->hitBank, bi->hitBankIndex, branch_pc,
                 gtable[bi->hitBank][bi->hitBankIndex].ctr);
-        ctrUpdate(gtable[bi->hitBank][bi->hitBankIndex].ctr, taken,
-                  tagTableCounterBits);
+        gtable[bi->hitBank][bi->hitBankIndex].update(taken);
+
         // if the provider entry is not certified to be useful also update
         // the alternate prediction
         if (gtable[bi->hitBank][bi->hitBankIndex].u == 0) {
             if (bi->altBank > 0) {
-                ctrUpdate(gtable[bi->altBank][bi->altBankIndex].ctr, taken,
-                          tagTableCounterBits);
+                gtable[bi->altBank][bi->altBankIndex].update(taken);
+
                 DPRINTF(Tage, "Updating tag table entry (%d,%d) for"
                         " branch %lx\n", bi->hitBank, bi->hitBankIndex,
                         branch_pc);

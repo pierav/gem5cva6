@@ -285,6 +285,46 @@ class PluginMemConst : public Plugin
 
 };
 
+class PluginTageHC : public Plugin
+{
+  protected:
+  struct Stats : public statistics::Group
+  {
+      statistics::Scalar ConfMatch;
+      statistics::Scalar NoConfNoMatch;
+      statistics::Scalar ConfNoMatch;
+      statistics::Scalar NoConfMatch;
+      Stats(Cva6CPU &cpu) :
+        statistics::Group(&cpu, "tagehc"),
+        ADD_STAT(ConfMatch, ""),
+        ADD_STAT(NoConfNoMatch, ""),
+        ADD_STAT(ConfNoMatch, ""),
+        ADD_STAT(NoConfMatch, "") {  }
+    } stats;
+  public:
+    PluginTageHC(const std::string &name,
+      Cva6CPU &cpu_, const BaseCva6CPUParams &params) :
+      Plugin(name, cpu_), stats(cpu) {}
+
+  void commit(Cva6DynInstPtr inst){
+    if (!inst->isFault() && inst->staticInst->isCondCtrl()){
+        bool match = inst->predictedTaken == inst->pc_next_taken;
+        bool conf = inst->isHighConf;
+        stats.ConfMatch += conf && match;
+        stats.NoConfNoMatch += !conf && !match;
+        stats.ConfNoMatch += conf && !match;
+        stats.NoConfMatch += !conf && match;
+
+        //  bool is_addr_unmatch = inst->triedToPredict &&
+        //                   *inst->predictedTarget != *inst->pc_next;
+
+        // mat[conf][match] ++;
+        // printf("TP=%ld, TN=%ld :: FP=%ld, FN=%ld\n",
+        //     mat[1][1], mat[0][0], mat[1][0], mat[0][1]);
+    }
+  }
+};
+
 
 class Plugins
 {
@@ -307,7 +347,9 @@ class Plugins
     // plugins.push_back(new PluginScheduler(name_ + ".sched", cpu, params));
     plugins.push_back(new PluginHMP(name_ + ".hmp", cpu, params));
     plugins.push_back(new PluginChecker(name_ + ".checker", cpu, params));
+    plugins.push_back(new PluginTageHC(name_ + ".tagehc", cpu, params));
   }
+
   void commit(Cva6DynInstPtr inst){
     for (Plugin *plugin: plugins){
       plugin->commit(inst);

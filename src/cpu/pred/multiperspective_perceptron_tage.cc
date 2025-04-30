@@ -245,19 +245,21 @@ MPP_TAGE::updatePathAndGlobalHistory(
     }
 }
 
-bool
-MPP_TAGE::isHighConfidence(TAGEBase::BranchInfo *bi) const
-{
-    if (bi->hitBank > 0) {
-        return (abs(2 * gtable[bi->hitBank][bi->hitBankIndex].ctr + 1)) >=
-               ((1 << tagTableCounterBits) - 1);
-    } else {
-        int bim = (btablePrediction[bi->bimodalIndex] << 1)
-            + btableHysteresis[bi->bimodalIndex >> logRatioBiModalHystEntries];
-        return (bim == 0) || (bim == 3);
-    }
+// bool
+// MPP_TAGE::isHighConfidence(TAGEBase::BranchInfo *bi) const
+// {
+//     if (bi->hitBank > 0) {
+//         return (abs(2 * gtable[bi->hitBank][bi->hitBankIndex].ctr + 1))
+//     >=
+//                ((1 << tagTableCounterBits) - 1);
+//     } else {
+//         int bim = (btablePrediction[bi->bimodalIndex] << 1)
+//             + btableHysteresis[bi->bimodalIndex >>
+//    logRatioBiModalHystEntries];
+//         return (bim == 0) || (bim == 3);
+//     }
 
-}
+// }
 
 bool
 MPP_LoopPredictor::calcConf(int index) const
@@ -539,7 +541,7 @@ MultiperspectivePerceptronTAGE::lookup(ThreadID tid, Addr instPC,
     pred_taken = loopPredictor->loopPredict(tid, instPC, true,
             bi->lpBranchInfo, pred_taken, instShiftAmt);
 
-    bi->scBranchInfo->highConf = tage->isHighConfidence(bi->tageBranchInfo);
+    // bi->scBranchInfo->highConf = tage->isHighConfidence(bi->tageBranchInfo);
 
     int init_lsum = 22;
     if (!pred_taken) {

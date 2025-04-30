@@ -69,6 +69,10 @@ class BaseCva6CPU(BaseCPU):
     schedSize = Param.Unsigned(128, "Scheduler size")
     schedWidth = Param.Unsigned(4, "Scheduler width")
     schedRegBarrier = Param.Unsigned(32, "Inter RRB delay")
+    schedDisableRB = Param.Unsigned(0, "Disable all register barrier")
+    # Exstage
+    oracleEarlyCommit = Param.Unsigned(0, "Oracle that allow early commit")
+
     def addCheckerCpu(self):
         print("Checker not yet supported by Cva6CPU")
         exit(1)

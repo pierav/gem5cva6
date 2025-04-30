@@ -156,16 +156,53 @@ class SA
 
     uint64_t tringinsts;
     uint64_t tringstores;
+    bool schedDisableRB;
+
     public:
     RegBarrierhandler(const std::string &name,
                       Cva6CPU &cpu_,
                       const BaseCva6CPUParams &p) :
       tringinsts(p.schedRegBarrier),
-      tringstores(p.lsuSQCWidth) /* CARE HERE THE SQ SIZE !*/
+      tringstores(p.lsuSQCWidth), /* CARE HERE THE SQ SIZE !*/
+      schedDisableRB(p.schedDisableRB)
       {}
 
-    void commit(Cva6DynInstPtr& inst){
 
+    struct pred_entry_t
+    {
+      uint64_t tag = 0;
+      uint64_t cpt;
+    };
+
+    #define RBHPSIZE 8
+    pred_entry_t pred_array[RBHPSIZE];
+
+    uint64_t addr2tag(uint64_t addr){ // 8 bits tag
+      return addr >> 2 & ((1 << 8) - 1);
+    }
+
+    bool predict_squash(Cva6DynInstPtr& inst){
+      if (inst->isFault() || !inst->staticInst->isControl()){
+        return false;
+      }
+      uint64_t idx = inst->pc->instAddr() % RBHPSIZE;
+      return pred_array[idx].cpt < 32 ||
+             pred_array[idx].tag != addr2tag(inst->pc->instAddr());
+    }
+
+    void commit(Cva6DynInstPtr& inst){
+      if (inst->isFault() || !inst->staticInst->isControl()){
+        return;
+      }
+      bool squashed = inst->isASquash();
+      uint64_t idx = inst->pc->instAddr() % RBHPSIZE;
+      uint64_t newtag = addr2tag(inst->pc->instAddr());
+
+      bool reset = squashed ||
+                   pred_array[idx].tag != newtag;
+
+      pred_array[idx].cpt = reset ? 0 : pred_array[idx].cpt+1;
+      pred_array[idx].tag = newtag;
     }
 
     bool on_push_need_rb(Cva6DynInstPtr& inst){
@@ -175,17 +212,24 @@ class SA
       cpt_branch += !inst->isFault() && inst->staticInst->isControl();
       /* Compte triggers based on previous count */
       /* OPTIONAL : TODO: have to be fine tunnet */
-      bool trig_cpt = cpt_inst == tringinsts;
+      // bool trig_cpt = cpt_inst == tringinsts;
       /* MANDATORY : Deadlock otherwise ! */
       bool trig_stores = cpt_stores == tringstores;
       /* OPTIONAL : Avoid strong flushs */
-      bool trig_no_hc = !inst->isFault() &&
-                        inst->staticInst->isCondCtrl() &&
-                        !inst->isHighConf;
+      // bool trig_no_hc = !inst->isFault() &&
+      //                   inst->staticInst->isCondCtrl() &&
+      //                   !inst->isHighConf;
       // bool trig_branch = cpt_branch == tringinsts;
-      /* MANDATORY ! */
-      bool trig_serial = needSerialise(inst);
-      return trig_cpt || trig_stores || trig_serial || (cpt_branch);
+
+      bool test = trig_stores  /* Mandatory to avoid deadlock !*/
+                 || needSerialise(inst); /* MANDATORY */
+      if (!schedDisableRB){
+        test = test
+             || trig_stores
+             || (cpt_branch==16)
+             || predict_squash(inst);
+      }
+      return test;
     }
 
     void reset(){

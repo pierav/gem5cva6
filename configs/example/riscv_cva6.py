@@ -70,12 +70,14 @@ cva6_config = {
     "schedType" : DEFAULT(0), # The type of scheduler used in frontend
     "schedSize" : DEFAULT(128),
     "schedWidth" : DEFAULT(4),
-    "schedRegBarrier": DEFAULT(32),
+    "schedRegBarrier": DEFAULT(64*1024),
+    "schedDisableRB": DEFAULT(0),
     "userelf": DEFAULT(""), # User elf for symbols only
     "renameSize": DEFAULT(64),
-    "renameIncArchReg": DEFAULT(0),
-    "renameFreeRegDead": DEFAULT(0),
-    "renameSpecRelease": DEFAULT(1)
+    "renameIncArchReg": DEFAULT(0), # Include ARCH in PRF
+    "renameFreeRegDead": DEFAULT(0), # Free reg dead (bugs)
+    "renameSpecRelease": DEFAULT(1), # Speculative Release
+    "oracleEarlyCommit": DEFAULT(0)
 }
 o3_config = {
     "numIQEntries": DEFAULT(32),

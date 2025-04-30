@@ -110,7 +110,7 @@ class TAGE_SC_L_TAGE : public TAGEBase
 
     void calculateParameters() override;
 
-    void buildTageTables() override;
+    // void buildTageTables() override;
 
     void calculateIndicesAndTags(
         ThreadID tid, Addr branch_pc, TAGEBase::BranchInfo* bi) override;
@@ -148,8 +148,10 @@ class TAGE_SC_L_TAGE : public TAGEBase
 
     int calcDep(TAGEBase::BranchInfo* bi);
 
+    #if 0
     bool getBimodePred(Addr branch_pc,
                        TAGEBase::BranchInfo* tage_bi) const override;
+    #endif
 
     void extraAltCalc(TAGEBase::BranchInfo* bi) override;
 

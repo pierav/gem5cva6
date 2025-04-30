@@ -27,10 +27,22 @@
 namespace gem5 {
 namespace cva6 {
 
+bool commit_in_uop = false;
+
 bool
 BlockCommit::commitFunctionnal(){
+    /* Some Stats */
     stats.committed_block_size.sample(fifo.size());
     stats.committed += fifo.size();
+    ArchRegFile<uint64_t> cnt;
+    for (Cva6DynInstPtr& inst: fifo){
+        if (inst->regs_dst_phy.size()){
+            stats.regwrite++;
+            stats.regwriteeff += cnt[inst->regs_dst_phy.front()] == 0;
+            cnt[inst->regs_dst_phy.front()]++;
+        }
+    }
+    /* Perform commit */
     DPRINTF(Cva6BC, "Block Commit FIFO (#%d)\n", fifo.size());
     while (!fifo.empty()){/* Commit everything */
         Cva6DynInstPtr inst = fifo.pop();
@@ -64,7 +76,7 @@ BlockCommit::pre_commit(Cva6DynInstPtr& inst){
     if (preg_in_flight.isall(false)){ // All are ready to be commited
         return commitFunctionnal();
     }
-    return isASquash(inst);
+    return inst->isASquash();
 }
 
 void
@@ -89,27 +101,11 @@ BlockCommit::dump(){
     }
 }
 
-bool isASquash(Cva6DynInstPtr inst){
-    assert(inst->execute_completed);
-    bool is_serialise = !inst->isFault() &&
-        inst->isLastOpInInst() &&
-        (inst->staticInst->isSerializeAfter() ||
-         inst->staticInst->isSquashAfter());
-
-    bool is_addr_unmatch = inst->triedToPredict &&
-                          *inst->predictedTarget != *inst->pc_next;
-    bool is_fault = inst->isFault();
-
-    bool need_squash = is_addr_unmatch ||
-                       is_fault ||
-                       is_serialise;
-    return need_squash;
-}
 
 BranchData getEffectiveBranch(Cva6DynInstPtr inst){
     return BranchData(
         inst->triedToPredict,
-        isASquash(inst),
+        inst->isASquash(),
         inst->id.fetchSeqNum,
         *inst->pc_next,
         inst->pc_next_taken);
@@ -139,20 +135,6 @@ Execute::tryToBranch(Cva6DynInstPtr inst, BranchData &branch){
     stats.flush_uncond_indirect += flushbranch
         && inst->staticInst->isUncondCtrl()
         && inst->staticInst->isIndirectCtrl();
-
-    bool is_addr_unmatch = inst->triedToPredict &&
-                          *inst->predictedTarget != *inst->pc_next;
-    if (!inst->isFault() && inst->staticInst->isCondCtrl()){
-        bool match = !is_addr_unmatch;
-        bool conf = inst->isHighConf;
-        stats.ConfMatch += conf && match;
-        stats.NoConfNoMatch += !conf && !match;
-        stats.ConfNoMatch += conf && !match;
-        stats.NoConfMatch += !conf && match;
-        // mat[conf][match] ++;
-        // printf("TP=%ld, TN=%ld :: FP=%ld, FN=%ld\n",
-        //     mat[1][1], mat[0][0], mat[1][0], mat[0][1]);
-    }
 }
 
 /** Do the stats handling and instruction count and PC event events
@@ -226,6 +208,12 @@ bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst){
         }
         */
     }
+    /* Update state */
+    commit_in_uop = !inst->isFault() &&
+                    inst->staticInst->isMicroop() &&
+                    !inst->staticInst->isLastMicroop();
+
+
     cpu.pipeline->iq.commit(inst); /* Post-commit (for stores SQS->SQC)!*/
     cpu.pipeline->plugins.commit(inst);
     /* Update BP */
@@ -351,7 +339,7 @@ Execute::evaluate() {
         }
 
         // Oracle: Early commit
-        if (0){
+        if (oracleEarlyCommit){
             bc.commitFunctionnal();
         }
 
@@ -427,10 +415,13 @@ Execute::checkInterrupts()
 {
     assert(FullSystem && cpu.getInterruptController());
     // TODO lastCommitWasEndOfMacroop
-    if (cpu.checkInterrupts() && bc.canInterrupts()) {
-        DPRINTF(Cva6Commit, "IT\n");
+    if (cpu.checkInterrupts()) {
+        DPRINTF(Cva6Commit, "CAN IT?\n");
+        if (commit_in_uop){
+            return false;
+        }
         /* lsu chech in memory instruction ! */
-        return cpu.pipeline->iq.canInterrupts();
+        return cpu.pipeline->iq.canInterrupts() && bc.canInterrupts();
     }
     return false;
 }
