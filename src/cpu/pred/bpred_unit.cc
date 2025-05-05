@@ -182,10 +182,18 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     if (btb_target) {
         stats.BTBHits++;
         hist->btbHit = true;
-
         if (hist->predTaken) {
             hist->targetProvider = TargetProvider::BTB;
             set(hist->target, btb_target);
+        }
+    }
+    /* Cva6 BTB bypass */
+    if (inst->isDirectCtrl()){
+        hist->btbHit = true;
+        if (hist->predTaken) {
+            /* use BTB provider to avoid fallthrough */
+            hist->targetProvider = TargetProvider::BTB;
+            set(hist->target, inst->branchTarget(pc));
         }
     }
 
@@ -432,6 +440,22 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
                          hist->type,
                          hist->rasHistory);
     }
+
+    // Correct BTB for fixer prediction
+    if (hist->actuallyTaken &&
+        (requiresBTBHit || hist->inst->isDirectCtrl() ||
+        (!iPred && !hist->inst->isReturn()))) {
+
+        if (!hist->btbHit) {
+            DPRINTF(Branch,"[tid:%i] BTB FIX for [sn:%llu] "
+                "PC %#x -> T: %#x\n", tid,
+                hist->seqNum, hist->pc, hist->target->instAddr());
+            btb->update(tid, hist->pc,
+                            *hist->target,
+                            hist->type,
+                            hist->inst);
+        }
+    }
 }
 
 
@@ -459,7 +483,6 @@ BPredUnit::squash(const InstSeqNum &squashed_sn, ThreadID tid)
                 tid, squashed_sn, predHist[tid].size());
     }
 }
-
 
 
 void

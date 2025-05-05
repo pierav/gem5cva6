@@ -148,12 +148,15 @@ Cva6DynInst::basedump(std::ostream &os) const {
         }
     }
     if (triedToPredict && execute_completed){
-        os << "[taken:" << pc_next_taken
-           << " ,pcnext:" << *pc_next;
-
+        os << "[T:" << pc_next_taken
+           << " =>" << pc_next->instAddr();
         bool is_addr_unmatch = *predictedTarget != *pc_next;
         if (is_addr_unmatch){
-            os << " MISS";
+            os << " MISS (T:"
+                << predictedTaken
+                << " =>"
+                << predictedTarget->instAddr()
+                << ")";
         } else {
             os << " HIT";
         }

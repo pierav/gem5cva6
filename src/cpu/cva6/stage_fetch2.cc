@@ -163,15 +163,38 @@ Fetch2::updateBranchPrediction(const BranchData &branch){
     }
 }
 
+bool
+Fetch2::computeHighConf(Cva6DynInstPtr& inst){
+    if (inst->staticInst->isReturn()){
+        /* Force HC for returns. Ras predictions are globally true*/
+        inst->isHighConf = true;
+    } else if (inst->staticInst->isCondCtrl()){
+        /* Retrieve the TAGE confidence */
+        using pred_t = branch_prediction::TAGEBase;
+        inst->isHighConf = pred_t::last_high_conf;
+        inst->predFromBim = pred_t::last_pred_from_bim;
+    } else {
+        assert(inst->staticInst->isUncondCtrl());
+        /* Perform a prediction for Uncond */
+        if (inst->staticInst->isDirectCtrl()){
+            inst->isHighConf = true;
+        } else {
+           inst->isHighConf = false;
+           // cpu.pipeline->hcpred.predictIsHC(inst);
+        }
+    }
+    return inst->isHighConf;
+}
+
 void
 Fetch2::predictBranch(Cva6DynInstPtr inst, BranchData &branch){
-    assert(!inst->predictedTaken);
+    assert(!inst->predictedTaken); /* Only 1 prediction */
     StaticInstPtr si = inst->staticInst;
-    /* Skip non-control/sys call instructions */
     cpu.pipeline->sa.fixer.before_predict(inst);
 
-    if ((si->isControl() || si->isSyscall())
-        /* && !si->isSerializeAfter()*/){
+    /* Only branch and syscall ?? */
+    if (si->isControl() || si->isSyscall()){
+
         std::unique_ptr<PCStateBase> inst_pc(inst->pc->clone());
 
         /* Tried to predict */
@@ -181,16 +204,10 @@ Fetch2::predictBranch(Cva6DynInstPtr inst, BranchData &branch){
         inst->predictedTaken = cpu.pipeline->bp.predict(
             si, inst->id.fetchSeqNum, *inst_pc, 0);
 
-
-        using pred_t = branch_prediction::TAGEBase;
-        if (si->isCondCtrl()){
-            inst->isHighConf = pred_t::last_high_conf;
-            // printf("PC=%16lx, taken=%d, HC=%d\n", inst_pc->instAddr(),
-            //     inst->predictedTaken,  inst->isHighConf);
-        }
-
+        /* Care BTB miss that set predictTaken to 0 !*/
 
         /* Force a valid branch if Uncond Direct */
+        // /!\ No more need as it's done in the BpredUnit !
         if (si->isUncondCtrl() && si->isDirectCtrl()){
             /* BUG JAL ! Must use RAS !*/
             inst->predictedTaken = true;
@@ -199,9 +216,13 @@ Fetch2::predictBranch(Cva6DynInstPtr inst, BranchData &branch){
             DPRINTF(Branch, "Force prediction for %s : %lx\n",
                 *inst, inst_pc->instAddr());
         }
-
+        /* Compute HC */
+        if (si->isControl()){
+            computeHighConf(inst);
+        }
         set(inst->predictedTarget, inst_pc);
 
+        /* Fetch from a valid PC if ctrl flow changes */
         if (inst->predictedTaken){
             branch = BranchData(inst->triedToPredict,
                         inst->predictedTaken, // Squash if taken !
@@ -390,14 +411,6 @@ Fetch2::flush(){
     dumpAllInput();
     fetchInfo.havePC = false;
     udecoder.flush();
-}
-
-bool
-Fetch2::isDrained()
-{
-    if (!inputBuffer.empty())
-        return false;
-    return (*inp.outputWire).isBubble();
 }
 
 } // namespace cva6

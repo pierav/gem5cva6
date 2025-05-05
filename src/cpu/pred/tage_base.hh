@@ -334,6 +334,8 @@ class TAGEBase : public SimObject
      * @param bi Pointer to the BranchInfo
      */
     static inline bool last_high_conf;
+    static inline bool last_pred_from_bim;
+
     bool tagePredict(
         ThreadID tid, Addr branch_pc, bool cond_branch, BranchInfo* bi);
 
@@ -431,55 +433,114 @@ class TAGEBase : public SimObject
     std::vector<int> logTagTableSizes;
 
     // TODO logRatioBiModalHystEntries
-    struct BimEntry
-    {
-        uint8_t ctr;
-        void update(bool taken){
-            if (taken) {
-                if (ctr < 3)
-                    ctr++;
-            } else if (ctr > 0) {
-                ctr--;
-            }
-        }
-        bool dir() const {
-            return ctr >> 1;
-        }
-        bool isHc() const {
-            return ctr == 0 || ctr == 3;
-        }
-    };
-    std::vector<BimEntry> bim;
-
-    // Tage Entry
-    struct TageEntry
+    struct CtrEntry
     {
         unsigned nbits;
-        TageEntry(unsigned size) : nbits(size) {}
-        int8_t ctr = 0;
-        uint16_t tag = 0;
-        uint8_t u = 0;
+        unsigned rproba;
+        int32_t ctr = 0;
+        bool conf = false;
+        CtrEntry(unsigned size, unsigned p) :
+            nbits(size), rproba(p) {}
+
+        /* Base TAGE BIM */
+        // void update(bool taken){
+        //     if (taken) {
+        //         if (ctr < 3)
+        //             ctr++;
+        //     } else if (ctr > 0) {
+        //         ctr--;
+        //     }
+        // }
+        // bool dir() const {
+        //     return ctr >> 1;
+        // }
+        // bool isHc() const {
+        //     return ctr == 0 || ctr == 3;
+        // }
+
+        /* The baseline update */
+        // void update(bool taken){
+        //     if (taken) {
+        //         if (ctr < ((1 << (nbits - 1)) - 1))
+        //             ctr++;
+        //     } else {
+        //         if (ctr > -(1 << (nbits - 1)))
+        //             ctr--;
+        //     }
+        // }
+
+        /* The Andre one !
+         * Storage Free Confidence Estimation for the TAGE
+         * branch predictor
+         */
+        // void update(bool taken){
+        //     int TOP = ((1 << (nbits - 1)) - 1);
+        //     int BOTTOM = -(1 << (nbits - 1));
+        //     if (taken && (ctr < TOP)){
+        //         if (ctr == TOP-1){
+        //             ctr += (rand() % rproba) == 0;
+        //         }else {
+        //             ctr ++;
+        //         }
+        //     } else if (!taken && (ctr > BOTTOM)){
+        //         if (ctr == BOTTOM+1){
+        //             ctr -= (rand() % rproba) == 0;
+        //         } else {
+        //             ctr --;
+        //         }
+        //     }
+        // }
+        bool isSaturated() const {
+            return abs(2 * ctr + 1) == ((1 << nbits) -1 );
+        }
+
+        /* Ours */
         void update(bool taken){
-            if (taken) {
-                if (ctr < ((1 << (nbits - 1)) - 1))
-                    ctr++;
-            } else {
-                if (ctr > -(1 << (nbits - 1)))
-                    ctr--;
+            int TOP = ((1 << (nbits - 1)) - 1);
+            int BOTTOM = -(1 << (nbits - 1));
+            if (taken && (ctr < TOP)){
+                ctr ++;
+            }
+            else if (!taken && (ctr > BOTTOM)){
+                ctr --;
+            }
+
+            /* Add extra bit for confiance */
+            if (!isSaturated()){
+                conf = false;
+            } else if (!conf) {
+                conf = (rand() % rproba) == 0; // Try to setup conf
             }
         }
+
         bool dir() const {
             return ctr >= 0;
         }
 
         bool isHc() const {
-            return abs(2 * ctr + 1) == ((1 << nbits) -1);
+            return conf;
         }
+
+        // bool isCloseToHc() const {
+        //     return abs(2 * ctr + 1) == ((1 << nbits) - 2);
+        // }
 
         bool isLc() const {
             return abs(2 * ctr + 1) <= 1;
         }
     };
+
+    struct BimEntry : public CtrEntry
+    {
+        BimEntry(void) : CtrEntry(2, 64) {}
+    };
+    struct TageEntry : public CtrEntry
+    {
+        TageEntry(unsigned size) : CtrEntry(size, 64) {}
+        uint16_t tag = 0;
+        uint8_t u = 0;
+    };
+    std::vector<BimEntry> bim;
     std::vector<std::vector<TageEntry> >gtable;
     // TageEntry **gtable;
 

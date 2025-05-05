@@ -469,6 +469,9 @@ TAGEBase::tagePredict(ThreadID tid, Addr branch_pc,
                 branch_pc, pred_taken, bi->tagePred, bi->altTaken,
                 high_conf, strs[bi->provider]);
         last_high_conf = high_conf;
+        last_pred_from_bim = (bi->provider == BIMODAL_ONLY
+                          || bi->provider == BIMODAL_ALT_MATCH);
+
     }
     bi->branchPC = branch_pc;
     bi->condBranch = cond_branch;

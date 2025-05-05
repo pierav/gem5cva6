@@ -50,7 +50,7 @@ struct BlockCommit
       ADD_STAT(regwriteeff, "")
     {
       committed_block_size
-        .init(1,64,1)
+        .init(1,128,1)
         .flags(statistics::pdf);
     }
   } stats;
@@ -115,6 +115,11 @@ class Execute : public Named
       statistics::Scalar flush_uncond_direct;
       statistics::Scalar flush_uncond_indirect;
       statistics::Scalar flush_fault;
+      statistics::Scalar flush_mdp;
+      statistics::Scalar flush_vp;
+      statistics::Scalar flush_load;
+
+
       ExStats(Cva6CPU &cpu) :
         statistics::Group(&cpu, "exec"),
         ADD_STAT(flush, ""),
@@ -122,7 +127,10 @@ class Execute : public Named
         ADD_STAT(flush_cond_indirect, ""),
         ADD_STAT(flush_uncond_direct, ""),
         ADD_STAT(flush_uncond_indirect, ""),
-        ADD_STAT(flush_fault, "") {  }
+        ADD_STAT(flush_fault, ""),
+        ADD_STAT(flush_mdp, ""),
+        ADD_STAT(flush_vp, ""),
+        ADD_STAT(flush_load, "") {  }
     } stats;
   protected:
 

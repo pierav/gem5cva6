@@ -44,6 +44,7 @@ inline BaseScheduler& initSched(
   return *new NoScheduler(name, cpu, p);
 }
 
+
 class SA
 {
   public:
@@ -168,41 +169,14 @@ class SA
       {}
 
 
-    struct pred_entry_t
-    {
-      uint64_t tag = 0;
-      uint64_t cpt;
-    };
-
-    #define RBHPSIZE 8
-    pred_entry_t pred_array[RBHPSIZE];
-
-    uint64_t addr2tag(uint64_t addr){ // 8 bits tag
-      return addr >> 2 & ((1 << 8) - 1);
-    }
-
     bool predict_squash(Cva6DynInstPtr& inst){
       if (inst->isFault() || !inst->staticInst->isControl()){
         return false;
       }
-      uint64_t idx = inst->pc->instAddr() % RBHPSIZE;
-      return pred_array[idx].cpt < 32 ||
-             pred_array[idx].tag != addr2tag(inst->pc->instAddr());
+      return !inst->isHighConf;
     }
 
     void commit(Cva6DynInstPtr& inst){
-      if (inst->isFault() || !inst->staticInst->isControl()){
-        return;
-      }
-      bool squashed = inst->isASquash();
-      uint64_t idx = inst->pc->instAddr() % RBHPSIZE;
-      uint64_t newtag = addr2tag(inst->pc->instAddr());
-
-      bool reset = squashed ||
-                   pred_array[idx].tag != newtag;
-
-      pred_array[idx].cpt = reset ? 0 : pred_array[idx].cpt+1;
-      pred_array[idx].tag = newtag;
     }
 
     bool on_push_need_rb(Cva6DynInstPtr& inst){
@@ -221,13 +195,14 @@ class SA
       //                   !inst->isHighConf;
       // bool trig_branch = cpt_branch == tringinsts;
 
+      bool trig_preg = predict_squash(inst);
       bool test = trig_stores  /* Mandatory to avoid deadlock !*/
                  || needSerialise(inst); /* MANDATORY */
       if (!schedDisableRB){
         test = test
              || trig_stores
              || (cpt_branch==16)
-             || predict_squash(inst);
+             || trig_preg;
       }
       return test;
     }
@@ -275,7 +250,6 @@ class SA
     // osa.commit(inst);
     return inst;
   }
-
 
   /* Annotate if instruction can commit (rd ready) */
   void pre_commit(Cva6DynInstPtr& inst){

@@ -133,6 +133,70 @@ class MemOrderChecker : public Named
   }
 };
 
+/* Simple Direct Map High Confidence predictor for
+ * Indirects branchs
+ */
+struct HCPred
+{
+  struct pred_entry_t
+  {
+    uint64_t tag = 0;
+    uint64_t cpt;
+  };
+
+  #define RBHPSIZE_LOG 8
+  #define RBHPSIZE  (1 << RBHPSIZE_LOG)
+  pred_entry_t pred_array[RBHPSIZE];
+
+  uint64_t addr2idx(uint64_t addr){
+    uint64_t res = 0;
+    while (addr){
+      res ^= addr;
+      addr >>= RBHPSIZE_LOG;
+    }
+    return res % RBHPSIZE;
+  }
+
+  uint64_t addr2tag(uint64_t addr){ // 8 bits tag
+    return addr >> 2 & ((1 << 8) - 1);
+  }
+
+  bool predictIsHC(Cva6DynInstPtr& inst){
+      uint64_t idx = addr2idx(inst->pc->instAddr());
+      // inst->isHighConf = !(pred_array[idx].cpt < 64 ||
+      //               pred_array[idx].tag != addr2tag(inst->pc->instAddr()));
+      return pred_array[idx].cpt;
+  }
+
+  void commit(Cva6DynInstPtr& inst){
+      if (inst->isFault() || !inst->staticInst->isControl()){
+          return;
+      }
+      if (!inst->staticInst->isUncondCtrl()){
+          return;
+      }
+      if (inst->staticInst->isReturn()){
+          return;
+      }
+      if (inst->staticInst->isDirectCtrl()){
+        assert(!inst->isASquash());
+        return;
+      }
+      bool squashed = inst->isASquash();
+      uint64_t idx = addr2idx(inst->pc->instAddr());
+      // uint64_t newtag = addr2tag(inst->pc->instAddr());
+      // bool reset = squashed ||
+      //              pred_array[idx].tag != newtag;
+      // pred_array[idx].cpt = reset ? 0 : pred_array[idx].cpt+1;
+      // pred_array[idx].tag = newtag;
+      if (squashed){
+          pred_array[idx].cpt = 0;
+      } else if (!pred_array[idx].cpt) {
+          pred_array[idx].cpt = (rand() % 64 == 0);
+      }
+  }
+};
+
 
 /** The constructed pipeline. */
 class Pipeline : public Ticked
@@ -145,8 +209,9 @@ class Pipeline : public Ticked
   VP &vp;                /** Value predictor for load insts */
   VPDPE &dpe;            /** Delayed Prediction Unit */
   FUPipelines fus;       /** All functional units */
-  RegDeadAnayser rda;
-  branch_prediction::BPredUnit &bp;
+  RegDeadAnayser rda;    /* ? */
+  branch_prediction::BPredUnit &bp; /* the main BP */
+  HCPred hcpred;         /** Part of the Bpred for HC */
 
   /* New components */
   SA sa;

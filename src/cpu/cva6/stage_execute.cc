@@ -101,8 +101,12 @@ BlockCommit::dump(){
     }
 }
 
-
 BranchData getEffectiveBranch(Cva6DynInstPtr inst){
+    if (!inst->isFault() && inst->staticInst->isCondCtrl()){
+        if (inst->isTaken() != inst->pc_next_taken){
+            fatal("Badly measured taken for %s\n", *inst);
+        }
+    }
     return BranchData(
         inst->triedToPredict,
         inst->isASquash(),
@@ -110,31 +114,14 @@ BranchData getEffectiveBranch(Cva6DynInstPtr inst){
         *inst->pc_next,
         inst->pc_next_taken);
 }
+
 void
 Execute::tryToBranch(Cva6DynInstPtr inst, BranchData &branch){
-
     branch = getEffectiveBranch(inst);
     // Squash at latest valid pc
     branch.setSquashTarget(cpu.getContext()->pcState());
 
     DPRINTF(Branch, "tryToBranch : %s\n", branch.dump());
-    /* Some stats */
-
-    bool flushbranch = !inst->isFault() && branch.need_squash;
-    stats.flush += branch.need_squash;
-    stats.flush_fault += !flushbranch;
-    stats.flush_cond_direct += flushbranch
-        && inst->staticInst->isCondCtrl()
-        && inst->staticInst->isDirectCtrl();
-    stats.flush_cond_indirect += flushbranch
-        && inst->staticInst->isCondCtrl()
-        && inst->staticInst->isIndirectCtrl();
-    stats.flush_uncond_direct += flushbranch
-        && inst->staticInst->isUncondCtrl()
-        && inst->staticInst->isDirectCtrl();
-    stats.flush_uncond_indirect += flushbranch
-        && inst->staticInst->isUncondCtrl()
-        && inst->staticInst->isIndirectCtrl();
 }
 
 /** Do the stats handling and instruction count and PC event events
@@ -213,10 +200,11 @@ bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst){
                     inst->staticInst->isMicroop() &&
                     !inst->staticInst->isLastMicroop();
 
-
     cpu.pipeline->iq.commit(inst); /* Post-commit (for stores SQS->SQC)!*/
     cpu.pipeline->plugins.commit(inst);
     /* Update BP */
+    /* Do this here to avoid a floating BranchInfo */
+    cpu.pipeline->hcpred.commit(inst);
     BranchData branch = getEffectiveBranch(inst);
     if (branch.need_squash){
         if (branch.is_predicted) {
@@ -226,10 +214,10 @@ bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst){
             cpu.pipeline->bp.squash(branch.num, 0);
         }
     }
-
     if (branch.is_predicted) {
         cpu.pipeline->bp.update(branch.num, 0);
     }
+
     return branch.need_squash;
 }
 
@@ -303,6 +291,7 @@ Execute::evaluate() {
             uint64_t pcload = inst->pc->instAddr();
             cpu.pipeline->sa.scheduler.violation(pcstore, pcload);
             flush();
+            stats.flush_mdp += 1;
             return; /* EARLY FLUSH : do not commit */
         }
 
@@ -313,6 +302,7 @@ Execute::evaluate() {
             resolved_branch = BranchData::SquashAt(
                 cpu.getContext()->pcState());
             flush();
+            stats.flush_vp += 1;
             return; /* EARLY FLUSH : do not commit */
         }
 
@@ -323,7 +313,6 @@ Execute::evaluate() {
         /* Fault have to be detected before enter BC ? */
         cpu.pipeline->sa.pre_commit(inst); /* Annotate can commit */
 
-
         bool is_serialise = !inst->isFault() &&
             inst->isLastOpInInst() &&
             (inst->staticInst->isSerializeAfter() ||
@@ -331,6 +320,27 @@ Execute::evaluate() {
 
         /* Try to commit */
         bool need_squash = bc.pre_commit(inst); /* Ex CSRW ! */
+        /* Some stats */
+        if (inst->isASquash()){
+            bool flushbranch = !inst->isFault();
+            stats.flush ++;
+            stats.flush_fault += !flushbranch;
+            stats.flush_cond_direct += flushbranch
+                && inst->staticInst->isCondCtrl()
+                && inst->staticInst->isDirectCtrl();
+            stats.flush_cond_indirect += flushbranch
+                && inst->staticInst->isCondCtrl()
+                && inst->staticInst->isIndirectCtrl();
+            stats.flush_uncond_direct += flushbranch
+                && inst->staticInst->isUncondCtrl()
+                && inst->staticInst->isDirectCtrl();
+            stats.flush_uncond_indirect += flushbranch
+                && inst->staticInst->isUncondCtrl()
+                && inst->staticInst->isIndirectCtrl();
+            stats.flush_load += inst->isFault()
+                 && inst->staticInst
+                 && inst->staticInst->isLoad();
+        }
 
         if (is_serialise) {
             // Check scheduler serialisation

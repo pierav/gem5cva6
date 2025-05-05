@@ -343,6 +343,7 @@ class Cva6DynInst : public RefCounted
      *  instruction or a sys call) */
     bool triedToPredict = false;
     bool isHighConf = false;
+    bool predFromBim = false;
 
     /** This instruction was predicted to change control flow */
     bool predictedTaken = false;
@@ -578,6 +579,16 @@ class Cva6DynInst : public RefCounted
                           is_fault ||
                           is_serialise;
       return need_squash;
+    }
+
+    bool isTaken(){
+      assert(!isFault());
+      assert(staticInst->isCondCtrl());
+      assert(execute_completed);
+      std::unique_ptr<PCStateBase> noTakenPc;
+      set(noTakenPc, pc);
+      staticInst->advancePC(*noTakenPc);
+      return *noTakenPc != *pc_next;
     }
 
     void setFaultFrontend(Fault fault_){

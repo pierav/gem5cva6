@@ -158,6 +158,7 @@ class Fetch2 : public Named
      *  instruction's predicted... fields and also the branch which
      *  carries the prediction to Fetch1 */
     void predictBranch(Cva6DynInstPtr inst, BranchData &branch);
+    bool computeHighConf(Cva6DynInstPtr& inst);
 
     void output_inst(Cva6DynInstPtr inst);
 
@@ -189,11 +190,6 @@ class Fetch2 : public Named
 
     /** Flush the stage */
     void flush();
-
-    /** Is this stage drained?  For Fetch2, draining is initiated by
-     *  Execute halting Fetch1 causing Fetch2 to naturally drain.
-     *  Branch predictions are ignored by Fetch1 during halt */
-    bool isDrained();
 };
 
 } // namespace cva6

@@ -201,7 +201,6 @@ class PluginGoodbadTrap : public Plugin
 
 };
 
-
 class PluginLambda : public Plugin
 {
   protected:
@@ -290,16 +289,63 @@ class PluginTageHC : public Plugin
   protected:
   struct Stats : public statistics::Group
   {
-      statistics::Scalar ConfMatch;
-      statistics::Scalar NoConfNoMatch;
-      statistics::Scalar ConfNoMatch;
-      statistics::Scalar NoConfMatch;
+      /* DIRECT CONDITIONAL : tagged table entries */
+      statistics::Scalar TConfMatch;
+      statistics::Scalar TNoConfNoMatch;
+      statistics::Scalar TConfNoMatch;
+      statistics::Scalar TNoConfMatch;
+      /* DIRECT CONDITIONAL : Bimotag table */
+      statistics::Scalar BConfMatch;
+      statistics::Scalar BNoConfNoMatch;
+      statistics::Scalar BConfNoMatch;
+      statistics::Scalar BNoConfMatch;
+
+      /* DIRECT UNCONDITIONNAL : No misspred */
+      /* [ ... ] */
+
+      /* INDIRECT UNCONDITIONAL : Indirect predictor */
+      statistics::Scalar UConfMatch;
+      statistics::Scalar UNoConfNoMatch;
+      statistics::Scalar UConfNoMatch;
+      statistics::Scalar UNoConfMatch;
+      /* INDIRECT UNCONDITIONAL : Ras for returns */
+      statistics::Scalar RConfMatch;
+      statistics::Scalar RNoConfNoMatch;
+      statistics::Scalar RConfNoMatch;
+      statistics::Scalar RNoConfMatch;
+
+      /* INDIRECT CONDITIONAL : Not in risc-v ? */
+      /* [ ... ] */
+
+      statistics::Scalar req;
+      statistics::Scalar missCond;
+      statistics::Scalar missUncond;
+      statistics::Scalar miss;
+      statistics::Scalar hitcond_missaddr;
+
       Stats(Cva6CPU &cpu) :
         statistics::Group(&cpu, "tagehc"),
-        ADD_STAT(ConfMatch, ""),
-        ADD_STAT(NoConfNoMatch, ""),
-        ADD_STAT(ConfNoMatch, ""),
-        ADD_STAT(NoConfMatch, "") {  }
+        ADD_STAT(TConfMatch, ""),
+        ADD_STAT(TNoConfNoMatch, ""),
+        ADD_STAT(TConfNoMatch, ""),
+        ADD_STAT(TNoConfMatch, ""),
+        ADD_STAT(BConfMatch, ""),
+        ADD_STAT(BNoConfNoMatch, ""),
+        ADD_STAT(BConfNoMatch, ""),
+        ADD_STAT(BNoConfMatch, ""),
+        ADD_STAT(UConfMatch, ""),
+        ADD_STAT(UNoConfNoMatch, ""),
+        ADD_STAT(UConfNoMatch, ""),
+        ADD_STAT(UNoConfMatch, ""),
+        ADD_STAT(RConfMatch, ""),
+        ADD_STAT(RNoConfNoMatch, ""),
+        ADD_STAT(RConfNoMatch, ""),
+        ADD_STAT(RNoConfMatch, ""),
+        ADD_STAT(req, ""),
+        ADD_STAT(missCond, ""),
+        ADD_STAT(missUncond, ""),
+        ADD_STAT(miss, ""),
+        ADD_STAT(hitcond_missaddr, "") {  }
     } stats;
   public:
     PluginTageHC(const std::string &name,
@@ -307,20 +353,51 @@ class PluginTageHC : public Plugin
       Plugin(name, cpu_), stats(cpu) {}
 
   void commit(Cva6DynInstPtr inst){
-    if (!inst->isFault() && inst->staticInst->isCondCtrl()){
-        bool match = inst->predictedTaken == inst->pc_next_taken;
-        bool conf = inst->isHighConf;
-        stats.ConfMatch += conf && match;
-        stats.NoConfNoMatch += !conf && !match;
-        stats.ConfNoMatch += conf && !match;
-        stats.NoConfMatch += !conf && match;
-
-        //  bool is_addr_unmatch = inst->triedToPredict &&
-        //                   *inst->predictedTarget != *inst->pc_next;
-
-        // mat[conf][match] ++;
-        // printf("TP=%ld, TN=%ld :: FP=%ld, FN=%ld\n",
-        //     mat[1][1], mat[0][0], mat[1][0], mat[0][1]);
+    if (inst->isFault() || !inst->staticInst->isControl()){
+      return;
+    }
+    bool is_addr_unmatch = inst->triedToPredict &&
+                          *inst->predictedTarget != *inst->pc_next;
+    stats.missCond += is_addr_unmatch && inst->staticInst->isCondCtrl();
+    stats.missUncond += is_addr_unmatch && inst->staticInst->isUncondCtrl();
+    stats.miss += is_addr_unmatch;
+    stats.req ++;
+    bool conf = inst->isHighConf;
+    if (inst->staticInst->isReturn()){
+      bool match = !is_addr_unmatch;
+      stats.RConfMatch += conf && match;
+      stats.RNoConfNoMatch += !conf && !match;
+      stats.RConfNoMatch += conf && !match;
+      stats.RNoConfMatch += !conf && match;
+    } else if (inst->staticInst->isCondCtrl()){
+      bool match = inst->predictedTaken == inst->pc_next_taken;
+      // if (!is_addr_unmatch && !match){
+      //   fatal("Cannot match addr with dir missmatch !\n");
+      // }
+      // Must BE 0 with secure frontend
+      stats.hitcond_missaddr += match && is_addr_unmatch;
+      if (inst->predFromBim){
+        // To discriminate the size of CPT from
+        // the BIM to the tagges tables
+        stats.BConfMatch += conf && match;
+        stats.BNoConfNoMatch += !conf && !match;
+        stats.BConfNoMatch += conf && !match;
+        stats.BNoConfMatch += !conf && match;
+      } else {
+        stats.TConfMatch += conf && match;
+        stats.TNoConfNoMatch += !conf && !match;
+        stats.TConfNoMatch += conf && !match;
+        stats.TNoConfMatch += !conf && match;
+      }
+      // mat[conf][match] ++;
+      // printf("TP=%ld, TN=%ld :: FP=%ld, FN=%ld\n",
+      //     mat[1][1], mat[0][0], mat[1][0], mat[0][1]);
+    } else if (inst->staticInst->isUncondCtrl()){
+      bool match = !is_addr_unmatch;
+      stats.UConfMatch += conf && match;
+      stats.UNoConfNoMatch += !conf && !match;
+      stats.UConfNoMatch += conf && !match;
+      stats.UNoConfMatch += !conf && match;
     }
   }
 };
