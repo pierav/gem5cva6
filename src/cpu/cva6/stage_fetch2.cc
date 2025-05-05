@@ -44,6 +44,7 @@
 #include "base/trace.hh"
 #include "cpu/cva6/pipeline.hh"
 #include "cpu/pred/bpred_unit.hh"
+#include "cpu/pred/simple_indirect.hh"
 #include "cpu/pred/tage.hh"
 #include "cpu/pred/tage_sc_l.hh"
 #include "debug/Branch.hh"
@@ -179,8 +180,10 @@ Fetch2::computeHighConf(Cva6DynInstPtr& inst){
         if (inst->staticInst->isDirectCtrl()){
             inst->isHighConf = true;
         } else {
-           inst->isHighConf = false;
-           // cpu.pipeline->hcpred.predictIsHC(inst);
+           // inst->isHighConf = false;
+           // inst->isHighConf = cpu.pipeline->hcpred.predictIsHC(inst);
+           using ipred_t = branch_prediction::SimpleIndirectPredictor;
+           inst->isHighConf = ipred_t::last_high_conf;
         }
     }
     return inst->isHighConf;

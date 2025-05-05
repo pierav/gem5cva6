@@ -392,13 +392,15 @@ class PluginTageHC : public Plugin
       // mat[conf][match] ++;
       // printf("TP=%ld, TN=%ld :: FP=%ld, FN=%ld\n",
       //     mat[1][1], mat[0][0], mat[1][0], mat[0][1]);
-    } else if (inst->staticInst->isUncondCtrl()){
+    } else if (inst->staticInst->isUncondCtrl() &&
+               inst->staticInst->isIndirectCtrl()){
       bool match = !is_addr_unmatch;
       stats.UConfMatch += conf && match;
       stats.UNoConfNoMatch += !conf && !match;
       stats.UConfNoMatch += conf && !match;
       stats.UNoConfMatch += !conf && match;
     }
+    /* else direct uncond : cannot miss */
   }
 };
 

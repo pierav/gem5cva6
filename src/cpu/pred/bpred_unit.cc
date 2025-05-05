@@ -577,7 +577,6 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
            ++stats.TakenMispredicted;
         }
 
-
         // There are separate functions for in-order and out-of-order
         // branch prediction, but not for update. Therefore, this
         // call should take into account that the mispredicted branch may

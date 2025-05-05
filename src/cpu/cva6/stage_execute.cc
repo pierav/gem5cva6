@@ -66,6 +66,10 @@ BlockCommit::pre_commit(Cva6DynInstPtr& inst){
     fifo.push(inst);
     cpu.pipeline->sa.commit(inst); /* Post-commit : register release !*/
     cpu.pipeline->iq.pre_commit(inst);
+
+    /* Do this here to avoid shadow miss !!! */
+    cpu.pipeline->hcpred.commit(inst);
+
     if (inst->regs_dst_phy.size()){
         PhysicalReg& reg = inst->regs_dst_phy.front();
         bool inrf = inst->free_reg_at_commit;
@@ -203,8 +207,6 @@ bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst){
     cpu.pipeline->iq.commit(inst); /* Post-commit (for stores SQS->SQC)!*/
     cpu.pipeline->plugins.commit(inst);
     /* Update BP */
-    /* Do this here to avoid a floating BranchInfo */
-    cpu.pipeline->hcpred.commit(inst);
     BranchData branch = getEffectiveBranch(inst);
     if (branch.need_squash){
         if (branch.is_predicted) {
@@ -380,6 +382,16 @@ Execute::evaluate() {
             //     /* Force pc next, barrier */
             //     cpu.pipeline->sa.fixer.apply_fix_for(inst, true, true);
             // }
+
+            /* Fix Ipred early as there is no conf in Ipred */
+            if (!inst->isFault() &&
+                inst->staticInst->isUncondCtrl() &&
+                inst->staticInst->isIndirectCtrl() &&
+                !inst->staticInst->isReturn()){
+                BranchData branch = getEffectiveBranch(inst);
+                cpu.pipeline->bp.squash(branch.num,
+                    *branch.target, branch.actually_taken, 0);
+            }
 
             resolved_branch = BranchData::SquashAt(
                 cpu.getContext()->pcState());

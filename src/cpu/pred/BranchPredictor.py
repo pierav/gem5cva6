@@ -127,7 +127,6 @@ class SimpleIndirectPredictor(IndirectPredictor):
     indirectGHRBits = Param.Unsigned(13, "Indirect GHR number of bits")
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
 
-
 class BranchPredictor(SimObject):
     type = "BranchPredictor"
     cxx_class = "gem5::branch_prediction::BPredUnit"

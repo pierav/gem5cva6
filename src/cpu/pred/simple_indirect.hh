@@ -60,6 +60,8 @@ class SimpleIndirectPredictor : public IndirectPredictor
     /** Indirect predictor interface */
     void reset() override;
 
+    /* Easiest way to pass data to the cpu */
+    static inline bool last_high_conf = 0;
     const PCStateBase * lookup(ThreadID tid, InstSeqNum sn,
                                 Addr pc, void * &iHistory) override;
     void update(ThreadID tid, InstSeqNum sn, Addr pc, bool squash,
@@ -90,6 +92,15 @@ class SimpleIndirectPredictor : public IndirectPredictor
     {
         Addr tag = 0;
         std::unique_ptr<PCStateBase> target;
+        uint8_t cpt = 0;
+
+        bool isHc() const { return cpt; }
+
+        void increaseConf() {
+            if (!cpt) {
+                cpt = (rand() % 64 == 0);
+            }
+        }
     };
 
     std::vector<std::vector<IPredEntry> > targetCache;

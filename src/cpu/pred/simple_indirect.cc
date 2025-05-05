@@ -90,6 +90,7 @@ SimpleIndirectPredictor::reset()
     for (unsigned i = 0; i < numSets; i++) {
         for (unsigned j = 0; j < numWays; j++) {
             targetCache[i][j].tag = 0;
+            targetCache[i][j].cpt = 0;
         }
     }
 }
@@ -154,6 +155,7 @@ SimpleIndirectPredictor::lookup(ThreadID tid, Addr br_addr,
                     history->ghr, threadInfo[tid].pathHist.size());
 
     const auto &iset = targetCache[history->set_index];
+    last_high_conf = false; /* Default */
     for (auto way = iset.begin(); way != iset.end(); ++way) {
         // tag may be 0 and match the default in way->tag, so we also have to
         // check that way->target has been initialized.
@@ -162,6 +164,7 @@ SimpleIndirectPredictor::lookup(ThreadID tid, Addr br_addr,
             set(target, *way->target);
             history->hit = true;
             stats.hits++;
+            last_high_conf = way->isHc();
             return history->hit;
         }
     }
@@ -239,12 +242,22 @@ SimpleIndirectPredictor::update(ThreadID tid, InstSeqNum sn, Addr pc,
 
     // Only indirect branches are recorded in the path history
     if (history->was_indirect) {
-
         DPRINTF(Indirect, "Recording %x seq:%d\n", history->pcAddr, sn);
         threadInfo[tid].pathHist.emplace_back(
                                     history->pcAddr, target.instAddr(), sn);
-
         stats.indirectRecords++;
+
+        /* Update conf */
+        auto &iset = targetCache[history->set_index];
+        for (auto way = iset.begin(); way != iset.end(); ++way) {
+            // tag may be 0 and match the default in way->tag,
+            // so we also have to
+            // check that way->target has been initialized.
+            if (way->tag == history->tag && way->target) {
+                DPRINTF(Indirect, "Hit update conf\n");
+                way->increaseConf();
+            }
+        }
     }
 
     // All branches update the global history
@@ -272,7 +285,6 @@ SimpleIndirectPredictor::squash(ThreadID tid, InstSeqNum sn, void * &i_history)
                     sn, history->pcAddr, history->was_indirect,
                     history->ghr,
                     threadInfo[tid].pathHist.size());
-
 
     // Revert the global history register.
     threadInfo[tid].ghr = history->ghr;
@@ -334,6 +346,7 @@ SimpleIndirectPredictor::recordTarget(ThreadID tid, InstSeqNum sn,
                     "Updating Target (seq: %d br:%x set:%d target:%s)\n",
                     sn, history->pcAddr, history->set_index, target);
             set(way->target, target);
+            way->cpt = 0;
             return;
         }
     }
@@ -345,6 +358,7 @@ SimpleIndirectPredictor::recordTarget(ThreadID tid, InstSeqNum sn,
     auto &way = iset[rand() % numWays];
     way.tag = history->tag;
     set(way.target, target);
+    way.cpt = 0;
 }
 
 
