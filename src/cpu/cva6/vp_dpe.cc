@@ -79,8 +79,8 @@ VPDPE::vp_perform_issue(Cva6DynInstPtr inst){
     fatal_if(!inst->vp_data.is_predicted,
       "Inst %d is not predicted\n", *inst);
     inst->vp_data.time_issue = cpu.curCycle();
-    int64_t delta = inst->vp_data.time_issue -
-          inst->vp_data.time_predict;
+    // int64_t delta = inst->vp_data.time_issue -
+    //       inst->vp_data.time_predict;
     // TODO predict at fetch
     // fatal_if(delta < VP_DELAY, "Timing anomaly : delta = %d\n", delta);
     assert(inst->dreq);

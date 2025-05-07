@@ -234,9 +234,9 @@ Execute::evaluate() {
         /* The interrupt *must* set pcState */
         cpu.getInterruptController()->updateIntrInfo();
         interrupt->invoke(cpu.getContext());
+        resolved_branch = BranchData::SquashAt(cpu);
         DPRINTF(Cva6Interrupt, "Invoking interrupt: %s to PC: %s\n",
-            interrupt->name(), cpu.getContext()->pcState());
-        resolved_branch = BranchData::SquashAt(cpu.getContext()->pcState());
+            interrupt->name(), resolved_branch);
         cpu.pipeline->sa.fixer.clear_on_it();
         flush();
         return;
@@ -288,12 +288,12 @@ Execute::evaluate() {
         /* Inst produced bad value */
         if (is_mem_violation){
             DPRINTF(Cva6Execute, "MISSPRED MEM ORDER : %s\n", *inst);
-            resolved_branch = BranchData::SquashAt(
-                cpu.getContext()->pcState());
+            resolved_branch = BranchData::SquashAt(cpu);
             uint64_t pcload = inst->pc->instAddr();
             cpu.pipeline->sa.scheduler.violation(pcstore, pcload);
-            flush();
+            stats.flush ++;
             stats.flush_mdp += 1;
+            flush();
             return; /* EARLY FLUSH : do not commit */
         }
 
@@ -301,10 +301,10 @@ Execute::evaluate() {
         bool misspred_addr = cpu.pipeline->dpe.post_commit(inst);
         if (misspred_addr){
             DPRINTF(Cva6Execute, "MISSPRED ADDR : %s\n", *inst);
-            resolved_branch = BranchData::SquashAt(
-                cpu.getContext()->pcState());
-            flush();
+            resolved_branch = BranchData::SquashAt(cpu);
+            stats.flush ++;
             stats.flush_vp += 1;
+            flush();
             return; /* EARLY FLUSH : do not commit */
         }
 
@@ -315,39 +315,43 @@ Execute::evaluate() {
         /* Fault have to be detected before enter BC ? */
         cpu.pipeline->sa.pre_commit(inst); /* Annotate can commit */
 
-        bool is_serialise = !inst->isFault() &&
-            inst->isLastOpInInst() &&
-            (inst->staticInst->isSerializeAfter() ||
-            inst->staticInst->isSquashAfter());
+        // bool is_serialise = !inst->isFault() && needSerial
+        //     inst->isLastOpInInst() &&
+        //     (inst->staticInst->isSerializeAfter() ||
+        //     inst->staticInst->isSquashAfter());
+
+        if (inst->needSerialise) { /* Inst was serialised in the scheduler*/
+            // Check scheduler serialisation
+            // Everything must be comitted
+            assert(bc.empty());
+        }
 
         /* Try to commit */
         bool need_squash = bc.pre_commit(inst); /* Ex CSRW ! */
         /* Some stats */
         if (inst->isASquash()){
-            bool flushbranch = !inst->isFault();
             stats.flush ++;
-            stats.flush_fault += !flushbranch;
-            stats.flush_cond_direct += flushbranch
+            stats.flush_serialise += !inst->isFault()
+                && inst->staticInst->isSerializeAfter();
+            stats.flush_squashafter += !inst->isFault()
+                && !inst->staticInst->isSerializeAfter()
+                && inst->staticInst->isSquashAfter();
+            stats.flush_fault += inst->isFault();
+            stats.flush_cond_direct += !inst->isFault()
                 && inst->staticInst->isCondCtrl()
                 && inst->staticInst->isDirectCtrl();
-            stats.flush_cond_indirect += flushbranch
+            stats.flush_cond_indirect += !inst->isFault()
                 && inst->staticInst->isCondCtrl()
                 && inst->staticInst->isIndirectCtrl();
-            stats.flush_uncond_direct += flushbranch
+            stats.flush_uncond_direct += !inst->isFault()
                 && inst->staticInst->isUncondCtrl()
                 && inst->staticInst->isDirectCtrl();
-            stats.flush_uncond_indirect += flushbranch
+            stats.flush_uncond_indirect += !inst->isFault()
                 && inst->staticInst->isUncondCtrl()
                 && inst->staticInst->isIndirectCtrl();
             stats.flush_load += inst->isFault()
                  && inst->staticInst
                  && inst->staticInst->isLoad();
-        }
-
-        if (is_serialise) {
-            // Check scheduler serialisation
-            // Everything must be comitted
-            assert(bc.empty());
         }
 
         // Oracle: Early commit
@@ -393,9 +397,8 @@ Execute::evaluate() {
                     *branch.target, branch.actually_taken, 0);
             }
 
-            resolved_branch = BranchData::SquashAt(
-                cpu.getContext()->pcState());
-                flush();
+            resolved_branch = BranchData::SquashAt(cpu);
+            flush();
             return;
         } /* Otherwise take the valid path */
 
@@ -408,12 +411,12 @@ Execute::evaluate() {
 
         bool misspred_value = dpe.commit(inst);
         if (misspred_value){
-            ThreadContext *thread = cpu.getContext();
-            resolved_branch = BranchData::SquashAt(thread->pcState());
+            resolved_branch = BranchData::SquashAt(cpu);
         }
     }
     // Flush in the cycle
     if (resolved_branch.isStreamChange()){
+        fatal("Unrecheable!\n");
         flush();
     }
     bc.dump();

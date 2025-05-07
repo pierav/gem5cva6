@@ -110,8 +110,7 @@ bool needSerialise(Cva6DynInstPtr inst){
       inst->staticInst->isStoreConditional()){
     return true;
   }
-  // Serialisation of low conf branch
-  // BAD !
+  // Serialisation of low conf branch ?
   // if (inst->staticInst->isCondCtrl() &&
   //   !inst->isHighConf){
   //   return true;

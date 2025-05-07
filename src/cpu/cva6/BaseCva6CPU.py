@@ -68,7 +68,7 @@ class BaseCva6CPU(BaseCPU):
     schedType = Param.Unsigned(0, "Scheduler type. (0 for no scheduler)")
     schedSize = Param.Unsigned(128, "Scheduler size")
     schedWidth = Param.Unsigned(4, "Scheduler width")
-    schedRegBarrier = Param.Unsigned(32, "Inter RRB delay")
+    schedRegBarrier = Param.Unsigned(16, "Inter RRB delay")
     schedDisableRB = Param.Unsigned(0, "Disable all register barrier")
     # Exstage
     oracleEarlyCommit = Param.Unsigned(0, "Oracle that allow early commit")

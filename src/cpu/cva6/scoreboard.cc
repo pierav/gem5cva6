@@ -224,14 +224,11 @@ Scoreboard::issueInst(Cva6DynInstPtr inst){
         stats.reg_read_commit += reg.fromrf;
         stats.reg_read_commit_unsafe += reg.fromrf_unsafe;
     }
-
-
 }
 
 void
-Scoreboard::completeInst(Cva6DynInstPtr inst) {
-    assert(!inst->execute_completed); // not already commplete
-    inst->execute_completed = true; // Finished execution
+Scoreboard::writeBackRF(Cva6DynInstPtr& inst){
+    assert(inst->execute_completed);
     for (PhysicalReg &reg: inst->regs_dst_phy){
         if (prf_isvp[reg]){ /* Clear vp flags because no more vp */
             assert(sb[reg] == FWABLE);
@@ -240,14 +237,30 @@ Scoreboard::completeInst(Cva6DynInstPtr inst) {
             assert(sb[reg] == IN_USE); // We must expect a WB
             sb[reg] = FWABLE;
         }
+
         /* Set value and fault */
-        prf[reg] = reg.value;
         if (inst->isFault()){
             prf_isfault[reg] = true;
+            prf[reg] = 0x12345678deaddead; /* debug only */
+        } else {
+            assert(reg.valid);
+            prf[reg] = reg.value;
         }
         /* Some stats */
         stats.reg_write_fw += 1;
     }
+}
+
+void
+Scoreboard::completeInst(Cva6DynInstPtr inst) {
+    assert(!inst->execute_completed); // not already commplete
+    inst->execute_completed = true; // Finished execution
+    if (!inst->isFault() && inst->staticInst->isNonSpeculative()){
+        return;
+        // Bypass the WB as the instruction is pending
+    }
+    /* Otherwise write back */
+    writeBackRF(inst);
 }
 
 Cva6DynInstPtr
@@ -259,6 +272,32 @@ Scoreboard::getCommitInst(size_t index){
     }
     Cva6DynInstPtr inst = issue_queue[index];
     return inst;
+}
+
+void
+Scoreboard::pre_commit(Cva6DynInstPtr& inst){
+    for (auto& reg: inst->regs_dst_phy){
+        _sb_is_unsafe[reg] = true;
+    }
+}
+
+void
+Scoreboard::commitInst(Cva6DynInstPtr& inst){
+    assert(!inst->commit_completed); // Already commited
+    inst->commit_completed = true;
+    for (auto& reg: inst->regs_dst_phy){
+        _sb_is_unsafe[reg] = false;
+    }
+    if (!inst->isFault() && inst->staticInst->isNonSpeculative()){
+        /* Do the write-back now */
+        writeBackRF(inst);
+    }
+    /* There is no need to free the register !! */
+    /* Free registers  */
+    // for (PhysicalReg &reg: inst->regs_dst_phy){
+    //     assert(sb[reg] == FWABLE);
+    //     sb[reg] = FREE;
+    // }
 }
 
 void

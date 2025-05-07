@@ -568,9 +568,9 @@ class Cva6DynInst : public RefCounted
       assert(execute_completed);
       bool is_serialise = !isFault() &&
           isLastOpInInst() &&
-          (staticInst->isSerializeAfter() ||
+          ( staticInst->isSerializeAfter() ||
             staticInst->isSquashAfter());
-
+      /* PR: TODO not all Serialise after requires squash ! */
       bool is_addr_unmatch = triedToPredict &&
                             *predictedTarget != *pc_next;
       bool is_fault = isFault();

@@ -156,6 +156,7 @@ class SA
     uint64_t cpt_branch = 0;
 
     uint64_t tringinsts;
+    uint64_t tringbranch;
     uint64_t tringstores;
     bool schedDisableRB;
 
@@ -164,6 +165,7 @@ class SA
                       Cva6CPU &cpu_,
                       const BaseCva6CPUParams &p) :
       tringinsts(p.schedRegBarrier),
+      tringbranch(p.schedRegBarrier),
       tringstores(p.lsuSQCWidth), /* CARE HERE THE SQ SIZE !*/
       schedDisableRB(p.schedDisableRB)
       {}
@@ -193,7 +195,7 @@ class SA
       // bool trig_no_hc = !inst->isFault() &&
       //                   inst->staticInst->isCondCtrl() &&
       //                   !inst->isHighConf;
-      // bool trig_branch = cpt_branch == tringinsts;
+      bool trig_branch = cpt_branch == tringinsts;
 
       bool trig_preg = predict_squash(inst);
       bool test = trig_stores  /* Mandatory to avoid deadlock !*/
@@ -201,7 +203,7 @@ class SA
       if (!schedDisableRB){
         test = test
              || trig_stores
-             || (cpt_branch==16)
+             || trig_branch
              || trig_preg;
       }
       return test;

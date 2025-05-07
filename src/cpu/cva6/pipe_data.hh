@@ -67,6 +67,8 @@ class BranchData
     void setSquashTarget(const PCStateBase &target_){
       set(squash_target, target_);
     }
+
+    /* Squash to a specific pc */
     static BranchData
     SquashAt(const PCStateBase &target){
       return BranchData(
@@ -77,6 +79,13 @@ class BranchData
         true // Unused
       );
     }
+    /* Squash to the latest valid pc */
+    static BranchData
+    SquashAt(Cva6CPU &cpu){
+      return BranchData::SquashAt(cpu.getContext()->pcState());
+    }
+
+
     BranchData &
     operator=(const BranchData &other)
     {

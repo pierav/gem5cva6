@@ -70,7 +70,7 @@ cva6_config = {
     "schedType" : DEFAULT(0), # The type of scheduler used in frontend
     "schedSize" : DEFAULT(128),
     "schedWidth" : DEFAULT(4),
-    "schedRegBarrier": DEFAULT(64*1024),
+    "schedRegBarrier": DEFAULT(16),
     "schedDisableRB": DEFAULT(0),
     "userelf": DEFAULT(""), # User elf for symbols only
     "renameSize": DEFAULT(64),

@@ -129,6 +129,9 @@ class Scoreboard : public Named
       Cva6DynInstPtr &producer);
   protected:
 
+  protected:
+    void writeBackRF(Cva6DynInstPtr& inst);
+
   public:
     /** Is Available space in scoreboard */
     bool canPush();
@@ -154,26 +157,10 @@ class Scoreboard : public Named
 
     /** Return the instruction to commit. Bubble is none. */
     Cva6DynInstPtr getCommitInst(size_t index=0);
-    /** Commit the instruction */
-    void pre_commit(Cva6DynInstPtr inst){
-      for (auto& reg: inst->regs_dst_phy){
-        _sb_is_unsafe[reg] = true;
-      }
-    }
-    void commitInst(Cva6DynInstPtr inst){
-      assert(!inst->commit_completed); // Already commited
-      inst->commit_completed = true;
 
-      for (auto& reg: inst->regs_dst_phy){
-        _sb_is_unsafe[reg] = false;
-      }
-      /* There is no need to free the register !! */
-      /* Free registers  */
-      // for (PhysicalReg &reg: inst->regs_dst_phy){
-      //     assert(sb[reg] == FWABLE);
-      //     sb[reg] = FREE;
-      // }
-    }
+    /** Commit the instruction */
+    void pre_commit(Cva6DynInstPtr& inst);
+    void commitInst(Cva6DynInstPtr& inst);
 
     /** Tick the scoreboard: evaluate flip flops*/
     void tick();
