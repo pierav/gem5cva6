@@ -293,8 +293,12 @@ Execute::evaluate() {
             cpu.pipeline->sa.scheduler.violation(pcstore, pcload);
             stats.flush ++;
             stats.flush_mdp += 1;
+            cpu.pipeline->hcpred.violation(inst);
             flush();
             return; /* EARLY FLUSH : do not commit */
+        }
+        if (!inst->isFault() && inst->staticInst->isLoad()){
+            cpu.pipeline->hcpred.confidence(inst);
         }
 
         /* Compare the pred base addr with the real one */

@@ -97,6 +97,41 @@ SA::fixer_t::on_schedule_need_rb(Cva6DynInstPtr &inst){
   return false;
 }
 
+bool
+SA::RegBarrierhandler::on_push_need_rb(Cva6DynInstPtr& inst){
+  /* Compute new scores */
+  cpt_inst += 1;
+  cpt_stores += !inst->isFault() && inst->staticInst->isStore();
+  cpt_branch += !inst->isFault() && inst->staticInst->isControl();
+  /* Compte triggers based on previous count */
+  /* OPTIONAL : TODO: have to be fine tunnet */
+  // bool trig_cpt = cpt_inst == tringinsts;
+  /* MANDATORY : Deadlock otherwise ! */
+  bool trig_stores = cpt_stores == tringstores;
+  /* OPTIONAL : Avoid strong flushs */
+  // bool trig_no_hc = !inst->isFault() &&
+  //                   inst->staticInst->isCondCtrl() &&
+  //                   !inst->isHighConf;
+  bool trig_branch = cpt_branch == tringbranch;
+
+  /* MDP fail trigger */
+  // bool trig_mdp = false;
+  // if (!inst->isFault() && inst->staticInst->isLoad()){
+  //   trig_mdp = !cpu.pipeline->hcpred.predictIsHC(inst);
+  // }
+
+  bool trig_preg = predict_squash(inst);
+  bool test = trig_stores  /* Mandatory to avoid deadlock !*/
+              || needSerialise(inst); /* MANDATORY */
+  if (!schedDisableRB){
+    test = test
+          || trig_stores
+          || trig_branch
+          || trig_preg;
+  }
+  return test;
+}
+
 bool needSerialise(Cva6DynInstPtr inst){
   if (inst->isFault()) {
     return true;

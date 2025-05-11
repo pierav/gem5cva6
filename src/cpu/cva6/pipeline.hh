@@ -144,7 +144,7 @@ struct HCPred
     uint64_t cpt;
   };
 
-  #define RBHPSIZE_LOG 8
+  #define RBHPSIZE_LOG 10
   #define RBHPSIZE  (1 << RBHPSIZE_LOG)
   pred_entry_t pred_array[RBHPSIZE];
 
@@ -168,33 +168,24 @@ struct HCPred
       return pred_array[idx].cpt;
   }
 
-  void commit(Cva6DynInstPtr& inst){
-      if (inst->isFault() || !inst->staticInst->isControl()){
-          return;
-      }
-      if (!inst->staticInst->isUncondCtrl()){
-          return;
-      }
-      if (inst->staticInst->isReturn()){
-          return;
-      }
-      if (inst->staticInst->isDirectCtrl()){
-        assert(!inst->isASquash());
-        return;
-      }
-      bool squashed = inst->isASquash();
-      uint64_t idx = addr2idx(inst->pc->instAddr());
-      // uint64_t newtag = addr2tag(inst->pc->instAddr());
-      // bool reset = squashed ||
-      //              pred_array[idx].tag != newtag;
-      // pred_array[idx].cpt = reset ? 0 : pred_array[idx].cpt+1;
-      // pred_array[idx].tag = newtag;
-      if (squashed){
-          pred_array[idx].cpt = 0;
-      } else if (!pred_array[idx].cpt) {
-          pred_array[idx].cpt = (rand() % 64 == 0);
-      }
+  void violation(Cva6DynInstPtr& inst){
+    uint64_t idx = addr2idx(inst->pc->instAddr());
+    pred_array[idx].cpt = 0;
   }
+
+  void confidence(Cva6DynInstPtr& inst){
+    uint64_t idx = addr2idx(inst->pc->instAddr());
+    // uint64_t newtag = addr2tag(inst->pc->instAddr());
+    // bool reset = squashed ||
+    //              pred_array[idx].tag != newtag;
+    // pred_array[idx].cpt = reset ? 0 : pred_array[idx].cpt+1;
+    // pred_array[idx].tag = newtag;
+    if (!pred_array[idx].cpt) {
+        pred_array[idx].cpt = (rand() % 64 == 0);
+    }
+  }
+
+  void commit(Cva6DynInstPtr& inst){}
 };
 
 

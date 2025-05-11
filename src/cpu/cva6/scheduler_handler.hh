@@ -151,6 +151,7 @@ class SA
 
   class RegBarrierhandler
   {
+    Cva6CPU& cpu;
     uint64_t cpt_inst = 0;
     uint64_t cpt_stores = 0;
     uint64_t cpt_branch = 0;
@@ -164,6 +165,7 @@ class SA
     RegBarrierhandler(const std::string &name,
                       Cva6CPU &cpu_,
                       const BaseCva6CPUParams &p) :
+      cpu(cpu_),
       tringinsts(p.schedRegBarrier),
       tringbranch(p.schedRegBarrier),
       tringstores(p.lsuSQCWidth), /* CARE HERE THE SQ SIZE !*/
@@ -178,36 +180,27 @@ class SA
       return !inst->isHighConf;
     }
 
+    // uint64_t mean_cnt = 16;
+    // uint64_t latest_cnt = 0;
+
     void commit(Cva6DynInstPtr& inst){
+      // latest_cnt += !inst->isFault() && inst->staticInst->isControl();
+      // if (inst->isASquash()){
+      //   if (latest_cnt > tringbranch){
+      //     latest_cnt = tringbranch;
+      //   }
+      //   mean_cnt = 7*mean_cnt/8 + 1*latest_cnt/8;
+      //   if (mean_cnt <= 0){
+      //     mean_cnt = 1;
+      //   }
+      //   // printf("New mean_cnt = %d\n", mean_cnt);
+      //   assert(mean_cnt > 0);
+      //   assert(mean_cnt < tringbranch);
+      //   latest_cnt = 0;
+      // }
     }
 
-    bool on_push_need_rb(Cva6DynInstPtr& inst){
-      /* Compute new scores */
-      cpt_inst += 1;
-      cpt_stores += !inst->isFault() && inst->staticInst->isStore();
-      cpt_branch += !inst->isFault() && inst->staticInst->isControl();
-      /* Compte triggers based on previous count */
-      /* OPTIONAL : TODO: have to be fine tunnet */
-      // bool trig_cpt = cpt_inst == tringinsts;
-      /* MANDATORY : Deadlock otherwise ! */
-      bool trig_stores = cpt_stores == tringstores;
-      /* OPTIONAL : Avoid strong flushs */
-      // bool trig_no_hc = !inst->isFault() &&
-      //                   inst->staticInst->isCondCtrl() &&
-      //                   !inst->isHighConf;
-      bool trig_branch = cpt_branch == tringinsts;
-
-      bool trig_preg = predict_squash(inst);
-      bool test = trig_stores  /* Mandatory to avoid deadlock !*/
-                 || needSerialise(inst); /* MANDATORY */
-      if (!schedDisableRB){
-        test = test
-             || trig_stores
-             || trig_branch
-             || trig_preg;
-      }
-      return test;
-    }
+    bool on_push_need_rb(Cva6DynInstPtr& inst);
 
     void reset(){
       cpt_inst = 0;
