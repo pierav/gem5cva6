@@ -131,7 +131,7 @@ Cva6DynInst::basedump(std::ostream &os) const {
       //   << "Flags=";
       // staticInst->printFlags(os, ",");
       //   ->getName();
-      if (issue_start_ts){
+      if (stage_issue_enter){
         for (auto &reg: regs_dst_phy){
           reg.dumpWithValue(os);
           os << ' ';
@@ -149,7 +149,7 @@ Cva6DynInst::basedump(std::ostream &os) const {
     }
     if (triedToPredict && execute_completed){
         os << "[T:" << pc_next_taken
-           << " =>" << pc_next->instAddr();
+           << " =>" << std::hex << pc_next->instAddr();
         bool is_addr_unmatch = *predictedTarget != *pc_next;
         if (is_addr_unmatch){
             os << " MISS (T:"

@@ -45,7 +45,7 @@ inline BaseScheduler& initSched(
 }
 
 
-class SA
+class SA : public ForwardInstDataPopIntf
 {
   public:
   Cva6CPU &cpu;
@@ -172,7 +172,6 @@ class SA
       schedDisableRB(p.schedDisableRB)
       {}
 
-
     bool predict_squash(Cva6DynInstPtr& inst){
       if (inst->isFault() || !inst->staticInst->isControl()){
         return false;
@@ -231,9 +230,11 @@ class SA
       regalloc.reg_barrier();
     }
   }
-  bool can_pop_scheduled(){ return scheduler.canPop(); }
-  Cva6DynInstPtr front_scheduler() { return scheduler.front(); }
-  Cva6DynInstPtr pop_scheduler(){
+
+  /* *** ForwardInstDataPopIntf interface *** */
+  bool canPop(){ return scheduler.canPop(); }
+  Cva6DynInstPtr front() { return scheduler.front(); }
+  Cva6DynInstPtr pop(){
     Cva6DynInstPtr inst = scheduler.pop();
     /* Ensure stores are InO */
     if (!inst->isFault() && inst->staticInst->isStore()){
@@ -245,6 +246,7 @@ class SA
     // osa.commit(inst);
     return inst;
   }
+  void flush(){ flushfrom(Cva6DynInst::bubble()); }
 
   /* Annotate if instruction can commit (rd ready) */
   void pre_commit(Cva6DynInstPtr& inst){

@@ -53,6 +53,8 @@ class BaseCva6CPU(BaseCPU):
     plugin_memtrace_path = Param.String("", "Memtrace")
 
     sbSize = Param.Unsigned(32, "Scoreboard size")
+    sbOoO = Param.Unsigned(0, "Enable OoO IQ")
+
     issueWidth = Param.Unsigned(4, "Issue width")
     commitWidth = Param.Unsigned(4, "Commit Width")
     renameSize = Param.Unsigned(64, "Rename size")

@@ -47,7 +47,6 @@ parser = argparse.ArgumentParser()
 Options.addCommonOptions(parser)
 # Options.addFSOptions(parser)
 parser.add_argument("--kernel", action="store", type=str)
-
 parser.add_argument("--issueWidth", action="store", type=int, default=4)
 
 # Prefetcher size
@@ -67,6 +66,7 @@ cva6_config = {
     "dpeIgnore" : STORE_TRUE,
     "lltSize" : DEFAULT(0), # Enable lambda things ...
     "sbSize" : DEFAULT(32), # Scoreboard size
+    "sbOoO": STORE_TRUE,
     "schedType" : DEFAULT(0), # The type of scheduler used in frontend
     "schedSize" : DEFAULT(128),
     "schedWidth" : DEFAULT(4),
@@ -76,7 +76,7 @@ cva6_config = {
     "renameSize": DEFAULT(64),
     "renameIncArchReg": DEFAULT(0), # Include ARCH in PRF
     "renameFreeRegDead": DEFAULT(0), # Free reg dead (bugs)
-    "renameSpecRelease": DEFAULT(1), # Speculative Release
+    "renameSpecRelease": DEFAULT(0), # Speculative Release
     "oracleEarlyCommit": DEFAULT(0)
 }
 o3_config = {

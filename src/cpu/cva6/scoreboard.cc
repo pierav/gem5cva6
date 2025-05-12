@@ -14,15 +14,12 @@
 namespace gem5 {
 namespace cva6 {
 
-bool
-Scoreboard::canPush(){
-    return issue_queue.size() < nr_entries;
-}
-
-void
-Scoreboard::pushInst(Cva6DynInstPtr inst){
-    assert(issue_queue.size() < nr_entries);
-    issue_queue.push_back(inst);
+bool needScoreboardSerialize(Cva6DynInstPtr& inst){
+    return inst->isFault() ||
+           inst->staticInst->isSerializing() ||
+           inst->staticInst->isSquashAfter() ||
+           inst->staticInst->isReadBarrier() ||
+           inst->staticInst->isWriteBarrier();
 }
 
 bool
@@ -79,6 +76,7 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg,
             break;
         }
         case IN_USE: {
+            DPRINTF(Cva6Scoreboard, "Read %s IN_USE\n", reg);
             producer = _sb_producer[reg];
             /* We have to wait */
             break;
@@ -138,34 +136,18 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg,
 }
 
 
-Cva6DynInstPtr
-Scoreboard::getIssueInst(
-    bool &is_over_serialise,
+bool
+Scoreboard::chechIssueInst(
+    Cva6DynInstPtr inst,
     bool &is_raw,
     Cva6DynInstPtr &producer,
-    bool &is_waw
-){
-    Cva6DynInstPtr inst = Cva6DynInst::bubble();
-    is_over_serialise = false;
+    bool &is_waw){
+
     is_raw = false;
     is_waw = false;
-
-    if (!canPush()){
-        return Cva6DynInst::bubble();
+    if (inst->isBubble()){
+        return false;
     }
-    /* First check serialisation */
-    // for (Cva6DynInstPtr dyn: issue_queue){
-    //     if (inst->needSerialise){
-    //         is_over_serialise = true;
-    //         break;
-    //     }
-    // }
-    is_over_serialise = is_serialise_inflight;
-    /* Second, retrieve instruction from previous stage */
-    if (!cpu.pipeline->sa.can_pop_scheduled()){
-        return Cva6DynInst::bubble();
-    }
-    inst = cpu.pipeline->sa.front_scheduler();
 
     /* Available source registers */
     // RaW dependencies
@@ -187,24 +169,42 @@ Scoreboard::getIssueInst(
     for (PhysicalReg &reg: inst->regs_dst_phy){
         is_waw |= sb[reg] == IN_USE; // Cannot be true in full RR
     }
-
     // WaR dependencies
     // Nothing to do
     // Solved at pre-scheduling
 
     // RaR dependencies
     // Nothing to do
+    return !is_raw && !is_waw;
+}
+Cva6DynInstPtr
+Scoreboard::getIssueInst(
+    bool &is_over_serialise,
+    bool &is_raw,
+    Cva6DynInstPtr &producer,
+    bool &is_waw
+){
+    Cva6DynInstPtr inst = Cva6DynInst::bubble();
+    is_over_serialise = false;
+    is_raw = false;
+    is_waw = false;
+    /* First check serialisation */
+    is_over_serialise = is_serialise_inflight;
+    /* Second, retrieve instruction from previous stage */
+    if (!inp.canPop()){
+        return Cva6DynInst::bubble();
+    }
+    inst = inp.front();
+    chechIssueInst(inst, is_raw, producer, is_waw);
     return inst;
 }
 
 void
-Scoreboard::issueInst(Cva6DynInstPtr inst){
-    assert(!inst->issue_completed);
-    inst->issue_completed = true;
-    Cva6DynInstPtr i2 = cpu.pipeline->sa.pop_scheduler();
-    fatal_if(i2 != inst, "Sched inst must be this one\n");
+Scoreboard::onInsert(Cva6DynInstPtr inst){
+    assert(!inst->stage_issue_enter);
+    inst->stage_issue_enter = true;
     /* Markup serialisation */
-    is_serialise_inflight += inst->needSerialise;
+    is_serialise_inflight += needScoreboardSerialize(inst);
     /* Markup registers */
     for (PhysicalReg &reg: inst->regs_dst_phy){
         if (prf_isvp[reg]){ /* Nothing to do */
@@ -216,6 +216,13 @@ Scoreboard::issueInst(Cva6DynInstPtr inst){
         sb[reg] = IN_USE;
         _sb_producer[reg] = inst;
     }
+}
+
+void
+Scoreboard::completeIssueInst(Cva6DynInstPtr inst){
+    assert(inst->stage_issue_enter);
+    assert(!inst->issue_completed);
+    inst->issue_completed = true;
 
     /* Some stats */
     for (PhysicalReg &reg: inst->regs_src_phy){
@@ -224,6 +231,18 @@ Scoreboard::issueInst(Cva6DynInstPtr inst){
         stats.reg_read_commit += reg.fromrf;
         stats.reg_read_commit_unsafe += reg.fromrf_unsafe;
     }
+
+    /* Finally insert in the issue_queue (debug) */
+    assert(issue_queue.size() < nr_entries);
+    issue_queue.push_back(inst);
+}
+
+void
+Scoreboard::issueInst(Cva6DynInstPtr inst){
+    Cva6DynInstPtr i2 = inp.pop();
+    fatal_if(i2 != inst, "Sched inst must be this one\n");
+    onInsert(inst); /* Markup rd buzy */
+    completeIssueInst(inst); /* (debug) and stats */
 }
 
 void
@@ -309,7 +328,7 @@ Scoreboard::tick(){
         /* pop issue queue*/
         Cva6DynInstPtr inst = issue_queue.front();
         issue_queue.pop_front();
-        is_serialise_inflight -= inst->needSerialise;
+        is_serialise_inflight -= needScoreboardSerialize(inst);
     }
 }
 
@@ -568,6 +587,23 @@ Scoreboard::dump(){
             hit[inst->commit_completed], os.str(), *inst);
         }
     }
+}
+
+bool ScoreboardO3::isReady(Cva6DynInstPtr& inst, bool &is_raw,
+    Cva6DynInstPtr &producer, bool &is_waw, bool &is_ss){
+    // bool deps_ready =
+    chechIssueInst(inst, is_raw, producer, is_waw);
+    is_waw = false; // There is no WaW in OoO
+
+    /* Functionnal wire from FUs */
+    bool fu_ready = cpu.pipeline->fus.canPush(inst);
+
+    is_ss = !inst->isFault() &&
+            inst->staticInst->isStore() &&
+            inst != store_order.front();
+
+    /* TODO: MDP*/
+    return !is_raw && fu_ready && !is_ss;
 }
 
 } // namespace cva6

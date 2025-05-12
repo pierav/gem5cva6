@@ -5,7 +5,6 @@
  * Created:   04/07/2023
  **/
 
-
 #pragma once
 
 #include <bitset>

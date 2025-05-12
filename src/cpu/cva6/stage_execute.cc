@@ -98,6 +98,9 @@ BlockCommit::dump(){
     if (!(GEM5_UNLIKELY(TRACING_ON && ::gem5::debug::Cva6Execute))) {
         return;
     }
+    if (!fifo.size()){
+        return;
+    }
     DPRINTF(Cva6Execute, "BlockCommit FIFO (#%d : %s)\n",
         fifo.size(),  preg_in_flight.dump_match(true));
     for (Cva6DynInstPtr inst: fifo){

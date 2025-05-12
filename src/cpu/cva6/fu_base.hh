@@ -12,6 +12,7 @@
 
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/dyn_inst.hh"
+#include "cpu/cva6/pipe_data.hh"
 #include "cpu/func_unit.hh"
 #include "debug/Cva6FU.hh"
 
@@ -86,95 +87,6 @@ class FUBase : public virtual ReadyValidIntf, /* Ready valid interface */
     }
 };
 
-bool maskMatchVaddrInst(Cva6DynInstPtr i1, Cva6DynInstPtr i2, uint64_t mask);
-
-class MatchAddrIntf
-{
-  public:
-  virtual bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) = 0;
-  bool isPageOffsetMatches(Cva6DynInstPtr inst){
-      return isMaskMatchVaddr(inst, 0b111111111000);
-  }
-  bool isClMatch(Cva6DynInstPtr inst, uint64_t clsize){
-      uint64_t mask = ((1 << 12) - 1); // 0b111111111111;
-      mask &= ~(clsize - 1); // 0b111111110000
-      // assert(mask == 0b111111110000);
-      return isMaskMatchVaddr(inst, mask);
-  }
-};
-
-class Cva6DynInstChunk : public Named, public MatchAddrIntf
-{
-  using ContainerT = std::deque<Cva6DynInstPtr>;
-
-  protected:
-    ContainerT chunk;
-
-
-  public:
-    Cva6DynInstChunk(const std::string &name) : Named(name){ }
-
-    bool canPush(Cva6DynInstPtr inst){
-      // return chunk.size() != 1;
-      return true;
-    }
-
-    void push(Cva6DynInstPtr inst){
-      chunk.push_back(inst);
-    }
-
-    bool canPop(Cva6DynInstPtr inst){
-      return std::find(chunk.begin(), chunk.end(), inst) != chunk.end();
-    }
-
-    void pop(Cva6DynInstPtr inst){
-      chunk.erase(std::find(chunk.begin(), chunk.end(), inst));
-    }
-
-    Cva6DynInstPtr pop(){
-      Cva6DynInstPtr ret = chunk.front();
-      chunk.pop_front();
-      return ret;
-    }
-    ContainerT::iterator erase(ContainerT::iterator it){
-      return chunk.erase(it);
-    }
-
-    void flushfrom(Cva6DynInstPtr _inst) {
-      while (!chunk.empty() &&
-        chunk.back()->isAfterOrEqual(_inst)){
-        DPRINTF(Cva6FU, "Flush %s\n", *chunk.back());
-        chunk.pop_back();
-      }
-    }
-
-    void flush(){ flushfrom(Cva6DynInst::bubble()); }
-
-    bool empty()                 { return chunk.empty(); }
-    size_t size()                { return chunk.size(); }
-    Cva6DynInstPtr front()       { return chunk.front(); }
-    Cva6DynInstPtr back()        { return chunk.back(); }
-    ContainerT::iterator begin() { return chunk.begin(); }
-    ContainerT::iterator end()   { return chunk.end(); }
-
-    Cva6DynInstPtr& operator[](int idx)      { return chunk[idx]; }
-    Cva6DynInstPtr operator[](int idx) const { return chunk[idx]; }
-
-    bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) override {
-      Addr addr_masked = inst->dreq->req->getVaddr() & mask;
-      // Check if the page offset matches
-      for (Cva6DynInstPtr i2: chunk){
-        if (i2 == inst){
-          return false;
-        }
-        if ((i2->dreq->req->getVaddr() & mask) == addr_masked){
-          return true;
-        }
-      }
-      fatal("Unrecheable\n");
-      return false;
-    }
-};
 
 } // namespace cva6
 } // namespace gem5

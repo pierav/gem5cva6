@@ -29,12 +29,12 @@ IssueUnit::evaluate(){
         Cva6DynInstPtr inst = scoreboard.getIssueInst(
             is_over_serialise, is_raw, producer, is_waw);
 
-        /* -1) */
-        if (!scoreboard.canPush()){
-            DPRINTF(Cva6Issue, "(port %d) Scoreboard full...\n", i);
-            stats.issue_stall_full += 1;
-            break;
-        }
+        /* -1) Outdated : with RR, cannot block */
+        // if (!scoreboard.canPush()){
+        //     DPRINTF(Cva6Issue, "(port %d) Scoreboard full...\n", i);
+        //     stats.issue_stall_full += 1;
+        //     break;
+        // }
 
         /* 0) Is instruction present ?*/
         if (inst->isBubble()){
@@ -131,8 +131,8 @@ IssueUnit::evaluate(){
         /* Can insert the instruction into this FU */
         DPRINTF(Cva6Issue, "(port %d) Issuing %s FU: %d\n", i,
             *inst, inst->fuIndex);
-        push(inst); //
-        /* markup dst registers as busy */
+
+        /* markup dst registers as busy. */
         scoreboard.issueInst(inst);
 
         bool need_execution = cpu.pipeline->dpe.issue(inst);

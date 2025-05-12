@@ -49,6 +49,18 @@ inline OCS getOcs(Cva6DynInstPtr &inst){
   return OCS::NoOp;
 }
 
+inline Scoreboard& scoreboardInit(const std::string &name,
+        Cva6CPU &cpu,  const BaseCva6CPUParams &p,
+        ForwardInstDataPopIntf& inp){
+  bool useO3 = p.sbOoO;
+  if (useO3){
+    return *new ScoreboardO3(name + ".sb", cpu, p.sbSize, inp,
+      p.lsuSQSWidth);
+  } else {
+    return *new Scoreboard(name + ".sb", cpu, p.sbSize, inp);
+  }
+}
+
 class IssueUnit : public Named
 {
     private:
@@ -57,7 +69,7 @@ class IssueUnit : public Named
     /** Pointer to the execution functional units */
     FUPipelines &fus;
     /** Our scoreboard */
-    Scoreboard scoreboard;
+    Scoreboard& scoreboard;
     /** Configuration */
     int nb_issue_port;
 
@@ -136,23 +148,16 @@ class IssueUnit : public Named
     IssueUnit(const std::string &name_,
       Cva6CPU &cpu_,
       const BaseCva6CPUParams &params,
+      ForwardInstDataPopIntf& inp,
       FUPipelines &fus_) :
         Named(name_),
         cpu(cpu_),
         fus(fus_),
-        scoreboard(name_ + ".scoreboard", cpu, params.sbSize),
+        scoreboard(scoreboardInit(name_, cpu, params, inp)),
         nb_issue_port(params.issueWidth),
         stats(name_, cpu_, params) {}
 
     public:
-    bool canPush(){
-      return scoreboard.canPush();
-    }
-
-    void push(Cva6DynInstPtr inst){
-      inst->stage_issue_enter = true;
-      scoreboard.pushInst(inst);
-    }
 
     void evaluate();
 

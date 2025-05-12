@@ -91,7 +91,6 @@ class PhysicalRegAllocator : public Named
   PhysicalRegFile<state_t> isbuzy;
   PhysicalRegFile<char> cannotbefreed;
 
-
   std::string dump(){
     std::ostringstream os;
     os << '[';
@@ -139,9 +138,11 @@ class PhysicalRegAllocator : public Named
     }
     /* Initialise all arch regs to physical mapping */
     for (int i = 0; i < nb_regs; i++){
-      if (incarchreg && i < NB_I2ID){
+      // Riscv : ignore zero reg
+      if (incarchreg && i >= 1 && i < NB_I2ID){
         RegId regid = i2id(i);
         PhysicalReg reg(regid);
+        reg.doRename(i);
         rmt[reg] = i;
         isbuzy[reg] = BUZY;
       } else { /* Let the register for future use */
@@ -209,10 +210,13 @@ class PhysicalRegAllocator : public Named
     auto it = std::find(free_list.begin(), free_list.end(), preg);
     fatal_if(it==free_list.end(), "Preg %d must be in FL\n", preg);
     it = free_list.erase(it);
+    if (incarchreg){
+      free_list_popped.push_back(preg);
+    }
     /* Mark many things */
     rmt[reg] = preg; /* 1) Update the RMT */
     rmt_owner[preg] = inst->id.fetchSeqNum; /* 2) The owner */
-    isbuzy[preg] = BUZY; /* 3) RMT or FREE list (mute be exclusive)*/
+    isbuzy[preg] = BUZY; /* 3) RMT or FREE list (must be exclusive)*/
     stats.reg_alloc += 1;
     /* Finally rename the register */
     rename_one_secure(reg);

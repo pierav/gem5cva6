@@ -34,9 +34,9 @@ class LSUStoreBuffer
     // 1. Speculative queue
     // 2. Commit queue which is non-speculative
     //  : the store will definitely happen.
-    unsigned int depth_spec = 16;
-    unsigned int depth_commit = 16; // WT: 4; WB: 8
-    std::deque<Cva6DynInstPtr> speculative_queue;
+    unsigned int depth_spec;
+    unsigned int depth_commit; // WT: 4; WB: 8
+    Cva6DynInstChunk speculative_queue;
     Cva6DynInstChunk commit_queue;
 
   public:
@@ -47,7 +47,8 @@ class LSUStoreBuffer
         cpu(cpu_),
         depth_spec(p.lsuSQSWidth),
         depth_commit(p.lsuSQCWidth),
-        commit_queue(name + ".SQc") { ; }
+        speculative_queue(name + ".SQS"),
+        commit_queue(name + ".SQC") { ; }
 
     // there is no store pending in neither the speculative unit or
     // the non-speculative queue

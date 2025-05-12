@@ -272,7 +272,7 @@ class Pipeline : public Ticked
       rda(cpu.name(), cpu_, p),
       bp(*p.branchPred),
       sa(cpu.name() + ".sa", cpu, p),
-      iq(cpu.name() + ".iq", cpu, p, fus),
+      iq(cpu.name() + ".iq", cpu, p, (ForwardInstDataPopIntf&)sa, fus),
       rob(cpu.name() + ".rob"),
       bc(cpu),
       mdpc(cpu.name() + "mdpc", cpu),

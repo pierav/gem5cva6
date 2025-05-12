@@ -100,6 +100,7 @@ LSUStoreBuffer::isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask){
     return 0;
 }
 
+/* TODO: for now we are assuming InO queues ! */
 uint64_t
 LSUStoreBuffer::lookupSQDW(Cva6DynInstPtr inst, uint64_t& value){
     uint64_t paddr = inst->dreq->getPaddr();
@@ -179,39 +180,38 @@ LSUStoreBuffer::canPush(Cva6DynInstPtr inst_){
 void
 LSUStoreBuffer::push(Cva6DynInstPtr inst_){
         assert(canPush(inst_));
-    speculative_queue.push_back(inst_);
+    speculative_queue.push(inst_);
     DPRINTF(Cva6LSU, PUSH_STR "%s %s\n", *inst_, inst_->dreq->name());
 }
 
 void
 LSUStoreBuffer::flushfrom(Cva6DynInstPtr inst_){
     /* Only flush speculative */
-    while (!speculative_queue.empty() &&
-        speculative_queue.back()->isAfterOrEqual(inst_)){
-        Cva6DynInstPtr inst = speculative_queue.back();
-        speculative_queue.pop_back();
-        inst->untrackDreq();
-    }
-
-    while (!commit_queue.empty() &&
-        !commit_queue.back()->commit_completed &&
-        commit_queue.back()->isAfterOrEqual(inst_)){
-        Cva6DynInstPtr inst = commit_queue.back();
-        commit_queue.pop(inst);
-        inst->untrackDreq();
-    }
-
-    // for (Cva6DynInstPtr inst : speculative_queue){
+    // while (!speculative_queue.empty() &&
+    //     speculative_queue.back()->isAfterOrEqual(inst_)){
+    //     Cva6DynInstPtr inst = speculative_queue.back();
+    //     speculative_queue.pop_back();
     //     inst->untrackDreq();
     // }
-    // speculative_queue.clear();
+
+    // while (!commit_queue.empty() &&
+    //     !commit_queue.back()->commit_completed &&
+    //     commit_queue.back()->isAfterOrEqual(inst_)){
+    //     Cva6DynInstPtr inst = commit_queue.back();
+    //     commit_queue.pop(inst);
+    //     inst->untrackDreq();
+    // }
+    speculative_queue.flushfrom(inst_);
+    commit_queue.flushfrom(inst_);
+
+
 }
 
 bool
 LSUStoreBuffer::canPop(Cva6DynInstPtr inst_){
-    if (!speculative_queue.empty() && speculative_queue.front() == inst_){
-        DPRINTF(Cva6LSU, "STROREB %s\n", inst_->dreq->name());
-    }
+    // if (!speculative_queue.empty() && speculative_queue.front() == inst_){
+    //     DPRINTF(Cva6LSU, "STROREB %s\n", inst_->dreq->name());
+    // }
     return !speculative_queue.empty() && /* data to commit */
             inst_->dreq->isTranslated() && /* */
             commit_queue.size() < depth_commit; /* Available space*/
@@ -223,11 +223,11 @@ LSUStoreBuffer::pop(Cva6DynInstPtr inst_){
     assert(canPop(inst_));
     assert(speculative_queue.size() > 0);
     assert(commit_queue.size() < depth_commit);
-    Cva6DynInstPtr inst = speculative_queue.front();
-    assert(inst == inst_);
-
-    speculative_queue.pop_front();
-    commit_queue.push(inst);
+    // only for InO:
+    // Cva6DynInstPtr inst = speculative_queue.front();
+    // assert(inst == inst_);
+    speculative_queue.pop(inst_);
+    commit_queue.push(inst_);
 }
 
 bool
