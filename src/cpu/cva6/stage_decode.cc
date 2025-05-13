@@ -15,6 +15,14 @@ namespace gem5 {
 namespace cva6 {
 
 bool needArchSerialize(Cva6DynInstPtr& inst){
+    // TODO : remove this part !
+    // There is bad value for load, maybe bad AmoBuff -> LQ
+    if (!inst->isFault() &&
+        (inst->staticInst->isAtomic() ||
+        inst->staticInst->isStoreConditional())){
+      return true;
+    }
+
     // TODO : rename fflags and do not squash
     return inst->isFault() /* ITLB failure*/ ||
            inst->staticInst->isSerializing() ||

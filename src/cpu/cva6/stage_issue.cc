@@ -116,6 +116,9 @@ IssueUnit::evaluate(){
         }
         stats.issue_pass +=1;
 
+        /* Update stats ans status (must be called before exInitiate()) */
+        scoreboard.issueInst(inst);
+
         /* Initiate the instruction (reg src are available)*/
         /* May create fault ! */
         inst->executeInitiate();
@@ -132,14 +135,9 @@ IssueUnit::evaluate(){
         DPRINTF(Cva6Issue, "(port %d) Issuing %s FU: %d\n", i,
             *inst, inst->fuIndex);
 
-        /* markup dst registers as busy. */
-        scoreboard.issueInst(inst);
-
         bool need_execution = cpu.pipeline->dpe.issue(inst);
-        if (need_execution){
-            /* Push in fu */
+        if (need_execution){ /* Push in fu */
             fus.push(inst);
-            // out.push(inst);
         } else { // VP hit @
             scoreboard.completeInst(inst);  /* Notify scoreboard */
         }

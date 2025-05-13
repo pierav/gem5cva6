@@ -230,6 +230,10 @@ class ScoreboardO3 : public Scoreboard
   bool isReady(Cva6DynInstPtr& inst, bool &is_raw,
     Cva6DynInstPtr &producer, bool &is_waw, bool &is_ss);
 
+  inline bool isStore(Cva6DynInstPtr& inst){
+    return !inst->isFault() && inst->staticInst->isMemRef() &&
+           !inst->staticInst->isLoad();
+  }
   Cva6DynInstPtr getIssueInst(
       bool &is_os,
       bool &is_raw,
@@ -239,13 +243,13 @@ class ScoreboardO3 : public Scoreboard
     /* First of all try to fill IQ */
     /* Dispatch */
     while (inp.canPop() && /* Instructions ready to be scheduled */
-          iq.size() < nr_entries && /* Renaning space in IQ */
+          iq.size() < nr_entries && /* Remaining space in IQ */
           !is_serialise_inflight && /* Wait serialisation drain */
           inflight_stores < max_inflight_stores
     ){
       Cva6DynInstPtr inst = inp.pop();
-      inflight_stores += !inst->isFault() && inst->staticInst->isStore();
-      if (!inst->isFault() && inst->staticInst->isStore()){
+      if (isStore(inst)){
+        inflight_stores ++;
         store_order.push_back(inst);
       }
       iq.push(inst); /* Fill the IQ */
@@ -254,6 +258,9 @@ class ScoreboardO3 : public Scoreboard
     /* Try to find ready candidate */
     is_os = false; // We cannot issues instructions upon a serialization
     bool is_ss = false; /* is store serialise */
+    DPRINTF(Cva6Scoreboard, "IQ size: %d %s\n", iq.size(),
+      is_serialise_inflight ? "[DRAIN]" : "");
+
     for (auto inst: iq){
       if (isReady(inst, is_raw, producer, is_waw, is_ss)){
         DPRINTF(Cva6Scoreboard, "IQ %s Ready\n", *inst);
@@ -268,7 +275,7 @@ class ScoreboardO3 : public Scoreboard
   void issueInst(Cva6DynInstPtr inst) override {
     /* Remove inst from the IQ */
     iq.erase(inst);
-    if (!inst->isFault() && inst->staticInst->isStore()){
+    if (isStore(inst)){
       assert(inst == store_order.front());
       store_order.pop_front();
     }
@@ -277,7 +284,7 @@ class ScoreboardO3 : public Scoreboard
   }
 
   void commitInst(Cva6DynInstPtr& inst) override {
-    inflight_stores -= !inst->isFault() && inst->staticInst->isStore();
+    inflight_stores -= isStore(inst);
     Scoreboard::commitInst(inst);
   }
 

@@ -35,15 +35,17 @@ class StoreSet
   using SSID = uint64_t;
   using ssit_t = valid_value_t<SSID>;
   using lfst_t = valid_value_t<T>;
-  /** The Store Set ID Table. */
-  std::vector<ssit_t> SSIT;
-  /** Last Fetched Store Table. */
-  std::vector<lfst_t> LFST;
 
-  uint64_t num_req = 0;
+  std::vector<ssit_t> SSIT; /* The Store Set ID Table */
+  std::vector<lfst_t> LFST; /* Last Fetched Store Table */
+  uint64_t num_req = 0;     /* Count for reset */
 
-  /** Calculates the index into the SSIT based on the pc. */
-  inline ssit_t& ssi(Addr pc) { return SSIT[(pc >> 2) % SSIT.size()]; }
+  /** Calculates the index into the SSIT based on the pc.
+   * Care compressed instructions in risc-v
+  */
+  inline ssit_t& ssi(Addr pc) {
+    return SSIT[(pc ^ (pc >> 10)) % SSIT.size()];
+  }
   /** Calculates a Store Set ID based on the pc. */
   inline SSID calcSSID(Addr pc) { return (pc ^ (pc >> 10)) % LFST.size(); }
 
@@ -105,6 +107,13 @@ class StoreSet
     }
     *id = lfs.value;
     return true;
+  }
+
+  void flush(){
+    /* As we flush at commit, simply clear the LFST */
+    for (auto &e: LFST){
+      e.valid = false;
+    }
   }
 
   void checkClear(){

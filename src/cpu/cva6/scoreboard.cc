@@ -127,6 +127,7 @@ Scoreboard::chechIssueInst(
     // Nothing to do
     return !is_raw && !is_waw;
 }
+
 Cva6DynInstPtr
 Scoreboard::getIssueInst(
     bool &is_over_serialise,
@@ -542,19 +543,26 @@ Scoreboard::dump(){
 
 bool ScoreboardO3::isReady(Cva6DynInstPtr& inst, bool &is_raw,
     Cva6DynInstPtr &producer, bool &is_waw, bool &is_ss){
-    // bool deps_ready =
     chechIssueInst(inst, is_raw, producer, is_waw);
     is_waw = false; // There is no WaW in OoO
 
     /* Functionnal wire from FUs */
     bool fu_ready = cpu.pipeline->fus.canPush(inst);
 
-    is_ss = !inst->isFault() &&
-            inst->staticInst->isStore() &&
-            inst != store_order.front();
+    /* Store serialsiation stall */
+    is_ss = isStore(inst) && inst != store_order.front();
 
-    /* TODO: MDP*/
-    return !is_raw && fu_ready && !is_ss;
+    /* MDP stall */
+    bool mdp_dep = false; // No dep by default
+    if (!inst->isFault() && !inst->mdpinst->isBubble()){
+        mdp_dep = !inst->mdpinst->issue_completed;
+        if (mdp_dep){
+            DPRINTF(Cva6Scoreboard, "MDPDEP %s <- %s\n",
+                *inst, *inst->mdpinst);
+        }
+    }
+
+    return !is_raw && fu_ready && !is_ss && !mdp_dep;
 }
 
 } // namespace cva6

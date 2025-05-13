@@ -440,6 +440,7 @@ Execute::flushfrom(Cva6DynInstPtr inst){
     cpu.pipeline->sa.flushfrom(inst);
     assert(inst->isBubble());
     cpu.pipeline->dpe.flush();
+    cpu.pipeline->mdp.flush();
     cpu.pipeline->bc.flush(); // Clear inflights pre-committed
 }
 
