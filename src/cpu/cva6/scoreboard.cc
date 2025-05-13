@@ -1,8 +1,8 @@
 /**
- * @file sb.hh
+ * @file scoreboard.cc
  * @author Pierre Ravenel (pravenel@kalrayinc.com)
- * @brief
- * @version 0.1
+ * @brief A simple instruction scoreboard for tracking dependencies
+ * @version 1.0
  * @date 2023-05-25
  */
 
@@ -13,14 +13,6 @@
 
 namespace gem5 {
 namespace cva6 {
-
-bool needScoreboardSerialize(Cva6DynInstPtr& inst){
-    return inst->isFault() ||
-           inst->staticInst->isSerializing() ||
-           inst->staticInst->isSquashAfter() ||
-           inst->staticInst->isReadBarrier() ||
-           inst->staticInst->isWriteBarrier();
-}
 
 bool
 Scoreboard::isUnissedStoreBefore(Cva6DynInstPtr inst_in){
@@ -92,49 +84,7 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg,
         }
     }
     return reg.valid;
-    #if 0
-    int pos = issue_queue.size(); // Default is outside sb
-    // Find instruction position in sb
-    // The Order is now not valid
-    // for (int i = 0; i < issue_queue.size(); i++){
-    //     assert(!issue_queue[i]->isBubble());
-    //     if (issue_queue[i]->isAfterOrEqual(inst_in)){
-    //         pos = i;
-    //         break;
-    //     }
-    // }
-    // dump();
-    // fatal_if(pos == -1, "Instruction %s not in sb\n", *inst_in);
-
-    /*
-     * sbe0: addi x5, x0, 1 <-- commit head
-     * sbe1: addi x0, x5, 1
-     * sbe2: addi x5, x5, 1                 // depends on sbe0
-     * sbe3: addi x5, x5, 1 <-- Issue head  // depends on sbe2
-     */
-    // From oldest to newest try to find register
-    for (int i = pos - 1; i >= 0; i--){
-        Cva6DynInstPtr inst = issue_queue[i];
-        // No more true !
-        // if (inst->isFault()){ // Stall after fault
-        //     return false;
-        // }
-        StaticInstPtr si = inst->staticInst;
-        for (PhysicalReg& ireg: inst->regs_dst_phy){
-            if (reg == ireg){
-                reg.value = ireg.value;
-                reg.valid = ireg.valid;
-                return reg.valid;
-            }
-        }
-    }
-    /* No forwarding, read RF */
-    reg.set(cpu.thread->getReg(reg.regid));
-    reg.fromrf = true;
-    return reg.valid;
-    #endif
 }
-
 
 bool
 Scoreboard::chechIssueInst(
@@ -204,7 +154,7 @@ Scoreboard::onInsert(Cva6DynInstPtr inst){
     assert(!inst->stage_issue_enter);
     inst->stage_issue_enter = true;
     /* Markup serialisation */
-    is_serialise_inflight += needScoreboardSerialize(inst);
+    is_serialise_inflight += inst->needArchSerialize;
     /* Markup registers */
     for (PhysicalReg &reg: inst->regs_dst_phy){
         if (prf_isvp[reg]){ /* Nothing to do */
@@ -233,7 +183,8 @@ Scoreboard::completeIssueInst(Cva6DynInstPtr inst){
     }
 
     /* Finally insert in the issue_queue (debug) */
-    assert(issue_queue.size() < nr_entries);
+    // assert(issue_queue.size() < nr_entries);
+    // The queue cannot overflow as we use PRF
     issue_queue.push_back(inst);
 }
 
@@ -328,7 +279,7 @@ Scoreboard::tick(){
         /* pop issue queue*/
         Cva6DynInstPtr inst = issue_queue.front();
         issue_queue.pop_front();
-        is_serialise_inflight -= needScoreboardSerialize(inst);
+        is_serialise_inflight -= inst->needArchSerialize;
     }
 }
 

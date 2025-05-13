@@ -370,9 +370,6 @@ class BaseScheduler
   virtual Cva6DynInstPtr front() = 0;
   virtual Cva6DynInstPtr pop() = 0;
   virtual void flush() = 0;
-  virtual void violation(uint64_t store_pc, uint64_t load_pc){
-    /* Default: do nothing */
-  }
   virtual bool canRenameDest(Cva6DynInstPtr &inst,
     std::deque<uint64_t> &FL, uint64_t &preg){
     if (FL.size()){ // Rename to the first
@@ -616,8 +613,6 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   uint64_t last_store_time = 0;
   uint64_t base_time = 0;
 
-  StoreSet<Cva6DynInstPtr> mdp;
-
   PhysicalRegFile<unsigned int> timeofregready;
   // ArchRegFile<unsigned int> timeofregready;
   PhysicalRegFile<uint64_t> maxtimeoflasttouch;
@@ -668,10 +663,6 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
     timeofregready.setall(0);
   }
 
-  void violation(uint64_t store_pc, uint64_t load_pc) override {
-    mdp.violation(store_pc, load_pc);
-  }
-
   bool canRenameDest(Cva6DynInstPtr &inst,
     std::deque<uint64_t> &FL, uint64_t &preg) override;
 
@@ -681,7 +672,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
     Cva6CPU &cpu_,
     const BaseCva6CPUParams &p
   ) : Named(name), cpu(cpu_),
-      stats(cpu_), size(p.schedSize), mdp(1024),
+      stats(cpu_), size(p.schedSize),
       mla(16), mlabb(6) {
         scheduler_entry_t::width = p.schedWidth;
       }

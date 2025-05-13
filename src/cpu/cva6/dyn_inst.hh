@@ -1,15 +1,14 @@
 /**
- * @file
- *
- *  The dynamic instruction and instruction/line id (sequence numbers)
- *  definition for Cva6.  A spirited attempt is made here to not carry too
- *  much on this structure.
+ * @file dyn_inst.hh
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief The dynamic instruction definition for Cva6
+ * @version 1.0
+ * @date 2023-05-25
  */
 
 #pragma once
 
 #include <iostream>
-
 #include "arch/generic/decoder.hh"
 #include "arch/generic/isa.hh"
 #include "base/named.hh"
@@ -246,6 +245,7 @@ class Cva6DynInst;
 
 /** Cva6DynInsts are currently reference counted. */
 typedef RefCountingPtr<Cva6DynInst> Cva6DynInstPtr;
+typedef std::unique_ptr<PCStateBase> PCStateBasePtr;
 
 /** Id for lines and instructions.  */
 class InstId
@@ -339,17 +339,8 @@ class Cva6DynInst : public RefCounted
     Fault fault_ex = NoFault; // Fault from backend
 
   public:
-    /** Tried to predict the destination of this inst (if a control
-     *  instruction or a sys call) */
-    bool triedToPredict = false;
-    bool isHighConf = false;
-    bool predFromBim = false;
 
-    /** This instruction was predicted to change control flow */
-    bool predictedTaken = false;
 
-    /** Predicted branch target */
-    std::unique_ptr<PCStateBase> predictedTarget;
 
     /** FU this instruction is issued to */
     unsigned int fuIndex = 0;
@@ -362,9 +353,6 @@ class Cva6DynInst : public RefCounted
     bool memAccPredicate = true;
 
 
-    bool stage_decode_enter = false;
-    bool stage_issue_enter = false;
-
     int cycle_from_issue(){
       if (stage_issue_enter){
         assert(stage_decode_enter);
@@ -376,15 +364,28 @@ class Cva6DynInst : public RefCounted
       return 2;
     }
 
+    /************ Fetch stage ***********/
+
+    bool triedToPredict = false; /* Tried to predict */
+    bool isHighConf = false;     /* Is the branch pred confident */
+    bool predFromBim = false;    /* Is the predition come from BIM */
+    bool predictedTaken = false; /* Taken or NoTaken predictrion */
+    PCStateBasePtr predictedTarget; /** Predicted branch target */
+    // is there a store load dependancy
+    Cva6DynInstPtr mdpinst = bubble();
+
     /************ Decode stage ***********/
-    // All static informations from decoded insts.
-    ExecContextStaticData static_data;
-    bool needSerialise = false;
+    bool stage_decode_enter = false;  // Entered Decode stage
+    StaticData static_data;           // IMM and load size
+    bool needSerialise = false;       // Was serialised (frontend)
+    bool needArchSerialize = false;   // Must be serialised (backend)
+
 
     /************ Issue stage ************/
-    uint64_t issue_start_ts = 0;
-    uint64_t issue_ts = 0;
-    bool issue_completed = false;
+    bool stage_issue_enter = false;   // Entered Issue stage
+    uint64_t issue_start_ts = 0;      //
+    uint64_t issue_ts = 0;            //
+    bool issue_completed = false;     // Left Issue stage (Issued)
     /** Source registers values */
 
     /** memory request generated when load/store */
@@ -415,6 +416,7 @@ class Cva6DynInst : public RefCounted
 
     /* Scheduler data */
     bool free_reg_at_commit = false;
+    uint64_t scheduled_time = 0;
 
     /************ Commit ******************/
     bool commit_completed = false; // Used by LSU store buffer

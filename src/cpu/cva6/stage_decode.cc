@@ -14,6 +14,15 @@
 namespace gem5 {
 namespace cva6 {
 
+bool needArchSerialize(Cva6DynInstPtr& inst){
+    // TODO : rename fflags and do not squash
+    return inst->isFault() /* ITLB failure*/ ||
+           inst->staticInst->isSerializing() ||
+           inst->staticInst->isSquashAfter() ||
+           inst->staticInst->isReadBarrier() ||
+           inst->staticInst->isWriteBarrier();
+}
+
 void
 Decode::evaluate(){
   if (resolved_branch.isStreamChange()) {
@@ -27,6 +36,8 @@ Decode::evaluate(){
   {
     Cva6DynInstPtr inst = inp.pop();
     inst->stage_decode_enter = true;
+    /* Annotate instruction flags */
+    inst->needArchSerialize = needArchSerialize(inst);
     /* Push in the prediction pipeline */
     cpu.pipeline->dpe.insert(inst);
     /* Push in the scheduler stage */

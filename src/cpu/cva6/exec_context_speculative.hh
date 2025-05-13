@@ -1,8 +1,11 @@
 /**
- * @file
- *
- *  ExecContextSpeculative: execute speculatively inst
+ * @file exec_context_specualtive.hh
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief ExecContextSpeculative: execute speculatively inst
+ * @version 1.0
+ * @date 2023-05-25
  */
+
 
 #pragma once
 

@@ -279,14 +279,17 @@ uint64_t
 SchedulerPierreMichaud::getSLMDP(Cva6DynInstPtr &inst){
   uint64_t schedule_line = 0;
   if (!inst->isFault() && inst->staticInst->isLoad()){
-  // if (isMemLoad(inst, addr_load)){
     /* MDP */
-    Cva6DynInstPtr store_inst = Cva6DynInst::bubble();;
-    bool is_dep = mdp.checkInst(inst->pc->instAddr(), &store_inst);
-    uint64_t mdp_sched_line = is_dep ? find_inst_line(store_inst) : 0;
-    schedule_line = std::max(schedule_line, mdp_sched_line);
-    if (is_dep){
-        DPRINTF(Cva6Sched, "Schedule (MDP hit      ): line %d T %d for %s\n",
+    if (!inst->mdpinst->isBubble()){
+      uint64_t test_line = find_inst_line(inst->mdpinst);
+      uint64_t mdp_sched_line = 0;
+      if (inst->mdpinst->scheduled_time > base_time){
+        mdp_sched_line = inst->mdpinst->scheduled_time - base_time;
+      }
+      fatal_if(mdp_sched_line != test_line, "%d==%d\n",
+        mdp_sched_line, test_line);
+      schedule_line = std::max(schedule_line, mdp_sched_line);
+      DPRINTF(Cva6Sched, "Schedule (MDP hit      ): line %d T %d for %s\n",
           mdp_sched_line, mdp_sched_line + base_time, dumpInstPreg(inst));
     }
     /* Ideal MDP */
@@ -426,11 +429,6 @@ SchedulerPierreMichaud::getScheduleLineForLoadAddr(uint64_t addr,
 void
 SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
   inflight_insts_count += 1;
-  /* Mdp things */
-  if (!inst->isFault() && inst->staticInst->isStore()){
-    mdp.pushStore(inst->pc->instAddr(), inst);
-  }
-
   uint64_t delta;
   uint64_t schedule_line = getScheduleLine(inst, delta);
   if (delta > (size * 10)){ // Worst case size * load lat
@@ -460,6 +458,10 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
   /* Insert instruction */
   assert(s2d[schedule_line].canPush());
   s2d[schedule_line].push(inst, delta);
+
+  /* Mark instruction scheduled line */
+  inst->scheduled_time = base_time + schedule_line;
+
   /* Mark ready line */
   for (auto &reg: inst->regs_dst_phy){
     timeofregready[reg] = base_time + schedule_line + delta;
@@ -546,10 +548,7 @@ SchedulerPierreMichaud::pop() {
   }
   // DPRINTF(Cva6Sched, "size=%d, T=%d, #inflight=%d\n",
   //   s2d.size(), base_time, inflight_insts_count);
-  /* Mdp things */
-  if (!inst->isFault() && inst->staticInst->isStore()){
-    mdp.popStore(inst->pc->instAddr(), inst);
-  }
+
   DPRINTF(Cva6Sched, "SCHEDPOP: %s\n", dumpInstPreg(inst));
   return inst;
 }

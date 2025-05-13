@@ -140,7 +140,7 @@ class LambdaCheckInst : public StaticInst
     flags[IsInteger] = true;
     // flags[IsMicroop] = true;
   }
-  Fault execute(ExecContext *xc, trace::InstRecord *td) const override {
+  Fault execute(gem5::ExecContext *xc, trace::InstRecord *td) const override {
     uint64_t val = xc->getRegOperand(this, 0);
     if (check != val){
       return std::make_shared<SpeculativeFault>("missprediction");
@@ -175,7 +175,7 @@ class LambdaPredInst : public StaticInst
     flags[IsInteger] = true;
     // flags[IsMicroop] = true;
   }
-  Fault execute(ExecContext *xc, trace::InstRecord *td) const override {
+  Fault execute(gem5::ExecContext *xc, trace::InstRecord *td) const override {
     xc->setRegOperand(this, 0, value);
     return NoFault;
   }

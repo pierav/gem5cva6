@@ -1,9 +1,17 @@
+/**
+ * @file dyn_inst.cc
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief The dynamic instruction definition for Cva6
+ * @version 1.0
+ * @date 2023-05-25
+ */
+
+
 #include "cpu/cva6/dyn_inst.hh"
 
 #include <iomanip>
 #include <sstream>
 
-// #include "arch/isa.hh"
 #include "cpu/base.hh"
 #include "cpu/cva6/exec_context.hh"
 #include "cpu/cva6/exec_context_speculative.hh"

@@ -10,6 +10,7 @@
 #include <iomanip>
 
 #include "base/named.hh"
+#include "cpu/cva6/pipeline.hh"
 #include "cpu/cva6/vp.hh"
 #include "debug/Cva6VP.hh"
 
@@ -37,6 +38,8 @@ VPDPE::predict(Cva6DynInstPtr inst){
   /* Predict L1 hit/miss */
   inst->vp_data.hmp_l1hit_pred = hmp.predict(inst);
   // DPRINTF(Cva6VP, "predict %s at %d\n", *inst, inst->vp_data.time_predict);
+  /* Predict memory dependancies */
+  cpu.pipeline->mdp.checkInst(inst->pc->instAddr(), &inst->mdpinst);
 }
 
 void
@@ -45,6 +48,11 @@ VPDPE::insert(Cva6DynInstPtr inst){
   // Compute inst context
   inst->vp_data.seqNum = inst->id.fetchSeqNum;
   ghist.insert(inst);
+
+  /* Mdp things */
+  if (!inst->isFault() && inst->staticInst->isStore()){
+    cpu.pipeline->mdp.pushStore(inst->pc->instAddr(), inst);
+  }
 
   inflights.push_back(inst);
   // Compute static data
@@ -66,7 +74,6 @@ VPDPE::insert(Cva6DynInstPtr inst){
       inst->vp_data.value_taken = inst->vp_data.value_ready;
     }
   }
-
 }
 
 bool
@@ -185,6 +192,11 @@ VPDPE::issue(Cva6DynInstPtr inst){
   // if (inflights.front() != inst){
   //   fatal("%s != %s\n", *inflights.front(), *inst);
   // }
+
+  /* Mdp things */
+  if (!inst->isFault() && inst->staticInst->isStore()){
+    cpu.pipeline->mdp.popStore(inst->pc->instAddr(), inst);
+  }
 
   // Update Predictor
   // bool need_execution = vp_perform_issue(inst);

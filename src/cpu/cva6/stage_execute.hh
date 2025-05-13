@@ -94,12 +94,6 @@ class Execute : public Named
     /** Pointer back to the containing CPU */
     Cva6CPU &cpu;
 
-    /** Pointer to the execution functional units */
-    FUPipelines &fus;
-
-    /** Pointer to the value predictor */
-    VPDPE &dpe;
-    BlockCommit &bc;
 
     // Some config
     unsigned int commitWidth;
@@ -150,17 +144,11 @@ class Execute : public Named
         Cva6CPU &cpu_,
         const BaseCva6CPUParams &params,
         ForwardInstDataPopIntf &inp_,
-        BranchData& resolved_branch_,
-        FUPipelines &fus_,
-        VPDPE &dpe_,
-        BlockCommit &bc_) :
+        BranchData& resolved_branch_) :
         Named(name_),
         inp(inp_),
         resolved_branch(resolved_branch_),
         cpu(cpu_),
-        fus(fus_),
-        dpe(dpe_),
-        bc(bc_),
         commitWidth(params.commitWidth),
         vpFlush(params.vpFlush),
         oracleEarlyCommit(params.oracleEarlyCommit),
@@ -175,9 +163,7 @@ class Execute : public Named
 
     /** Flush input and FUS */
     void flushfrom(Cva6DynInstPtr inst);
-    void flush(){
-      flushfrom(Cva6DynInst::bubble());
-    }
+    void flush(){ flushfrom(Cva6DynInst::bubble()); }
 
 };
 

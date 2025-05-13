@@ -1,7 +1,7 @@
 /**
  * @file pipeline.hh
  * @author Pierre Ravenel (pravenel@kalray.eu)
- * @brief
+ * @brief The full pipeline
  * @version 0.1
  * @date 2023-05-25
  *
@@ -31,8 +31,8 @@ namespace cva6 {
 
 /**
  * A simple memory order checker
- * > Note that all stores must be issued in program order !
- * */
+ * > All stores must be issued in program order !
+ **/
 class MemOrderChecker : public Named
 {
   class Table : public Named
@@ -192,45 +192,43 @@ struct HCPred
 /** The constructed pipeline. */
 class Pipeline : public Ticked
 {
+  using BPredUnit = branch_prediction::BPredUnit;
   protected:
   Cva6CPU &cpu;
 
   public:
-  /** Pipeline shared elements */
-  VP &vp;                /** Value predictor for load insts */
-  VPDPE &dpe;            /** Delayed Prediction Unit */
-  FUPipelines fus;       /** All functional units */
-  RegDeadAnayser rda;    /* ? */
-  branch_prediction::BPredUnit &bp; /* the main BP */
-  HCPred hcpred;         /** Part of the Bpred for HC */
-
-  /* New components */
-  SA sa;
-  IssueUnit iq;
-  Cva6DynInstChunk rob;
-  BlockCommit bc;
-
-  MemOrderChecker mdpc;
-
-  /* Plugins */
-  Plugins plugins;
+  /** Pipeline shared custom elements */
+  VP &vp;                             /* Load Value predictor */
+  VPDPE &dpe;                         /* Delayed Prediction Unit */
+  RegDeadAnayser rda;                 /* REG_DEAD annotation */
+  HCPred hcpred;                      /* Part of the Bpred for HC */
+  SA sa;                              /* Handle prescheduling */
+  BlockCommit bc;                     /* Handle early commit */
+  /* Base components */
+  BPredUnit &bp;                      /* the main BP */
+  FUPipelines fus;                    /* All functional units */
+  IssueUnit iq;                       /* The schedule/IQ */
+  Cva6DynInstChunk rob;               /* The reorder buffer */
+  StoreSet<Cva6DynInstPtr> mdp;       /* MDP predictor */
+  MemOrderChecker mdpc;               /* MDP checker */
+  /* Misc */
+  Plugins plugins;                    /* Plugins */
 
   protected:
-  /** Pipeline registers */
+  /** Forward pipeline registers */
   Latch<ForwardLineData> f1ToF2;      /* fetched line */
   ForwardInstData        f2ToD;       /* final insts FIFO */
   ForwardInstData        dToIssue;    /* final insts FIFO */
   ForwardInstData        IssueToE;    /* instructions to execute */
-
+  /** Backward pipeline registers */
   BranchData f2ToF1_nff;              /* F2->F1 prediction */
   BranchData resolved_branch;         /* EX->all stream update */
-
   /** Pipeline stages */
-  Execute execute;
-  Issue issue;
-  Decode decode;
-  Fetch2 fetch2;
-  Fetch1 fetch1;
+  Execute execute;                    /* EX, WB and Commit */
+  Issue issue;                        /* Dispatch and Issue */
+  Decode decode;                      /* Decode */
+  Fetch2 fetch2;                      /* PC + Fetch with F1*/
+  Fetch1 fetch1;                      /* */
 
   public:
   struct Stats : public statistics::Group
@@ -266,29 +264,32 @@ class Pipeline : public Ticked
   Pipeline(Cva6CPU &cpu_, const BaseCva6CPUParams &p) :
       Ticked(cpu_, &(cpu_.BaseCPU::baseStats.numCycles)),
       cpu(cpu_),
+      /** Pipeline shared custom elements */
       vp(*vpinit(p.vpType, cpu.name() + ".vp", cpu, p.vpSize)),
       dpe(*new VPDPE(cpu.name() + ".dpe", cpu, p, vp)),
-      fus(cpu.name() + ".fus", cpu, p),
       rda(cpu.name(), cpu_, p),
-      bp(*p.branchPred),
       sa(cpu.name() + ".sa", cpu, p),
+      bc(cpu),
+      /* Base components */
+      bp(*p.branchPred),
+      fus(cpu.name() + ".fus", cpu, p),
       iq(cpu.name() + ".iq", cpu, p, (ForwardInstDataPopIntf&)sa, fus),
       rob(cpu.name() + ".rob"),
-      bc(cpu),
+      mdp(1024),
       mdpc(cpu.name() + "mdpc", cpu),
+      /* Misc */
       plugins(cpu.name(), cpu, p),
+      /** Forward pipeline registers */
       f1ToF2(cpu.name() + ".f1ToF2", "lines"),
       f2ToD(p.issueWidth),
       dToIssue(p.issueWidth),
       IssueToE(p.issueWidth),
+      /** Backward pipeline registers */
       f2ToF1_nff(),
       resolved_branch(),
+      /** Pipeline stages */
       execute (cpu.name() + ".execute", cpu, p,
-              IssueToE,
-              resolved_branch, // Ex -> Commit and Commit -> Ex
-              fus,
-              dpe,
-              bc),
+              IssueToE, resolved_branch),
       issue   (cpu.name() + ".issue", cpu, p,
               dToIssue,
               resolved_branch,
@@ -298,8 +299,7 @@ class Pipeline : public Ticked
       decode  (cpu.name() + ".decode", cpu, p,
               f2ToD,
               resolved_branch,
-              dToIssue,
-              dpe),
+              dToIssue),
       fetch2  (cpu.name() + ".fetch2", cpu, p,
               f1ToF2.output(),
               resolved_branch,
@@ -322,17 +322,9 @@ class Pipeline : public Ticked
       this->start();
     }
 
-    /** Try to drain the CPU */
-    bool drain() { return false; };
-
-    void drainResume() { ; };
-
-    /** Test to see if the CPU is drained */
-    bool isDrained() { return false; };
-
-    /** A custom evaluate allows report in the right place (between
-     *  stages and pipeline advance) */
+    /* The main evaluate function */
     void evaluate() override;
+    bool drain() { return true; }
 
     /** Return the IcachePort belonging to Fetch1 for the CPU */
     Cva6CPU::Cva6CPUPort &getInstPort() { return fetch1.getIcachePort(); }
@@ -341,7 +333,6 @@ class Pipeline : public Ticked
       assert(rob.size());
       return rob.front() == inst;
     }
-
 };
 
 } // namespace cva6

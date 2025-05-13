@@ -1,74 +1,21 @@
-/*
- * Copyright (c) 2011-2014, 2016-2018, 2020-2021 ARM Limited
- * Copyright (c) 2013 Advanced Micro Devices, Inc.
- * All rights reserved
- *
- * The license below extends only to copyright in the software and shall
- * not be construed as granting a license to any other intellectual
- * property including but not limited to intellectual property relating
- * to a hardware implementation of the functionality of the software
- * licensed hereunder.  You may use the software subject to the license
- * terms below provided that you ensure that this notice is replicated
- * unmodified and in its entirety in all distributions of the software,
- * modified or unmodified, in source code or in binary form.
- *
- * Copyright (c) 2002-2005 The Regents of The University of Michigan
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met: redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer;
- * redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution;
- * neither the name of the copyright holders nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
 /**
- * @file
- *
- *  ExecContext bears the exec_context interface for Cva6.
+ * @file exec_context.hh
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief ExecContext : update arch state
+ * @version 1.0
+ * @date 2023-05-25
  */
 
-#ifndef __CPU_CVA6_EXEC_CONTEXT_HH__
-#define __CPU_CVA6_EXEC_CONTEXT_HH__
+#pragma once
 
 #include "cpu/base.hh"
-#include "cpu/cva6/pipeline.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/simple_thread.hh"
-#include "debug/Cva6Execute.hh"
 #include "mem/request.hh"
 
-namespace gem5
-{
+namespace gem5 {
+namespace cva6 {
 
-GEM5_DEPRECATED_NAMESPACE(Cva6, cva6);
-namespace cva6
-{
-
-/* Forward declaration of Execute */
-class Execute;
-
-/** ExecContext bears the exec_context interface for Cva6.  This nicely
- *  separates that interface from other classes such as Pipeline, Cva6CPU
- *  and DynCva6Inst and makes it easier to see what state is accessed by it.
- */
 class ExecContext : public gem5::ExecContext
 {
   public:
@@ -88,7 +35,6 @@ class ExecContext : public gem5::ExecContext
         thread(thread_),
         inst(inst_)
     {
-        DPRINTF(Cva6Execute, "ExecContext setting PC: %s\n", *inst->pc);
         pcState(*inst->pc);
         setPredicate(inst->readPredicate());
         setMemAccPredicate(inst->readMemAccPredicate());
@@ -105,13 +51,13 @@ class ExecContext : public gem5::ExecContext
     initiateMemRead(Addr addr, unsigned int size,
                     Request::Flags flags,
                     const std::vector<bool>& byte_enable) override {
-        panic("Unimplemented\n");
+        panic("Must be done before!\n");
         return NoFault;
     }
 
     Fault
     initiateMemMgmtCmd(Request::Flags flags) override {
-        panic("Unimplemented\n");
+        panic("Must be done before!\n");
         return NoFault;
     }
 
@@ -119,14 +65,14 @@ class ExecContext : public gem5::ExecContext
     writeMem(uint8_t *data, unsigned int size, Addr addr,
              Request::Flags flags, uint64_t *res,
              const std::vector<bool>& byte_enable) override {
-        panic("Unimplemented\n");
+        panic("Must be done before!\n");
         return NoFault;
     }
 
     Fault
     initiateMemAMO(Addr addr, unsigned int size, Request::Flags flags,
                    AtomicOpFunctorPtr amo_op) override {
-        panic("Unimplemented\n");
+        panic("Must be done before!\n");
         return NoFault;
     }
 
@@ -323,5 +269,3 @@ class ExecContext : public gem5::ExecContext
 
 } // namespace cva6
 } // namespace gem5
-
-#endif /* __CPU_CVA6_EXEC_CONTEXT_HH__ */

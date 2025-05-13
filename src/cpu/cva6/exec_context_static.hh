@@ -1,7 +1,9 @@
 /**
- * @file
- *
- *  ExecContextStatic: compute static part of insts
+ * @file exec_context_static.hh
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief ExecContextStatic : Extract static info after decode
+ * @version 1.0
+ * @date 2023-05-25
  */
 
 #pragma once
@@ -12,20 +14,20 @@
 namespace gem5 {
 namespace cva6 {
 
-struct ExecContextStaticData
+struct StaticData
 {
     uint16_t mem_req_size = 0;
     uint64_t mem_req_imm = 0;
-    ExecContextStaticData() {}
+    StaticData() {}
 };
 
 class ExecContextStatic : public gem5::ExecContext
 {
-    ExecContextStaticData &data;
+    StaticData &data;
     const GenericISA::SimplePCState<1> pc;
 
   public:
-    ExecContextStatic(ExecContextStaticData &data_) :
+    ExecContextStatic(StaticData &data_) :
         data(data_) { }
 
     ~ExecContextStatic() { }
@@ -133,8 +135,6 @@ class ExecContextStatic : public gem5::ExecContext
 
     void
     demapPage(Addr vaddr, uint64_t asn) override { }
-
-  public:
 
     void
     armMonitor(Addr address) override { }

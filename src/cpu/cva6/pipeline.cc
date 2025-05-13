@@ -1,15 +1,14 @@
 /**
  * @file pipeline.cc
- * @author your name (pravenel@kalray.eu)
- * @brief
+ * @author Pierre Ravenel (pravenel@kalray.eu)
+ * @brief The full pipeline
  * @version 0.1
  * @date 2023-05-25
  *
  */
+
 #include "cpu/cva6/pipeline.hh"
-
 #include <chrono>
-
 #include "debug/Cva6X.hh"
 
 uint64_t tictac(){

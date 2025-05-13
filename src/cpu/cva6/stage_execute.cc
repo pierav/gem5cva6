@@ -9,6 +9,7 @@
 #include "arch/riscv/regs/misc.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/exec_context.hh"
+#include "cpu/cva6/pipeline.hh"
 #include "cpu/op_class.hh"
 #include "debug/Branch.hh"
 #include "debug/Cva6BC.hh"
@@ -251,7 +252,7 @@ Execute::evaluate() {
     }
 
     // Execution
-    fus.advance();
+    cpu.pipeline->fus.advance();
     cpu.pipeline->stats.exfus += tictac();
     // /** Process result */
     cpu.pipeline->iq.execute();
@@ -293,7 +294,7 @@ Execute::evaluate() {
             DPRINTF(Cva6Execute, "MISSPRED MEM ORDER : %s\n", *inst);
             resolved_branch = BranchData::SquashAt(cpu);
             uint64_t pcload = inst->pc->instAddr();
-            cpu.pipeline->sa.scheduler.violation(pcstore, pcload);
+            cpu.pipeline->mdp.violation(pcstore, pcload);
             stats.flush ++;
             stats.flush_mdp += 1;
             cpu.pipeline->hcpred.violation(inst);
@@ -330,11 +331,11 @@ Execute::evaluate() {
         if (inst->needSerialise) { /* Inst was serialised in the scheduler*/
             // Check scheduler serialisation
             // Everything must be comitted
-            assert(bc.empty());
+            assert(cpu.pipeline->bc.empty());
         }
 
         /* Try to commit */
-        bool need_squash = bc.pre_commit(inst); /* Ex CSRW ! */
+        bool need_squash = cpu.pipeline->bc.pre_commit(inst); /* Ex CSRW ! */
         /* Some stats */
         if (inst->isASquash()){
             stats.flush ++;
@@ -363,16 +364,16 @@ Execute::evaluate() {
 
         // Oracle: Early commit
         if (oracleEarlyCommit){
-            bc.commitFunctionnal();
+            cpu.pipeline->bc.commitFunctionnal();
         }
 
         if (need_squash){ /* Handle flush */
             if (0){ // Oracle: Late commit and flush in place for nothing
-                bc.commitFunctionnal();
+                cpu.pipeline->bc.commitFunctionnal();
             }
-            if (!bc.empty()){
+            if (!cpu.pipeline->bc.empty()){
                 cpu.pipeline->sa.fixer.apply_fix_for(inst,
-                    true, true, bc.size());
+                    true, true, cpu.pipeline->bc.size());
             }
 
             // // We can't delay the fault as we reach stale point
@@ -416,7 +417,7 @@ Execute::evaluate() {
         //     tryToBranch(inst, resolved_branch); /* POST-commit */
         // }
 
-        bool misspred_value = dpe.commit(inst);
+        bool misspred_value = cpu.pipeline->dpe.commit(inst);
         if (misspred_value){
             resolved_branch = BranchData::SquashAt(cpu);
         }
@@ -426,25 +427,24 @@ Execute::evaluate() {
         fatal("Unrecheable!\n");
         flush();
     }
-    bc.dump();
+    cpu.pipeline->bc.dump();
     cpu.pipeline->stats.excommit += tictac();
 }
 
 void
 Execute::flushfrom(Cva6DynInstPtr inst){
     DPRINTF(Cva6Execute, "Flush fus & inp\n");
-    fus.flushfrom(inst);
+    cpu.pipeline->fus.flushfrom(inst);
     inp.flushfrom(inst);
     cpu.pipeline->rob.flushfrom(inst);
     cpu.pipeline->sa.flushfrom(inst);
     assert(inst->isBubble());
     cpu.pipeline->dpe.flush();
-    bc.flush(); // Clear inflights pre-committed
+    cpu.pipeline->bc.flush(); // Clear inflights pre-committed
 }
 
 bool
-Execute::checkInterrupts()
-{
+Execute::checkInterrupts(){
     assert(FullSystem && cpu.getInterruptController());
     // TODO lastCommitWasEndOfMacroop
     if (cpu.checkInterrupts()) {
@@ -453,7 +453,8 @@ Execute::checkInterrupts()
             return false;
         }
         /* lsu chech in memory instruction ! */
-        return cpu.pipeline->iq.canInterrupts() && bc.canInterrupts();
+        return cpu.pipeline->iq.canInterrupts() &&
+               cpu.pipeline->bc.canInterrupts();
     }
     return false;
 }

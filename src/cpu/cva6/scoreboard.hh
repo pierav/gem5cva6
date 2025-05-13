@@ -1,11 +1,10 @@
 /**
  * @file scoreboard.hh
  * @author Pierre Ravenel (pravenel@kalrayinc.com)
- * @brief
- * @version 0.1
+ * @brief A simple instruction scoreboard for tracking dependencies
+ * @version 1.0
  * @date 2023-05-25
  *
- * A simple instruction scoreboard for tracking dependencies
  *
  * *-*-*-*-*-*-*-*-*-*-* PRE ISSUE  *-*-*-*-*-*-*-*-*-*-*
  * (0)

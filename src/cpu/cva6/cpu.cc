@@ -420,9 +420,6 @@ Cva6CPU::drainResume()
 
     wakeup(0);
 
-
-    pipeline->drainResume();
-
     // Reschedule any power gating event (if any)
     schedulePowerGatingEvent();
 }
