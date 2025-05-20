@@ -71,6 +71,7 @@ class PCState : public GenericISA::UPCState<4>
 
   public:
     PCState(const PCState &other) : Base(other),
+        _compressed(other._compressed),
         _rvType(other._rvType), _vlenb(other._vlenb),
         _vtype(other._vtype), _vl(other._vl)
     {}
@@ -82,6 +83,13 @@ class PCState : public GenericISA::UPCState<4>
         set(addr);
         _rvType = rvType;
         _vlenb = vlenb;
+    }
+
+    void
+    output(std::ostream &os) const override
+    {
+        Base::output(os);
+        ccprintf(os, ".#(%d)", this->size());
     }
 
     PCStateBase *clone() const override { return new PCState(*this); }
