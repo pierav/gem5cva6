@@ -64,6 +64,8 @@ namespace gem5
 namespace o3
 {
 
+#define MODE_SB 0
+
 IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     : issueToExecQueue(params.backComSize, params.forwardComSize),
       cpu(_cpu),
@@ -432,7 +434,6 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
 
         wroteToTimeBuffer = true;
     }
-
 }
 
 void
@@ -468,14 +469,16 @@ IEW::block(ThreadID tid)
 
     if (dispatchStatus[tid] != Blocked &&
         dispatchStatus[tid] != Unblocking) {
+        // Cannot block :deadlock
         toRename->iewBlock[tid] = true;
         wroteToTimeBuffer = true;
     }
 
     // Add the current inputs to the skid buffer so they can be
     // reprocessed when this stage unblocks.
-    skidInsert(tid);
-
+    if (MODE_SB){
+        skidInsert(tid);
+    }
     dispatchStatus[tid] = Blocked;
 }
 
@@ -825,12 +828,13 @@ IEW::dispatch(ThreadID tid)
 
         ++iewStats.unblockCycles;
 
-        if (fromRename->size != 0) {
-            // Add the current inputs to the skid buffer so they can be
-            // reprocessed when this stage unblocks.
-            skidInsert(tid);
+        if (MODE_SB){
+            if (fromRename->size != 0) {
+                // Add the current inputs to the skid buffer so they can be
+                // reprocessed when this stage unblocks.
+                skidInsert(tid);
+            }
         }
-
         unblock(tid);
     }
 }
@@ -1056,10 +1060,13 @@ IEW::dispatchInsts(ThreadID tid)
         ppDispatch->notify(inst);
     }
 
-    if (!insts_to_dispatch.empty()) {
-        DPRINTF(IEW,"[tid:%i] Issue: Bandwidth Full. Blocking.\n", tid);
-        block(tid);
-        toRename->iewUnblock[tid] = false;
+    // PR: no lock
+    if (MODE_SB){
+        if (!insts_to_dispatch.empty()) {
+            DPRINTF(IEW,"[tid:%i] Issue: Bandwidth Full. Blocking.\n", tid);
+            block(tid);
+            toRename->iewUnblock[tid] = false;
+        }
     }
 
     if (dispatchStatus[tid] == Idle && dis_num_inst) {

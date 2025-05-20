@@ -61,6 +61,8 @@ namespace gem5
 namespace o3
 {
 
+#define MODE_SB 0
+
 Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     : cpu(_cpu),
       renameToDecodeDelay(params.renameToDecodeDelay),
@@ -387,6 +389,9 @@ Decode::squash(ThreadID tid)
 void
 Decode::skidInsert(ThreadID tid)
 {
+    if (!MODE_SB){
+        return;
+    }
     DynInstPtr inst = NULL;
 
     while (!insts[tid].empty()) {
@@ -736,8 +741,10 @@ Decode::decodeInsts(ThreadID tid)
 
     // If we didn't process all instructions, then we will need to block
     // and put all those instructions into the skid buffer.
-    if (!insts_to_decode.empty()) {
-        block(tid);
+    if (MODE_SB){
+        if (!insts_to_decode.empty()) {
+            block(tid);
+        }
     }
 
     // Record that decode has written to the time buffer for activity

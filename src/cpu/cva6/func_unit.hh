@@ -37,14 +37,16 @@ class FUPipeline : public FUBase
 {
   protected:
     /* internal pipeline */
+    size_t count;
     size_t pipe_size;
     Cva6DynInstChunk **pipe; // TODO ring buffer
     bool is_pipeline;
 
   public:
     FUPipeline(const std::string &name_, std::vector<OpClass> &ops,
-               size_t lat, bool is_pipeline_=true) :
+               size_t nb_port, size_t lat, bool is_pipeline_=true) :
       FUBase(name_, ops),
+      count(nb_port),
       pipe_size(lat + 1), // + 1 for latch
       pipe(new Cva6DynInstChunk*[pipe_size]),
       is_pipeline(is_pipeline_) {
@@ -55,17 +57,20 @@ class FUPipeline : public FUBase
       }
 
     ~FUPipeline(){
+      for (size_t i = 0; i < pipe_size; i++){
+        delete pipe[i];
+      }
       delete pipe;
     }
 
     bool canPush(Cva6DynInstPtr inst){
-      if (!pipe[0]->canPush(inst) ||      /** Input slot not free */
-          (!is_pipeline && occ() != 0) /** Pipeline not free */
-        ){
-        DPRINTF(Cva6FU, "Can't issue into FU: busy (occ = %ld)\n", occ());
-        return false;
+      if (is_pipeline){
+        // Does not depends on other stages
+        return pipe[0]->size() < count;
+      } else {
+        /* There is no pipeline */
+        return occ() < count;
       }
-      return true;
     }
 
     void push(Cva6DynInstPtr inst){
@@ -76,13 +81,13 @@ class FUPipeline : public FUBase
     bool advance(void){
       if (pipe[pipe_size-1]->empty() /** Not stalled */){
         /** Advance pipe if needed */
-        Cva6DynInstChunk *tmp = pipe[pipe_size-1];
         if (occ()){ /** Avoid unused memory moves */
+          Cva6DynInstChunk *tmp = pipe[pipe_size-1];
           for (int i = pipe_size - 1; i > 0; i --){
             pipe[i] = pipe[i-1];
           }
+          pipe[0] = tmp;
         }
-        pipe[0] = tmp;
       }
       return occ();
     }
@@ -92,24 +97,19 @@ class FUPipeline : public FUBase
     }
 
     void pop(Cva6DynInstPtr inst){
-      // assert(canPop(inst));
       pipe[pipe_size-1]->pop(inst);
     }
 
     void flushfrom(Cva6DynInstPtr inst_){
       for (size_t i = 0; i < pipe_size; i++){
-        if (!pipe[i]->empty()){
-          pipe[i]->flushfrom(inst_);
-        }
+        pipe[i]->flushfrom(inst_);
       }
     }
 
     size_t occ(){
       size_t ret = 0;
       for (size_t i = 0; i < pipe_size; i++){
-        if (!pipe[i]->empty()){
-          ret += 1;
-        }
+        ret += pipe[i]->size();
       }
       return ret;
     }
@@ -255,16 +255,16 @@ class FUPipelines : public Named
       nocost = new FUNoCost(name + ".nocost", noop_set);
 
       // Operations mapping
-      alu = new FUPipeline(name + ".alu", alu_set, 1);
-      mul = new FUPipeline(name + ".mul", mul_set, 3);
-      serdiv = new FUPipeline(name + ".div", div_set, 8, false);
+      alu = new FUPipeline(name + ".alu", alu_set, 4, 1);
+      mul = new FUPipeline(name + ".mul", mul_set, 2, 3);
+      serdiv = new FUPipeline(name + ".div", div_set, 1, 8, false);
       // TODO variable latency serdiv
-      fpu = new FUPipeline(name + ".fpu", fpu_set, 3);
+      fpu = new FUPipeline(name + ".fpu", fpu_set, 4, 3);
       // TODO: Fusion and &  variable latency !!
-      fpu_divsqrt = new FUPipeline(name + ".fpudiv", fpu2_set,18, false);
-      simd = new FUPipeline(name + ".simd", simd_set, 4);
+      fpu_divsqrt = new FUPipeline(name + ".fpudiv", fpu2_set, 2, 18, false);
+      simd = new FUPipeline(name + ".simd", simd_set, 4, 4);
       lsu = new FULSU(name + ".lsu", lsu_set, cpu, params);
-      misc = new FUPipeline(name + ".misc", misc_set, 1);
+      misc = new FUPipeline(name + ".misc", misc_set, 4, 1);
       FUBase *fuunimp = new FUUnimp(name + ".unimp", vec_set);
 
       funcUnits = {nocost, alu, mul, serdiv, fpu,

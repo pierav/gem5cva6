@@ -150,6 +150,9 @@ IssueUnit::evaluate(){
     }
     stats.issue_stall_port += nb_issued == nb_issue_port;
     stats.numIssued.sample(nb_issued);
+
+    /* Do dispatch after (1 cycle delay)*/
+    scoreboard.dispatch();
 }
 
 void

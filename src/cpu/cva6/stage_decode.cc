@@ -40,8 +40,10 @@ Decode::evaluate(){
 
   // Decode stage :
   while (inp.canPop() &&
-    cpu.pipeline->sa.can_push_scheduler(inp.front()))
-  {
+    cpu.pipeline->rob.canPush() &&
+    /* !!! do can_push_scheduler at last because perform rename !!! */
+    cpu.pipeline->sa.can_push_scheduler(inp.front())
+  ) {
     Cva6DynInstPtr inst = inp.pop();
     inst->stage_decode_enter = true;
     /* Annotate instruction flags */

@@ -154,6 +154,8 @@ class Scoreboard : public Named
     void writeBackRF(Cva6DynInstPtr& inst);
 
   public:
+
+    virtual void dispatch() { /* Default: no dispatch */}
     /** Issue Stage */
     /* Return the instruction to issue. Bubble if none. */
     /** Can this instruction be issued.  Are any of its source registers
@@ -228,25 +230,23 @@ class ScoreboardO3 : public Scoreboard
 
   /* Check IRO, FUs and MDP deps*/
   bool isReady(Cva6DynInstPtr& inst, bool &is_raw,
-    Cva6DynInstPtr &producer, bool &is_waw, bool &is_ss);
+    Cva6DynInstPtr &producer, bool &is_waw, bool &is_ss,
+    bool &mdp_dep, bool &fu_stall);
 
   inline bool isStore(Cva6DynInstPtr& inst){
     return !inst->isFault() && inst->staticInst->isMemRef() &&
            !inst->staticInst->isLoad();
   }
-  Cva6DynInstPtr getIssueInst(
-      bool &is_os,
-      bool &is_raw,
-      Cva6DynInstPtr &producer,
-      bool &is_waw
-  ) override {
-    /* First of all try to fill IQ */
-    /* Dispatch */
-    while (inp.canPop() && /* Instructions ready to be scheduled */
-          iq.size() < nr_entries && /* Remaining space in IQ */
-          !is_serialise_inflight && /* Wait serialisation drain */
-          inflight_stores < max_inflight_stores
-    ){
+
+  void dispatch() override {
+    /* Dispatch : try to fill IQ*/
+    for (int i = 0; i < 4; i++){
+      if (!(inp.canPop() && /* Instructions ready to be scheduled */
+            iq.size() < nr_entries && /* Remaining space in IQ */
+            !is_serialise_inflight && /* Wait serialisation drain */
+            inflight_stores < max_inflight_stores)){
+        break;
+      }
       Cva6DynInstPtr inst = inp.pop();
       if (isStore(inst)){
         inflight_stores ++;
@@ -255,18 +255,32 @@ class ScoreboardO3 : public Scoreboard
       iq.push(inst); /* Fill the IQ */
       onInsert(inst); /* Markup rd buzy */
     }
+  }
+
+  Cva6DynInstPtr getIssueInst(
+      bool &is_os,
+      bool &is_raw,
+      Cva6DynInstPtr &producer,
+      bool &is_waw
+  ) override {
     /* Try to find ready candidate */
     is_os = false; // We cannot issues instructions upon a serialization
     bool is_ss = false; /* is store serialise */
+    bool mdp_dep = false;
+    bool fu_stall = false;
     DPRINTF(Cva6Scoreboard, "IQ size: %d %s\n", iq.size(),
       is_serialise_inflight ? "[DRAIN]" : "");
 
     for (auto inst: iq){
-      if (isReady(inst, is_raw, producer, is_waw, is_ss)){
+      if (isReady(inst, is_raw, producer, is_waw, is_ss, mdp_dep, fu_stall)){
         DPRINTF(Cva6Scoreboard, "IQ %s Ready\n", *inst);
         return inst;
       } else {
-        DPRINTF(Cva6Scoreboard, "IQ %s %s\n", *inst, is_raw ? "[RaW]" : "");
+        DPRINTF(Cva6Scoreboard, "IQ %s %s%s%s\n", *inst,
+          is_raw ? "[RaW]" : "",
+          is_ss ? "[SS]" : "",
+          mdp_dep ? "[MDP]" : "",
+          fu_stall ? "[FU]" : "");
       }
     }
     return Cva6DynInst::bubble();

@@ -55,7 +55,13 @@ parser.add_argument("--pf2Size", action='store', type=str, default='256')
 
 STORE_TRUE = { "action": "store_true" }
 DEFAULT = lambda x : { "default":x }
+
+common_config = {
+    "numROBEntries": DEFAULT(64)
+}
+
 cva6_config = {
+    **common_config,
     "lsuSQCWidth" : DEFAULT(16), # SQCommit size
     "lsuSQSWidth" : DEFAULT(16), # SQSpecualtive size
     "mcSize" : DEFAULT(0), # The minicache size
@@ -73,15 +79,16 @@ cva6_config = {
     "schedRegBarrier": DEFAULT(16),
     "schedDisableRB": DEFAULT(0),
     "userelf": DEFAULT(""), # User elf for symbols only
-    "renameSize": DEFAULT(64),
+    "renameSize": DEFAULT(16), # Default 16 extra reg
     "renameIncArchReg": DEFAULT(0), # Include ARCH in PRF
     "renameFreeRegDead": DEFAULT(0), # Free reg dead (bugs)
     "renameSpecRelease": DEFAULT(0), # Speculative Release
     "oracleEarlyCommit": DEFAULT(0)
 }
+
 o3_config = {
+    **common_config,
     "numIQEntries": DEFAULT(32),
-    "numROBEntries": DEFAULT(64),
     "numPhysIntRegs": DEFAULT(180),
     "numPhysFloatRegs": DEFAULT(168),
     "numPhysVecRegs": DEFAULT(168),
@@ -113,6 +120,38 @@ parser.add_argument("--l1dsize", action="store", type=str, default='64kB',
                     help="L1 data cache size. Default: 64kB.")
 parser.add_argument("--l1dlat", action="store", type=int, default=4,
                     help="L1 data latency. Default: 4")
+
+
+# FUS
+class CVA6_ALU(FUDesc):
+    opList = [ OpDesc(opClass="IntAlu", opLat=1) ]
+    count = 4
+
+class CVA6_MUL(FUDesc):
+    opList = [ OpDesc(opClass="IntMult", opLat=3) ]
+    count = 2
+
+class CVA6_SERDIV(FUDesc):
+    opList = [ OpDesc(opClass="IntDiv", opLat=8, pipelined=False) ]
+    count = 1
+
+class CVA6_FPU(FUDesc):
+    opList = [
+        OpDesc(opClass="FloatAdd", opLat=3),
+        OpDesc(opClass="FloatCmp", opLat=3),
+        OpDesc(opClass="FloatCvt", opLat=3),
+        OpDesc(opClass="FloatMult", opLat=3),
+        OpDesc(opClass="FloatMultAcc", opLat=3),
+        OpDesc(opClass="FloatMisc", opLat=3)
+    ]
+    count = 4
+
+class CVA6_FPU_DIVSQRT(FUDesc):
+    opList = [
+        OpDesc(opClass="FloatDiv", opLat=18, pipelined=False),
+        OpDesc(opClass="FloatSqrt", opLat=18, pipelined=False)
+    ]
+    count = 2
 
 
 args = parser.parse_args()
@@ -699,17 +738,18 @@ if not CONFIG_USE_ATOMIC:
     system.mem_mode = 'timing'
     if CONFIG_USE_O3:
         # cpuConfig["fetchBufferSize"] = 16 # Bytes; same as I$
-        cpuConfig["backComSize"] = 8
-        cpuConfig["forwardComSize"] = 8
+        cpuConfig["backComSize"] = 32
+        cpuConfig["forwardComSize"] = 32
         pipewidth = args.issueWidth
         cpuConfig["numThreads"] = 1
         cpuConfig["commitWidth"] = pipewidth
-        cpuConfig["squashWidth"] = pipewidth
+        cpuConfig["squashWidth"] = 4096
         cpuConfig["issueWidth"] = pipewidth
         cpuConfig["dispatchWidth"] = pipewidth
         cpuConfig["wbWidth"] = pipewidth
         cpuConfig["decodeWidth"] = 8
         cpuConfig["fetchWidth"] = 8
+        cpuConfig["renameToIEWDelay"] = 1
 
         # cpuConfig["commitToRenameDelay"] = 0
         # cpuConfig["renameToIEWDelay"] = 1
@@ -717,16 +757,29 @@ if not CONFIG_USE_ATOMIC:
         for k in o3_config:
             cpuConfig[k] = vars(args)[k]
 
-        FUList = [ IntALU(),
-                   IntMultDiv(),
-                   FP_ALU(),
-                   FP_MultDiv(),
-                   ReadPort(count=2),
-                   SIMD_Unit(),
-                   PredALU(),
-                   WritePort(count=2),
-                   RdWrPort(count=0),
-                   IprPort() ]
+        # FUList = [ IntALU(),
+        #            IntMultDiv(),
+        #            FP_ALU(),
+        #            FP_MultDiv(),
+        #            ReadPort(count=2),
+        #            SIMD_Unit(),
+        #            PredALU(),
+        #            WritePort(count=2),
+        #            RdWrPort(count=0),
+        #            IprPort() ]
+        FUList = [
+            CVA6_ALU(),
+            CVA6_MUL(),
+            CVA6_SERDIV(),
+            CVA6_FPU(),
+            CVA6_FPU_DIVSQRT(),
+            ReadPort(count=4),
+            WritePort(count=4),
+            RdWrPort(count=0),
+            IprPort(),
+            SIMD_Unit()
+        ]
+
         cpuConfig["fuPool"] = FUPool(FUList=FUList)
 
         system.cpu = [RiscvO3CPU(cpu_id=i, **cpuConfig) for i in range(1)]

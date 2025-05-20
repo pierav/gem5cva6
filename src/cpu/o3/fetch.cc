@@ -949,7 +949,6 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
             branchPred->squash(fromCommit->commitInfo[tid].doneSeqNum,
                               tid);
         }
-
         return true;
     } else if (fromCommit->commitInfo[tid].doneSeqNum) {
         // Update the branch predictor if it wasn't a squashed instruction

@@ -73,12 +73,12 @@ DynInst::DynInst(const Arrays &arrays, const StaticInstPtr &static_inst,
 #ifndef NDEBUG
     ++cpu->instcount;
 
-    if (cpu->instcount > 1500) {
+    if (cpu->instcount > 15000) {
 #ifdef GEM5_DEBUG
         cpu->dumpInsts();
         dumpSNList();
 #endif
-        assert(cpu->instcount <= 1500);
+        assert(cpu->instcount <= 15000);
     }
 
     DPRINTF(DynInst,

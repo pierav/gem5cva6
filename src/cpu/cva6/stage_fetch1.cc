@@ -105,7 +105,7 @@ Fetch1::processResponse(Fetch1::FetchRequestPtr response,
     }
 }
 
-#define INFLIGHT 2
+#define INFLIGHT 1
 void
 Fetch1::evaluate()
 {

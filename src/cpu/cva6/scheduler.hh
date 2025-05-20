@@ -56,6 +56,8 @@ inline bool isBBend(Cva6DynInstPtr& inst){
 //   return false;
 // }
 
+#define PREG_MAGIC 10000
+
 class PhysicalRegAllocator : public Named
 {
   Cva6CPU &cpu;
@@ -134,7 +136,7 @@ class PhysicalRegAllocator : public Named
     for (int i = 0; i < 64; i++){
       RegId regid = i2id(i);
       PhysicalReg reg(regid);
-      rmt[reg] = 1000;
+      rmt[reg] = PREG_MAGIC;
     }
     /* Initialise all arch regs to physical mapping */
     for (int i = 0; i < nb_regs; i++){
@@ -189,14 +191,14 @@ class PhysicalRegAllocator : public Named
     /* > Invalidate RMT */
     // > If someone do not have allocated the same ArchReg !
     // if (rmt[reg] == reg.phys_reg_idx){
-    //   rmt[reg] = 1000;
+    //   rmt[reg] = PREG_MAGIC;
     // }
     // > Instead of this we may defer the RMT invalidation.
     // > This can be done at allocate. Do do this, it requires
     // > to know the old arch reg.
     // rmt_owner[reg] = 0; // Do not let think the owner own the rmt
     // Safe check: do not let multiple allocation
-    rmt.swap_value(preg, 1000);
+    rmt.swap_value(preg, PREG_MAGIC);
     for (uint64_t id: rmt){
       fatal_if(id == preg, "PREG %d is mapped in RMT\n", id);
     }
@@ -225,14 +227,14 @@ class PhysicalRegAllocator : public Named
   private:
 
   // bool is_allocated(PhysicalReg& reg){
-  //   return reg.phys_reg_idx != 1000 &&
+  //   return reg.phys_reg_idx != PREG_MAGIC &&
   //          isbuzy[reg] == BUZY &&
   //          rmt_owner[reg] == reg.producer_id;
   // }
 
   bool free_reg(PhysicalReg& reg, bool speculative=false){
     // std::cout << "Free " << idx << std::endl;
-    if (reg.phys_reg_idx != 1000){
+    if (reg.phys_reg_idx != PREG_MAGIC){
       if (speculative && cannotbefreed[reg]){
         return false;
       }
@@ -305,7 +307,7 @@ class PhysicalRegAllocator : public Named
   }
 
   bool reg_available(PhysicalReg& reg){
-    assert(reg.phys_reg_idx != 1000);
+    assert(reg.phys_reg_idx != PREG_MAGIC);
     // TODO use cannotbefreed ?
     return rmt_owner[reg] == reg.producer_id;
   }
@@ -329,7 +331,9 @@ class PhysicalRegAllocator : public Named
       /* Assume InO commit */
       // std::cout << "ALLOC " << reg << " old was:
       //  " << rmt_checkpoint[reg] << std::endl;
-      fatal_if(free_list_popped.front() != reg.phys_reg_idx, "Bad Free\n");
+      fatal_if(free_list_popped.front() != reg.phys_reg_idx,
+        "Bad Free must be %d, got %d (%s)\n", free_list_popped.front(),
+        reg.phys_reg_idx, *inst);
       free_list_popped.pop_front();
       rmt_checkpoint[reg] = reg.phys_reg_idx;
     }
@@ -347,7 +351,7 @@ class PhysicalRegAllocator : public Named
       }
     } else {
       // Symply clear the rmt
-      rmt.setall(1000);
+      rmt.setall(PREG_MAGIC);
       isbuzy.setall(FREE_COMMIT);
       cannotbefreed.setall(false);
       // And reset FL

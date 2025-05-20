@@ -58,6 +58,8 @@ namespace gem5
 namespace o3
 {
 
+#define MODE_SB 0
+
 Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
     : cpu(_cpu),
       iewToRenameDelay(params.iewToRenameDelay),
@@ -746,19 +748,25 @@ Rename::renameInsts(ThreadID tid)
 
     // Check if there's any instructions left that haven't yet been renamed.
     // If so then block.
-    if (insts_available) {
-        blockThisCycle = true;
+    if (MODE_SB){
+        if (insts_available) {
+            blockThisCycle = true;
+        }
     }
 
     if (blockThisCycle) {
         block(tid);
         toDecode->renameUnblock[tid] = false;
     }
+
 }
 
 void
 Rename::skidInsert(ThreadID tid)
 {
+    if (!MODE_SB){ // skib sb
+        return;
+    }
     DynInstPtr inst = NULL;
 
     while (!insts[tid].empty()) {

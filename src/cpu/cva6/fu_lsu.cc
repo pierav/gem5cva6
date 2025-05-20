@@ -434,7 +434,7 @@ LSULoadUnit::advance(){
             break;
         }
         /* Cache is ready */
-        if (!insts_in_memory.canPush(inst)){ /* Always true */
+        if (!insts_in_memory.canPush()){ /* Always true */
             break;
         }
         if (cpu.dcache->isBlocked()){ /* Must be true one day */

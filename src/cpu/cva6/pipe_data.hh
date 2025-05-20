@@ -309,14 +309,14 @@ class Cva6DynInstChunk : public Named, public MatchAddrIntf
 
   protected:
     ContainerT chunk;
-
+    size_t sizemax;
 
   public:
-    Cva6DynInstChunk(const std::string &name) : Named(name){ }
+    Cva6DynInstChunk(const std::string &name, size_t size_=-1) :
+      Named(name), sizemax(size_){ }
 
-    bool canPush(Cva6DynInstPtr inst){
-      // return chunk.size() != 1;
-      return true;
+    bool canPush(){
+      return chunk.size() < sizemax;
     }
 
     void push(Cva6DynInstPtr inst){
@@ -379,11 +379,12 @@ class Cva6DynInstChunk : public Named, public MatchAddrIntf
     Cva6DynInstPtr operator[](int idx) const { return chunk[idx]; }
 
     bool isMaskMatchVaddr(Cva6DynInstPtr inst, uint64_t mask) override {
+      assert(inst->dreq); // Inst must be issued
       Addr addr_masked = inst->dreq->req->getVaddr() & mask;
       // Check if the page offset matches
       for (Cva6DynInstPtr i2: chunk){
         if (i2 == inst){
-          return false;
+          return false; // TODO care OoO
         }
         if ((i2->dreq->req->getVaddr() & mask) == addr_masked){
           return true;

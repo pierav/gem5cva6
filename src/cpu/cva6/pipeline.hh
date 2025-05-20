@@ -274,7 +274,7 @@ class Pipeline : public Ticked
       bp(*p.branchPred),
       fus(cpu.name() + ".fus", cpu, p),
       iq(cpu.name() + ".iq", cpu, p, (ForwardInstDataPopIntf&)sa, fus),
-      rob(cpu.name() + ".rob"),
+      rob(cpu.name() + ".rob", p.numROBEntries),
       mdp(1024),
       mdpc(cpu.name() + "mdpc", cpu),
       /* Misc */
