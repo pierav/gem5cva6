@@ -152,12 +152,13 @@ bool needSerialise(Cva6DynInstPtr inst){
   // }
   return false;
 }
+
 uint64_t instructioncoststatic(Cva6DynInstPtr inst){
   if (inst->isFault()){
     return 0;
   }
   if (inst->staticInst->isControl()){
-    return 0;
+    return 1;
   }
   if (inst->staticInst->isMemRef()){
     if (inst->staticInst->isLoad()){
@@ -166,11 +167,24 @@ uint64_t instructioncoststatic(Cva6DynInstPtr inst){
       return 0;
     }
   }
-  if (inst->staticInst->isFloating()){
-    return 2;
-  }
-  if (inst->staticInst->isInteger()){
-    return 1;
+
+  const uint64_t FLOAT_LAT = 3;
+  /* Otherwise get FU latency */
+  switch (inst->staticInst->opClass()){
+    case OpClass::No_OpClass: return 0; /* Csr, etc */
+    case OpClass::IntAlu: return 1;
+    case OpClass::IntMult: return 3;
+    case OpClass::IntDiv: return 8;
+    case OpClass::FloatAdd: return FLOAT_LAT;
+    case OpClass::FloatCmp: return FLOAT_LAT;
+    case OpClass::FloatCvt: return FLOAT_LAT;
+    case OpClass::FloatMult: return FLOAT_LAT;
+    case OpClass::FloatMultAcc: return FLOAT_LAT;
+    case OpClass::FloatMisc: return FLOAT_LAT;
+    case OpClass::FloatDiv: return 18;
+    case OpClass::FloatSqrt: return 18;
+    default:
+      fatal("Unrecheable latency for %s\n", *inst);
   }
   return 0;
 }
