@@ -141,7 +141,7 @@ struct HCPred
   struct pred_entry_t
   {
     uint64_t tag = 0;
-    uint64_t cpt;
+    uint64_t cpt = 0;
   };
 
   #define RBHPSIZE_LOG 10

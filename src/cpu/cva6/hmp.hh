@@ -23,7 +23,7 @@ namespace cva6 {
 class HMP
 {
   const size_t size = 1024;
-  bool lht[1024];
+  bool lht[1024] = { false };
   int64_t lhtlat[1024] = { 0 };
 
   // PhysicalRegFile<uint8_t>regsrchit;
