@@ -624,15 +624,60 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   MinLineAnalyserV2 mla;
   MinLineAnalyserBB mlabb;
 
+  /* FU ready constraint */
+  class FUModel
+  {
+    // We have 2 divisor
+    const size_t count = 2;
+    uint64_t next_ready_time[2] = { 0 };
+    // Instructions that use the fu
+    std::vector<OpClass> set = { OpClass::FloatDiv,
+                                 OpClass::FloatSqrt };
+
+    bool isTrigger(Cva6DynInstPtr& inst){
+      if (inst->isFault()){
+        return 0;
+      }
+      for (OpClass &cl: set){
+        if (inst->staticInst->opClass() == cl){
+          return true;
+        }
+      }
+      return false;
+
+    }
+    public:
+    void onSchedule(Cva6DynInstPtr& inst, uint64_t time){
+      if (isTrigger(inst)){
+        *minReadyTimePtr() = time + instructioncoststatic(inst);
+      }
+    }
+
+    uint64_t* minReadyTimePtr(){
+      uint64_t *min = next_ready_time;
+      for (size_t i = 1; i < count; i++){
+        if (next_ready_time[i] < *min){
+          min = &next_ready_time[i];
+        }
+      }
+      return min;
+    }
+
+    uint64_t getRT(Cva6DynInstPtr &inst) {
+      return isTrigger(inst) ? *minReadyTimePtr() : 0;
+    }
+  } fumodel;
+
   // DEBUG: delme !
   uint64_t find_inst_line(Cva6DynInstPtr inst);
   /* Base primitives */
   uint64_t getSourceUseLine(PhysicalReg &reg);
 
-  uint64_t getSLRR(Cva6DynInstPtr &inst);
-  uint64_t getSLMDP(Cva6DynInstPtr &inst);
-  uint64_t getSLSTORE(Cva6DynInstPtr &inst);
-  uint64_t getSLBBdep(Cva6DynInstPtr &inst);
+  uint64_t getSLFU(Cva6DynInstPtr &inst); /* FU deps */
+  uint64_t getSLRR(Cva6DynInstPtr &inst); /* Dataflow deps */
+  uint64_t getSLMDP(Cva6DynInstPtr &inst); /* MDP deps */
+  uint64_t getSLSTORE(Cva6DynInstPtr &inst); /* Store Ser */
+  uint64_t getSLBBdep(Cva6DynInstPtr &inst); /* */
 
   uint64_t getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta);
   // uint64_t getScheduleLineForLoadAddr(uint64_t addr, Cva6DynInstPtr*inst);

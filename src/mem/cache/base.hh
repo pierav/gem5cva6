@@ -262,6 +262,13 @@ class BaseCache : public ClockedObject
 
         bool isBlocked() const { return blocked; }
 
+        void schedTimingResp(PacketPtr pkt, Tick when) override {
+            // Do when + 1 to avoid misschedule.
+            // This is the case when several schedules have to be carried out
+            // in the processor's schedule tick.
+            QueuedResponsePort::schedTimingResp(pkt, when);
+        }
+
       protected:
 
         CacheResponsePort(const std::string &_name, BaseCache& _cache,

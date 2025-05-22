@@ -477,6 +477,10 @@ void
 LSUBase::push(Cva6DynInstPtr inst){
     assert(inst->dreq);
     lsu_fifo.push(inst);
+    /* DO the translation here to overlap cache latency
+     * and TLB hit latency. In this way, the Load to use is
+     * equal to the cache latency setup in .py file */
+    // UNDO
 }
 
 bool

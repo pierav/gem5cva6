@@ -121,6 +121,7 @@ parser.add_argument("--l1dsize", action="store", type=str, default='64kB',
 parser.add_argument("--l1dlat", action="store", type=int, default=4,
                     help="L1 data latency. Default: 4")
 
+parser.add_argument("--l2dlat", default=10, help="L2 data latency")
 
 # FUS
 class CVA6_ALU(FUDesc):
@@ -463,8 +464,8 @@ class L1DCache(L1Cache):
     # demand_mshr_reserve = 512 # MSHRs reserved for demand access
     # tgts_per_mshr = 256 # Max number of accesses per MSHR
 
-    data_latency = args.l1dlat # lw hit -> 0
-    tag_latency =  args.l1dlat
+    data_latency = args.l1dlat - 1
+    tag_latency =  args.l1dlat - 1
     response_latency = 1
 
     def __init__(self, opts=None):
@@ -478,8 +479,8 @@ class L1DCache(L1Cache):
 class L2Cache(Cache):
     size = '256kB'
     assoc = 8
-    tag_latency = 20
-    data_latency = 20
+    tag_latency = args.l2dlat
+    data_latency = args.l2dlat
     response_latency = 1
     mshrs = 20
     tgts_per_mshr = 12

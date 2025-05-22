@@ -273,7 +273,7 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                 "first time a load is issued and its completion")
 {
     loadToUse
-        .init(0, 299, 10)
+        .init(0, 100, 1)
         .flags(statistics::nozero);
 }
 

@@ -135,6 +135,10 @@ PacketQueue::schedSendTiming(PacketPtr pkt, Tick when)
     // order by tick; however, if forceOrder is set, also make sure
     // not to re-order in front of some existing packet with the same
     // address
+
+    /* PR: avoid miss schedule cycle */
+    when += 1; // Increase by one tick !
+
     auto it = transmitList.end();
     while (it != transmitList.begin()) {
         --it;
@@ -142,12 +146,23 @@ PacketQueue::schedSendTiming(PacketPtr pkt, Tick when)
             // emplace inserts the element before the position pointed to by
             // the iterator, so advance it one step
             transmitList.emplace(++it, when, pkt);
+            DPRINTF(PacketQueue, "transmitList.emplace(%d)\n", when);
+            // DUMP
+            int i = 0;
+            for (auto& it: transmitList){
+                DPRINTF(PacketQueue, "transmitList[%d] = %d\n",
+                    i++, it.tick);
+            }
             return;
         }
     }
+
+
     // either the packet list is empty or this has to be inserted
     // before every other packet
     transmitList.emplace_front(when, pkt);
+    DPRINTF(PacketQueue, "transmitList.emplace_front(%d)\n", when);
+
     schedSendEvent(when);
 }
 
@@ -168,10 +183,12 @@ PacketQueue::schedSendEvent(Tick when)
         // @todo Revisit the +1
 
         if (!sendEvent.scheduled()) {
+            DPRINTF(PacketQueue, "schedule : %d\n", when);
             em.schedule(&sendEvent, when);
         } else if (when < sendEvent.when()) {
             // if the new time is earlier than when the event
             // currently is scheduled, move it forward
+            DPRINTF(PacketQueue, "reschedule : %d\n", when);
             em.reschedule(&sendEvent, when);
         }
     } else {
@@ -195,13 +212,13 @@ PacketQueue::sendDeferredPacket()
     assert(deferredPacketReady());
 
     DeferredPacket dp = transmitList.front();
-
     // take the packet of the list before sending it, as sending of
     // the packet in some cases causes a new packet to be enqueued
     // (most notaly when responding to the timing CPU, leading to a
     // new request hitting in the L1 icache, leading to a new
     // response)
     transmitList.pop_front();
+    DPRINTF(PacketQueue, "transmitList.pop_front\n");
 
     // use the appropriate implementation of sendTiming based on the
     // type of queue
@@ -214,6 +231,8 @@ PacketQueue::sendDeferredPacket()
     } else {
         // put the packet back at the front of the list
         transmitList.emplace_front(dp);
+        DPRINTF(PacketQueue, "transmitList.emplace_front() FAIL !!\n");
+
     }
 }
 

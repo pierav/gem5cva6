@@ -162,7 +162,7 @@ uint64_t instructioncoststatic(Cva6DynInstPtr inst){
   }
   if (inst->staticInst->isMemRef()){
     if (inst->staticInst->isLoad()){
-      return 4;
+      return 5;
     } else {
       return 0;
     }
@@ -261,6 +261,18 @@ SchedulerPierreMichaud::find_inst_line(Cva6DynInstPtr inst){
     }
   }
   return 0; /* Active line */
+}
+
+uint64_t
+SchedulerPierreMichaud::getSLFU(Cva6DynInstPtr &inst){
+  uint64_t sched_line = 0;
+  uint64_t ready_time = fumodel.getRT(inst);
+  if (ready_time > base_time){
+    sched_line = ready_time - base_time;
+    DPRINTF(Cva6Sched, "Schedule (SL FU        ): line %d T %d for %s\n",
+        sched_line, ready_time, dumpInstPreg(inst));
+  }
+  return sched_line;
 }
 
 uint64_t
@@ -396,6 +408,7 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta){
   uint64_t sl_mdp = getSLMDP(inst);
   uint64_t sl_st = getSLSTORE(inst);
   uint64_t sl_bb = getSLBBdep(inst);
+  uint64_t sl_fu = getSLFU(inst);
 
   /* Add our wip constraint */
   // if (mldabb.isConstraints(inst)){
@@ -420,7 +433,7 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta){
   } else if (!inst->isFault() && inst->staticInst->isStore()) {
     schedule_line = std::max({schedule_line, sl_rr, sl_st, sl_bb});
   } else {
-    schedule_line = std::max({schedule_line, sl_rr, sl_bb});
+    schedule_line = std::max({schedule_line, sl_rr, sl_bb, sl_fu});
   }
   return schedule_line;
 }
@@ -520,7 +533,9 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
   DPRINTF(Cva6Sched, "SCHEDPUSH ::::::::::::::: line %d T %d : %s\n",
     schedule_line, base_time + schedule_line, dumpInstPreg(inst));
 
+  /* Setup decoupled constraints */
   mla.onSchedule(inst, base_time + schedule_line);
+  fumodel.onSchedule(inst, base_time + schedule_line);
   // mldabb.onSchedule(inst, base_time + schedule_line);
   // mlabb.onSchedule(inst, base_time + schedule_line);
 
@@ -529,8 +544,6 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
     s2d.pop_front();
     base_time ++;
   }
-
-  // Perform speculative register free
 
 }
 
