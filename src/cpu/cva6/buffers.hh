@@ -41,7 +41,7 @@
  * Classes for buffer, queue and FIFO behaviour.
  */
 
-
+#error DO NOT INCLUDE ME
 #pragma once
 #include <iostream>
 #include <queue>
@@ -57,7 +57,6 @@
 namespace gem5 {
 namespace cva6 {
 
-std::string array2str(uint8_t *data, uint64_t size);
 
 
 /** Allow a template using ReportTraits to call report... functions of

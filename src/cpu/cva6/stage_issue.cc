@@ -7,11 +7,9 @@
  *
  */
 #include "cpu/cva6/stage_issue.hh"
-
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/exec_context.hh"
 #include "cpu/cva6/pipeline.hh"
-#include "cpu/op_class.hh"
 #include "debug/Cva6Issue.hh"
 
 namespace gem5 {

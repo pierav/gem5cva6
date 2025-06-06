@@ -1,18 +1,19 @@
 /**
- * @file
- *
- *  Decode collects macro-ops from Fetch2 and splits them into micro-ops
+ * @file stage_decode.hh
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief Decode collects macro-ops from Fetch2 and splits them into micro-ops
  *  passed to Execute.
+ * @version x
+ * @date 2023-05-25
+ *
  */
 
 #pragma once
 
 #include "base/named.hh"
-#include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/dyn_inst.hh"
 #include "cpu/cva6/pipe_data.hh"
-#include "cpu/cva6/vp_dpe.hh"
 
 namespace gem5 {
 namespace cva6 {

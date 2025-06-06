@@ -1,3 +1,11 @@
+/**
+ * @file stage_execute.cc
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief
+ * @version x
+ * @date 2023-05-25
+ *
+ */
 
 #include "cpu/cva6/stage_execute.hh"
 
@@ -49,7 +57,7 @@ BlockCommit::commitFunctionnal(){
         Cva6DynInstPtr inst = fifo.pop();
         DPRINTF(Cva6BC, "Commit %s\n", *inst);
         bool need_squash = commitInst(cpu, inst);
-        // cpu.pipeline->sa.commit(inst); /* Post-commit : register release !*/
+        cpu.pipeline->sa.regalloc.commit(inst); /* register release !*/
         if (need_squash){ // Squash must be the last one
             assert(fifo.empty());
             return true;
@@ -65,7 +73,7 @@ BlockCommit::pre_commit(Cva6DynInstPtr& inst){
         preg_in_flight.dump_match(true));
     /* Push and increment spec commit pointer */
     fifo.push(inst);
-    cpu.pipeline->sa.commit(inst); /* Post-commit : register release !*/
+    cpu.pipeline->sa.regalloc.pre_commit(inst); /* register release !*/
     cpu.pipeline->iq.pre_commit(inst);
 
     /* Do this here to avoid shadow miss !!! */
@@ -129,7 +137,7 @@ Execute::tryToBranch(Cva6DynInstPtr inst, BranchData &branch){
     // Squash at latest valid pc
     branch.setSquashTarget(cpu.getContext()->pcState());
 
-    DPRINTF(Branch, "tryToBranch : %s\n", branch.dump());
+    DPRINTF(Branch, "tryToBranch : %s\n", branch);
 }
 
 /** Do the stats handling and instruction count and PC event events
@@ -210,6 +218,8 @@ bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst){
 
     cpu.pipeline->iq.commit(inst); /* Post-commit (for stores SQS->SQC)!*/
     cpu.pipeline->plugins.commit(inst);
+    cpu.pipeline->sa.regalloc.post_commit(inst); /* Register in ARF */
+
     /* Update BP */
     BranchData branch = getEffectiveBranch(inst);
     if (branch.need_squash){

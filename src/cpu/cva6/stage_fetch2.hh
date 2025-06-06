@@ -1,5 +1,9 @@
 /**
- * @file
+ * @file stage_fetch2.hh
+ * @author Pierre Ravenel (pravenel@kalray.eu)
+ * @brief
+ * @version 1.0
+ * @date 2023-05-25
  *
  *  Fetch2 receives lines of data from Fetch1, separates them into
  *  instructions and passes them to Decode
@@ -8,7 +12,6 @@
 #pragma once
 
 #include "base/named.hh"
-#include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/pipe_data.hh"
 #include "cpu/cva6/vp_dpe.hh"
@@ -52,29 +55,18 @@ class Fetch2 : public Named
   protected:
     /** Pointer back to the containing CPU */
     Cva6CPU &cpu;
-
-    /** Input port carrying lines from Fetch1 */
-    Latch<ForwardLineData>::Output inp;
-
-    /** Input port carrying branches from Execute.  This is a snoop of the
-     *  data provided to F1. */
-    BranchData &resolved_branch;
-
-    /** Output carrying predictions back to Fetch1 */
-    BranchData &predictionOut;
-
+    /* Input port */
+    ForwardLineDataReg &inp;
     /** Output port carrying instructions into Decode */
     ForwardInstDataPushIntf &out;
-
+    /** Input port carrying branches from Execute.  */
+    BranchData &resolved_branch;
+    /** Output carrying predictions back to Fetch1 */
+    BranchData &predictionOut;
     /* uOP decoder */
     UDecoder udecoder;
-
     /* Delayed prediction unit */
     VPDPE &dpe;
-
-  public:
-    /* Public so that Pipeline can pass it to Fetch1 */
-    InputBuffer<ForwardLineData> inputBuffer;
 
   protected:
     /** Data members after this line are cycle-to-cycle state */
@@ -89,12 +81,7 @@ class Fetch2 : public Named
           set(pc, other.pc);
       }
 
-      /** Remembered program counter value.  Between contiguous lines, this
-       *  is just updated with advancePC.  For lines following changes of
-       *  stream, a new PC must be loaded and havePC be set.
-       *  havePC is needed to accomodate instructions which span across
-       *  lines meaning that Fetch2 and the decoder need to remember a PC
-       *  value and a partially-offered instruction from the previous line */
+      /** Remembered program counter value. */
       std::unique_ptr<PCStateBase> pc;
 
       /** PC is currently valid.  Initially false, gets set to true when a
@@ -139,18 +126,7 @@ class Fetch2 : public Named
     } stats;
 
   protected:
-    /** Get a piece of data to work on from the inputBuffer, or 0 if there
-     *  is no data. */
-    const ForwardLineData *getInput();
-
-    /** Pop an element off the input buffer, if there are any */
-    void popInput();
-
-    /** Dump the whole contents of the input buffer.  Useful after a
-     *  prediction changes control flow */
-    void dumpAllInput();
-
-    /** Update local branch prediction structures from feedback from
+     /** Update local branch prediction structures from feedback from
      *  Execute. */
     void updateBranchPrediction(const BranchData &branch);
 
@@ -166,20 +142,19 @@ class Fetch2 : public Named
     Fetch2(const std::string &name,
       Cva6CPU &cpu_,
       const BaseCva6CPUParams &params,
-      Latch<ForwardLineData>::Output inp_,
+      ForwardLineDataReg &inp_,
+      ForwardInstDataPushIntf &out_,
       BranchData &resolved_branch_,
       BranchData &predictionOut_,
-      ForwardInstDataPushIntf &out_,
       VPDPE &dpe_) :
       Named(name),
       cpu(cpu_),
       inp(inp_),
+      out(out_),
       resolved_branch(resolved_branch_),
       predictionOut(predictionOut_),
-      out(out_),
       udecoder(cpu_),
       dpe(dpe_),
-      inputBuffer(name + ".inputBuffer", "insts"),
       fetchInfo(),
       stats(&cpu_) { }
 

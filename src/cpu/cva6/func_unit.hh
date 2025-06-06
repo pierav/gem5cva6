@@ -1,12 +1,13 @@
 /**
- * @file
+ * @file func_unit.hh
+ * @author Pierre Ravenel (pravenel@kalray.eu)
+ * @brief Execute function unit descriptions and pipeline implementations.
+ * @version 0.1
+ * @date 2023-05-25
  *
- *  Execute function unit descriptions and pipeline implementations.
  */
 
-#ifndef __CPU_CVA6_FUNC_UNIT_HH__
-#define __CPU_CVA6_FUNC_UNIT_HH__
-
+#pragma once
 
 #include <cstdint>
 #include <iomanip>
@@ -15,19 +16,12 @@
 #include <string>
 #include <typeinfo>
 #include <vector>
-
-#include "base/trace.hh"
-#include "base/types.hh"
-#include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/dyn_inst.hh"
 #include "cpu/cva6/fu_base.hh"
 #include "cpu/cva6/fu_lsu.hh"
 #include "cpu/func_unit.hh"
-#include "cpu/timing_expr.hh"
 #include "debug/Cva6FU.hh"
-#include "sim/clocked_object.hh"
-#include "sim/sim_object.hh"
 
 namespace gem5 {
 namespace cva6 {
@@ -365,5 +359,3 @@ class FUPipelines : public Named
 
 } // namespace cva6
 } // namespace gem5
-
-#endif /* __CPU_CVA6_FUNC_UNIT_HH__ */

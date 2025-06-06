@@ -15,7 +15,6 @@
 #include "base/refcnt.hh"
 #include "base/types.hh"
 #include "cpu/base.hh"
-#include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/exec_context_static.hh"
 #include "cpu/cva6/lambda_types.hh"
@@ -35,6 +34,7 @@ struct PhysicalReg
   /* Register type */
   int classValue = 0;         /* If 0 : invalid */
   bool isRenammed = false;    /* Is register renammed */
+  bool isRenammedValid = false;
   uint64_t virt_reg_idx = 0;  /* Virtual reg index */
   uint64_t phys_reg_idx = 0;  /* Physical reg index */
   bool isLastRename = false;  /* Mark the deallocation of the register */
@@ -85,7 +85,12 @@ struct PhysicalReg
     os << registerName(virt_reg_idx);
     if (isRenammed){
       os << "\033[38;5;" << (phys_reg_idx * 97) % 256 << 'm';
-      os << ":%" << std::setfill('%') << std::setw(4) << phys_reg_idx;
+      if (isRenammedValid){
+        os << ":%";
+      } else {
+        os << ":A%";
+      }
+      os << std::setfill('%') << std::setw(4) << phys_reg_idx;
       os << "\x1B[0m";
     }
     os.copyfmt(init);
@@ -195,6 +200,17 @@ class ArchRegFile
     return array[idx];
   }
 
+
+  /* Direst access from arch index */
+  T& operator[](uint64_t areg){
+    // Fix size;
+    if (array.size() <= areg){
+      array.resize(areg + 1);
+    }
+    return array[areg];
+  }
+
+  size_t size() { return array.size(); }
   iterator begin() { return array.begin(); }
   const_iterator begin() const { return array.begin(); }
   const_iterator cbegin() const { return array.cbegin(); }

@@ -3,7 +3,6 @@
 #include <bits/stdc++.h>
 
 #include "arch/riscv/utility.hh"
-#include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/reg_class.hh"
 

@@ -44,8 +44,9 @@ from common.SysPaths import binary
 from os import path
 
 parser = argparse.ArgumentParser()
-Options.addCommonOptions(parser)
+# Options.addCommonOptions(parser)
 # Options.addFSOptions(parser)
+
 parser.add_argument("--kernel", action="store", type=str)
 parser.add_argument("--issueWidth", action="store", type=int, default=4)
 
@@ -83,6 +84,7 @@ cva6_config = {
     "renameIncArchReg": DEFAULT(0), # Include ARCH in PRF
     "renameFreeRegDead": DEFAULT(0), # Free reg dead (bugs)
     "renameSpecRelease": DEFAULT(0), # Speculative Release
+    "renameSpecReleasePC": DEFAULT(0),
     "oracleEarlyCommit": DEFAULT(0)
 }
 
@@ -102,15 +104,8 @@ for k, v in {**cva6_config, **o3_config}.items():
     parser.add_argument("--" + k, **v)
 
 # CPU
-parser.add_argument("--cpu", action="store", type=str,
-                    default="cva", help=r"cputype {cva, o3, amo}")
+parser.add_argument("--cpu", choices=['cva', 'o3', 'amo'], default='cva')
 
-# Simpoints
-parser.add_argument("--cpt", action="store", type=str,
-                    default=None, help="restore checkpoint dir")
-parser.add_argument("--simcpt", action="store", type=str,
-                    default=None, help="Restore simpoint and do measurements")
-parser.add_argument("--exitOnCpt", action='store_true')
 
 # IO
 parser.add_argument("--disk", action="store", type=str, help="Virtio disk")
@@ -120,8 +115,29 @@ parser.add_argument("--l1dsize", action="store", type=str, default='64kB',
                     help="L1 data cache size. Default: 64kB.")
 parser.add_argument("--l1dlat", action="store", type=int, default=4,
                     help="L1 data latency. Default: 4")
-
 parser.add_argument("--l2dlat", default=10, help="L2 data latency")
+
+
+# Checkpoints
+parser.add_argument("--cpt", action="store", type=str, default=None,
+                    help="restore checkpoint dir")
+parser.add_argument("--simcpt", action="store", type=str, default=None,
+                    help="Restore simpoint and do measurements")
+parser.add_argument("--exitOnCpt", action='store_true')
+
+# Simpoint options (Pass 1 : collect statistics)
+parser.add_argument("--simpoint-profile", action="store_true",
+                    help="Enable basic block profiling for SimPoints")
+parser.add_argument("--simpoint-interval", type=int, default=10000000,
+                    help="SimPoint interval in num of instructions")
+# Simpoint options (Pass 2 : take simpoints checkpoints)
+parser.add_argument("--take-simpoint-checkpoints", action="store", type=str,
+        help="<simpoint file,weight file,interval-length,warmup-length>")
+
+
+# Run duration options
+parser.add_argument("-I", "--maxinsts", action="store", type=int, default=None,
+                    help="Total number of instructions to simulate")
 
 # FUS
 class CVA6_ALU(FUDesc):
@@ -162,20 +178,14 @@ CONFIG_USE_O3 = False
 CONFIG_USE_CVA6 = False
 CONFIG_USE_ATOMIC = False
 
-
 # Fixup
 if args.userelf == "":
     args.userelf = args.kernel
 
-if args.cpu == "cva":
-    CONFIG_USE_CVA6 = True
-elif args.cpu == "o3":
-    CONFIG_USE_O3 = True
-elif args.cpu == "amo":
-    CONFIG_USE_ATOMIC = True
-else:
-    print(f"Invald CPU: {args.cpu}")
-    exit(1)
+CONFIG_USE_CVA6 = args.cpu == "cva"
+CONFIG_USE_O3 = args.cpu == "o3"
+CONFIG_USE_ATOMIC = args.cpu == "amo"
+
 
 if args.simpoint_profile or args.take_simpoint_checkpoints:
     print("/!\\ Switch to atomic CPU for simpoint profiling /!\\")

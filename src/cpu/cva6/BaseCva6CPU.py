@@ -63,7 +63,7 @@ class BaseCva6CPU(BaseCPU):
     renameIncArchReg = Param.Unsigned(0, "Sb arch(0) or Full RR(1)")
     renameFreeRegDead = Param.Unsigned(0, "Free Dead registers")
     renameSpecRelease = Param.Unsigned(1, "Release PReg after schedule")
-
+    renameSpecReleasePC = Param.Unsigned(0, "Release PReg after precommit")
     # Lambda
     userelf = Param.String("", "Main user elf")
     lltSize = Param.Unsigned(0, "Last Lamdba Table Size")

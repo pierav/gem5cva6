@@ -231,6 +231,9 @@ std::string dumpInstPreg(Cva6DynInstPtr& inst){
 
 uint64_t
 SchedulerPierreMichaud::getSourceUseLine(PhysicalReg &reg){
+  if (!reg.isRenammedValid){ // Arch reg file is ready
+    return 0;
+  }
   uint64_t ready_time = timeofregready[reg] > base_time ?
                       timeofregready[reg] - base_time : 0;
   // uint64_t end_time = maxtimeoflasttouch[reg] > base_time ?
@@ -455,6 +458,11 @@ SchedulerPierreMichaud::getScheduleLineForLoadAddr(uint64_t addr,
 
 void
 SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
+  /* FIrst of all: annotate reg mapping */
+  for (auto reg: inst->regs_dst_phy){
+    assert(reg.isRenammed);
+    physical2arch[reg] = reg.virt_reg_idx;
+  }
   inflight_insts_count += 1;
   uint64_t delta;
   uint64_t schedule_line = getScheduleLine(inst, delta);
@@ -584,20 +592,33 @@ bool
 SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
   std::deque<uint64_t> &FL, uint64_t &preg) {
   bool hit = false;
-  uint64_t max_schedule_time = 0;
 
+
+  PhysicalReg& reg = inst->regs_dst_phy[0];
+  uint64_t arch_reg_idx = reg.virt_reg_idx;
+
+  uint64_t max_schedule_time = 0;
   uint64_t delta;
   uint64_t schedule_line = getScheduleLine(inst, delta);
   uint64_t schedule_time = schedule_line + base_time;
   // DPRINTF(Cva6Sched, "canRenameDest line %d T %d : %s\n",
   //   schedule_line, schedule_time, dumpInstPreg(inst));
   for (uint64_t pregi: FL){
+    bool same_mapping = physical2arch[pregi] == arch_reg_idx;
+    bool inFF = cpu.pipeline->sa.regalloc.isInFF(pregi);
+
     uint64_t preg_use_time = maxtimeoflasttouch[pregi];
-    // DPRINTF(Cva6Sched, "Try preg : %d : T=%d\n", pregi, preg_use_time);
-    if (preg_use_time > schedule_time){
-      /* Suboptimal schedule */
+    bool invalid = (preg_use_time > schedule_time); /* Suboptimal schedule */
+
+    // (inFF && !same_mapping); // Avoid FF forwarding
+
+    DPRINTF(Cva6Sched, "Try preg : %d %s : T=%d [inFF=%d,%d]\n",
+      pregi, invalid ? ".": "HIT", preg_use_time, inFF, same_mapping);
+
+    if (invalid){
       continue;
     }
+
     if (!hit || (max_schedule_time < preg_use_time)){
       /* Use this line */
       max_schedule_time = preg_use_time;

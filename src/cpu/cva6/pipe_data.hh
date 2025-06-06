@@ -2,15 +2,12 @@
  * @file
  *
  *  Contains class definitions for data flowing between pipeline stages in
- *  the top-level structure portion of this model.  Latch types are also
- *  defined which pair forward/backward flowing data specific to each stage
- *  pair.
+ *  the top-level structure portion of this model.
  */
 
 #pragma once
 
 #include "cpu/base.hh"
-#include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/dyn_inst.hh"
 #include "debug/Cva6FU.hh"
 
@@ -100,130 +97,94 @@ class BranchData
     }
 
     bool isBubble() const { return !(is_predicted || need_squash); }
-
     /** As static isStreamChange but on this branch data */
     bool isStreamChange() const { return need_squash; }
-
-    std::string dump() const {
-        std::ostringstream os;
-        os << "BranchData(";
-        if (isBubble()) {
-          os << "bubble";
-        } else {
-          if (is_predicted){
-            os << "prediction ";
-            if (need_squash){
-              os << "KO";
-            } else {
-              os << "OK";
-            }
-          }
-          os << ";num=" << num;
-          os << ";0x" << std::hex << target->instAddr() << std::dec;
-          os << ';';
-          if (need_squash){
-            os << " [squash:0x" << std::hex
-               << squash_target->instAddr() << std::dec
-               << "]";
-          }
-        }
-        os << ")";
-        return os.str();
-    }
+    std::ostream& dump(std::ostream &os) const;
 };
 
-/** Print BranchData contents in a format suitable for DPRINTF comments */
-std::ostream &operator <<(std::ostream &os, const BranchData &branch);
 
 /** Line fetch data in the forward direction.  Contains a single cache line
  *  (or fragment of a line), its address, a sequence number assigned when
- *  that line was fetched and a bubbleFlag that can allow ForwardLineData to
- *  be used to represent the absence of line data in a pipeline. */
-class ForwardLineData /* : public ReportIF, public BubbleIF */
+ *  that line was fetched  */
+class ForwardLineData
 {
-  private:
-    /** This line is a bubble.  No other data member is required to be valid
-     *  if this is true
-     *  Make lines bubbles by default */
-    bool bubbleFlag = true;
-
   public:
-    /** First byte address in the line.  This is allowed to be
-     *  <= pc.instAddr() */
-    Addr lineBaseAddr = 0;
-
-    /** PC of the first inst within this sequence */
-    std::unique_ptr<PCStateBase> pc;
-
-    /** Address of this line of data */
-    Addr fetchAddr;
-
-    /** Explicit line width, don't rely on data.size */
-    unsigned int lineWidth = 0;
-
-  public:
-    /** This line has a fault.  The bubble flag will be false and seqNums
-     *  will be valid but no data will */
-    Fault fault = NoFault;
-
-    /** Line data.  line[0] is the byte at address pc.instAddr().  Data is
-     *  only valid upto lineWidth - 1. */
-    uint8_t *line = nullptr;
-
-    /** Packet from which the line is taken */
-    Packet *packet = nullptr;
+    Addr lineBaseAddr = 0; /** First byte address in the line. */
+    std::unique_ptr<PCStateBase> pc; /** PC of the first */
+    Addr fetchAddr; /** Address of this line of data */
+    unsigned int lineWidth = 0; /** Explicit line width  */
+    Fault fault = NoFault;     /** This line has a fault. */
+    uint8_t *line = nullptr;   /** Line data. */
+    Packet *packet = nullptr;  /** Packet from which the line is taken */
 
   public:
     ForwardLineData() {}
-    ForwardLineData(const ForwardLineData &other) :
-        bubbleFlag(other.bubbleFlag), lineBaseAddr(other.lineBaseAddr),
-        pc(other.pc->clone()), fetchAddr(other.fetchAddr),
-        lineWidth(other.lineWidth), fault(other.fault),
-        line(other.line), packet(other.packet)
-    {}
-    ForwardLineData &
-    operator=(const ForwardLineData &other)
-    {
-        bubbleFlag = other.bubbleFlag;
-        lineBaseAddr = other.lineBaseAddr;
-        set(pc, other.pc);
-        fetchAddr = other.fetchAddr;
-        lineWidth = other.lineWidth;
-        fault = other.fault;
-        line = other.line;
-        packet = other.packet;
-        return *this;
-    }
 
-    ~ForwardLineData() { line = NULL; }
+    ~ForwardLineData() { line = nullptr; }
 
   public:
     /** This is a fault, not a line */
     bool isFault() const { return fault != NoFault; }
 
     /** Set fault and possible clear the bubble flag */
-    void setFault(Fault fault_);
-
-    /** In-place initialise a ForwardLineData, freeing and overridding the
-     *  line */
-    void allocateLine(unsigned int width_);
+    void setFault(Fault fault_) { fault = fault_; }
 
     /** Use the data from a packet as line instead of allocating new
      *  space.  On destruction of this object, the packet will be destroyed */
-    void adoptPacketData(Packet *packet);
+    void adoptPacketData(Packet *packet) {
+      this->packet = packet;
+      lineWidth = packet->req->getSize();
+      line = packet->getPtr<uint8_t>();
+    }
 
-    /** Free this ForwardLineData line.  Note that these are shared between
-     *  line objects and so you must be careful when deallocating them.
-     *  Copying of ForwardLineData can, therefore, be done by default copy
-     *  constructors/assignment */
-    void freeLine();
+    /** Free this ForwardLineData line.  */
+    void freeLine(){
+      /* Only free lines in non-faulting, non-bubble lines */
+      if (!isFault()) {
+        assert(line);
+        /* If packet is not NULL then the line must belong to the packet so
+        *  we don't need to separately deallocate the line */
+        if (packet) {
+            delete packet;
+        } else {
+            delete [] line;
+        }
+        line = nullptr;
+      }
+    }
 
-    /** BubbleIF interface */
-    static ForwardLineData bubble() { return ForwardLineData(); }
-    bool isBubble() const { return bubbleFlag; }
+    std::ostream& dump(std::ostream &os) const;
+};
 
-    /** ReportIF interface */
-    void reportData(std::ostream &os) const;
+class ForwardLineDataReg
+{
+  private:
+  /* A little hacked allocator */
+  ForwardLineData *buff;
+  uint64_t idx;
+  public:
+  ForwardLineData* alloc(){ return &buff[(idx++)%maxsize]; }
+
+  private:
+  size_t maxsize;
+  public:
+  ForwardLineDataReg(size_t size=4) :maxsize(size) {
+    buff = new ForwardLineData[maxsize];
+  }
+  std::deque<ForwardLineData*> fifo;
+  public:
+  bool canPush() { return fifo.size() < 4; }
+  void push(ForwardLineData *line) { fifo.push_back(line); }
+  bool canPop() { return fifo.size(); }
+  ForwardLineData *pop() {
+    ForwardLineData *ret = fifo.front();
+    fifo.pop_front();
+    return ret;
+  }
+  ForwardLineData *front(){ return fifo.front(); }
+  void flush() { fifo.clear(); }
+  size_t size() { return fifo.size(); }
+  std::ostream& dump(std::ostream &os) const;
 };
 
 
@@ -245,6 +206,7 @@ class ForwardInstDataPopIntf
     virtual Cva6DynInstPtr pop() = 0;
     virtual void flush() = 0;
     virtual void flushfrom(Cva6DynInstPtr inst_) = 0;
+    virtual size_t size() = 0;
 };
 
 /** Forward sbe between instructions stages. */
@@ -255,14 +217,14 @@ class ForwardInstData :
   protected:
     /** Instructions fifo */
     std::deque<Cva6DynInstPtr> insts;
-    size_t size;
+    size_t maxsize;
 
   public:
-    explicit ForwardInstData(size_t size_=-1) : size(size_) { ; }
+    explicit ForwardInstData(size_t size_=-1) : maxsize(size_) { ; }
 
     /** Push interface */
     bool empty() { return insts.empty(); }
-    bool canPush() { return insts.size() < size; }
+    bool canPush() { return insts.size() < maxsize; }
     void push(Cva6DynInstPtr inst) { insts.push_back(inst); }
 
     /** Pop interface */
@@ -281,9 +243,9 @@ class ForwardInstData :
       }
     }
 
+    size_t size() { return insts.size(); }
     /** Reporting */
-    void reportData (std::ostream &os) const;
-    std::string dump();
+    std::ostream &dump (std::ostream &os) const;
 };
 
 bool maskMatchVaddrInst(Cva6DynInstPtr i1, Cva6DynInstPtr i2, uint64_t mask);
@@ -395,6 +357,26 @@ class Cva6DynInstChunk : public Named, public MatchAddrIntf
     }
 };
 
+
+inline std::ostream &
+operator <<(std::ostream &os, const BranchData &x){
+  return x.dump(os);
+}
+
+inline std::ostream &
+operator <<(std::ostream &os, const ForwardInstData &x){
+  return x.dump(os);
+}
+
+inline std::ostream &
+operator <<(std::ostream &os, const ForwardLineData &x){
+  return x.dump(os);
+}
+
+inline std::ostream &
+operator <<(std::ostream &os, const ForwardLineDataReg &x){
+  return x.dump(os);
+}
 
 } // namespace cva6
 } // namespace gem5

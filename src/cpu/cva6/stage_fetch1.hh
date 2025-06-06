@@ -1,15 +1,19 @@
 /**
- * @file
+ * @file stage_fetch1.hh
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief
+ * @version 1.0
+ * @date 2023-05-25
  *
  *  Fetch1 is responsible for fetching "lines" from memory and passing
  *  them to Fetch2
  */
+
 #pragma once
 
 #include "arch/generic/mmu.hh"
 #include "base/named.hh"
 #include "cpu/base.hh"
-#include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/pipe_data.hh"
 #include "mem/packet.hh"
@@ -17,8 +21,7 @@
 namespace gem5 {
 namespace cva6 {
 
-/** A stage responsible for fetching "lines" from memory and passing
- *  them to Fetch2 */
+
 class Fetch1 : public Named
 {
   protected:
@@ -54,6 +57,8 @@ class Fetch1 : public Named
       protected:
         /** Owning cpu */
         Cva6CPU &cpu;
+        /** Owning fetch stage */
+        Fetch1& fetch;
 
       public:
         /** Progress of this request through address translation and
@@ -88,9 +93,10 @@ class Fetch1 : public Named
         bool inuse = true;
 
       public:
-        FetchRequest(Cva6CPU &cpu_, Addr pc_) :
+        FetchRequest(Cva6CPU &cpu_, Fetch1 &fetch_, Addr pc_) :
             SenderState(),
             cpu(cpu_),
+            fetch(fetch_),
             state(NotIssued),
             packet(NULL),
             request(),
@@ -154,24 +160,16 @@ class Fetch1 : public Named
     typedef FetchRequest *FetchRequestPtr;
 
   protected:
-    /** Construction-assigned data members */
-
     /** Pointer back to the containing CPU */
     Cva6CPU &cpu;
-
     /** Input port carrying branch requests from Execute */
     BranchData &resolved_branch;
     /** Output port carrying read lines to Fetch2 */
-    Latch<ForwardLineData>::Input out;
+    ForwardLineDataReg& out;
     /** Input carrying branch predictions from Fetch2 */
     BranchData &prediction;
-
-    /** Interface to reserve space in the next stage */
-    InputBuffer<ForwardLineData> &nextStageReserve;
-
     /** IcachePort to pass to the CPU. */
     IcachePort icachePort;
-
     /** Maximum fetch width in bytes. */
     unsigned int maxLineWidth;
 
@@ -179,24 +177,15 @@ class Fetch1 : public Named
 
     struct Fetch1ThreadInfo
     {
-      /** Fetch PC value. This is updated by branches from Execute, branch
-       *  prediction targets from Fetch2. This is only valid immediately
-       *  following a redirect from one of those two sources. */
+      /** The base PC of streams */
       std::unique_ptr<PCStateBase> pc;
-
       /** The address we're currently fetching lines from. */
       Addr fetchAddr = 0;
-
-      // All fields have default initializers.
-      Fetch1ThreadInfo() {}
     };
 
     Fetch1ThreadInfo fetchInfo;
-
     /** Queue of address translated requests from Fetch1 */
-
     std::deque<FetchRequestPtr> requests;
-
     /** Queue of in-memory system requests and responses */
     std::deque<FetchRequestPtr> transfers;
 
@@ -205,24 +194,23 @@ class Fetch1 : public Named
     void changeStream(const BranchData &branch);
 
     /** Convert a response to a ForwardLineData */
-    void processResponse(FetchRequestPtr response,
-        ForwardLineData &line);
+    ForwardLineData* processResponse(FetchRequestPtr req);
 
-   FetchRequestPtr initiateFetchLine(Addr fetchAddr);
+    FetchRequestPtr initiateFetchLine(Addr fetchAddr);
 
   public:
     Fetch1(const std::string &name_,
         Cva6CPU &cpu_,
         const BaseCva6CPUParams &params,
         BranchData &resolved_branch_,
-        Latch<ForwardLineData>::Input out_,
-        BranchData &prediction_,
-        InputBuffer<ForwardLineData> &next_stage_input_buffer);
+        ForwardLineDataReg & out_,
+        BranchData &prediction_);
 
   public:
     /** Returns the IcachePort owned by this Fetch1 */
     Cva6CPU::Cva6CPUPort &getIcachePort() { return icachePort; }
 
+    void onRecv(FetchRequestPtr req);
     /** Pass on input/buffer data to the output if you can */
     void evaluate();
 

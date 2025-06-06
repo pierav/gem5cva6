@@ -1,18 +1,16 @@
 /**
  * @file stage_execute.hh
- * @author your name (pravenel@kalray.eu)
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
  * @brief
- * @version 0.1
+ * @version x
  * @date 2023-05-25
  *
  */
-#pragma once
 
-#include <vector>
+#pragma once
 
 #include "base/named.hh"
 #include "base/types.hh"
-#include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/func_unit.hh"
 #include "cpu/cva6/misc/reg_dead.hh"

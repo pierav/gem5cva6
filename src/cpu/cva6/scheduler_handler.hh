@@ -247,6 +247,7 @@ class SA : public ForwardInstDataPopIntf
     return inst;
   }
   void flush(){ flushfrom(Cva6DynInst::bubble()); }
+  size_t size() override { return scheduler.size(); }
 
   /* Annotate if instruction can commit (rd ready) */
   void pre_commit(Cva6DynInstPtr& inst){
@@ -255,11 +256,11 @@ class SA : public ForwardInstDataPopIntf
     }
   }
 
-  void commit(Cva6DynInstPtr inst){
-    regalloc.commit(inst);
-    rbh.commit(inst);
-    // oooch.commit(inst); /* Must be after regalloc commit ! */
-  }
+  // void commit(Cva6DynInstPtr inst){
+  //   regalloc.commit(inst);
+  //   // rbh.commit(inst);
+  //   // oooch.commit(inst); /* Must be after regalloc commit ! */
+  // }
 
   void flushfrom(Cva6DynInstPtr inst){
     if (!inst->isBubble()){

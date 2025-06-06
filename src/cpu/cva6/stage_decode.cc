@@ -39,12 +39,18 @@ Decode::evaluate(){
   }
 
   // Decode stage :
+  DPRINTF(Decode, "Have %d insts to send\n", inp.size());
   while (inp.canPop() &&
-    cpu.pipeline->rob.canPush() &&
-    /* !!! do can_push_scheduler at last because perform rename !!! */
-    cpu.pipeline->sa.can_push_scheduler(inp.front())
+    cpu.pipeline->rob.canPush()
   ) {
+    /* !!! do can_push_scheduler at last because perform rename !!! */
+    // Check if reg allocation is possible and do it
+    if (!cpu.pipeline->sa.can_push_scheduler(inp.front())){
+      DPRINTF(Decode, "Can't push schedule %s\n", *inp.front());
+      break;
+    }
     Cva6DynInstPtr inst = inp.pop();
+    DPRINTF(Decode, "Send to next stage %s\n", *inst);
     inst->stage_decode_enter = true;
     /* Annotate instruction flags */
     inst->needArchSerialize = needArchSerialize(inst);

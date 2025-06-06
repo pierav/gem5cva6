@@ -42,6 +42,7 @@ if env['CONF']['BUILD_ISA']:
     Source('VTAGE.cc')
     DebugFlag('ValuePredictor', 'ValuePredictor VTAGE')
 
+    DebugFlag('Cva6Fetch', 'Cva6 Fetch stage')
     DebugFlag('Cva6Execute', 'Cva6 Execute stage')
     DebugFlag('Cva6Issue', 'Cva6 Issue stage')
     DebugFlag('Cva6Interrupt', 'Cva6 interrupt handling')
@@ -79,7 +80,8 @@ if env['CONF']['BUILD_ISA']:
                                 'Cva6LambdaLearn',
                                 'Cva6LambdaDump'])
 
-    CompoundFlag('Cva6', ['Cva6Execute',
+    CompoundFlag('Cva6', ['Cva6Fetch',
+                          'Cva6Execute',
                           'Cva6FU',
                           'Cva6LSU',
                           'Cva6Issue',

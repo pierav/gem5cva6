@@ -1,40 +1,36 @@
+/**
+ * @file stage_fetch1.cc
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief
+ * @version 1.0
+ * @date 2023-05-25
+ *
+ */
+
+
 #include "cpu/cva6/stage_fetch1.hh"
 
-#include <cstring>
-#include <iomanip>
-#include <sstream>
-
-#include "arch/generic/decoder.hh"
-#include "base/cast.hh"
-#include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "cpu/cva6/pipeline.hh"
-#include "debug/Cva6Trace.hh"
+#include "debug/Cva6Fetch.hh"
 #include "debug/Cva6X.hh"
-#include "debug/Drain.hh"
-#include "debug/Fetch.hh"
 
 namespace gem5 {
 namespace cva6 {
 
 Fetch1::Fetch1(const std::string &name_,
-    Cva6CPU &cpu_,
-    const BaseCva6CPUParams &params,
-    BranchData &resolved_branch_,
-    Latch<ForwardLineData>::Input out_,
-    BranchData &prediction_,
-    InputBuffer<ForwardLineData> &next_stage_input_buffer) :
+        Cva6CPU &cpu_,
+        const BaseCva6CPUParams &params,
+        BranchData &resolved_branch_,
+        ForwardLineDataReg & out_,
+        BranchData &prediction_)  :
     Named(name_),
     cpu(cpu_),
     resolved_branch(resolved_branch_),
     out(out_),
     prediction(prediction_),
-    nextStageReserve(next_stage_input_buffer),
-    icachePort(name_ + ".icache_port", *this, cpu_),
-    fetchInfo(),
-    requests(),
-    transfers()
+    icachePort(name_ + ".icache_port", *this, cpu_)
 {
     // boot addr
     fetchInfo.pc.reset(params.isa[0]->newPCState());
@@ -56,11 +52,11 @@ Fetch1::initiateFetchLine(Addr fetchAddr)
     Addr aligned_pc = fetchAddr & ~((Addr) maxLineWidth - 1);
     unsigned int request_size = maxLineWidth - (fetchAddr - aligned_pc);
 
-    DPRINTF(Fetch, "fetchLine addr: 0x%x pc: %s request_size: %d\n",
+    DPRINTF(Cva6Fetch, "fetchLine addr: 0x%x pc: %s request_size: %d\n",
         aligned_pc, fetchAddr, request_size);
 
     /* Create request */
-    FetchRequestPtr request = new FetchRequest(cpu, fetchAddr);
+    FetchRequestPtr request = new FetchRequest(cpu, *this, fetchAddr);
     request->request->setContext(cpu.thread->getTC()->contextId());
     request->request->setVirt(fetchAddr, request_size,
         Request::INST_FETCH, cpu.instRequestorId(), /* pc */ fetchAddr);
@@ -71,8 +67,7 @@ Fetch1::initiateFetchLine(Addr fetchAddr)
 void
 Fetch1::changeStream(const BranchData &branch)
 {
-    DPRINTF(Fetch, "changeStream : %s\n", branch.dump().c_str());
-
+    DPRINTF(Cva6Fetch, "changeStream : %s\n", branch);
     /* Update the PC and the fetch addr */
     set(fetchInfo.pc, branch.squash_target);
     fetchInfo.fetchAddr = fetchInfo.pc->instAddr();
@@ -82,27 +77,38 @@ Fetch1::changeStream(const BranchData &branch)
     }
 }
 
-void
-Fetch1::processResponse(Fetch1::FetchRequestPtr response,
-    ForwardLineData &line){
+ForwardLineData*
+Fetch1::processResponse(Fetch1::FetchRequestPtr response){
 
-    ForwardLineData &line_out = *out.inputWire;
-    assert(line_out.isBubble());
+    ForwardLineData* line_out = out.alloc();
     assert(response->isComplete());
 
     /* Set attributes */
-    line_out.setFault(response->fault);
-    set(line_out.pc, fetchInfo.pc);
-    line_out.fetchAddr = response->pc;
-    line_out.lineBaseAddr = response->request->getVaddr();
+    line_out->setFault(response->fault);
+    set(line_out->pc, fetchInfo.pc);
+    line_out->fetchAddr = response->pc;
+    line_out->lineBaseAddr = response->request->getVaddr();
 
     if (response->fault == NoFault) {
         assert(!response->packet->isError());
-        line_out.adoptPacketData(response->packet);
+        line_out->adoptPacketData(response->packet);
         /* Null the response's packet to prevent the response from
         * trying to deallocate the packet */
         response->packet = NULL;
     }
+    return line_out;
+}
+
+void
+Fetch1::onRecv(FetchRequestPtr req){
+    assert(transfers.size());
+    DPRINTF(Cva6Fetch, "Process %s", transfers.front()->name());
+    assert(req == transfers.front());
+    FetchRequestPtr ireq = req;
+    ForwardLineData *line = processResponse(ireq);
+    transfers.pop_front();
+    ireq->untrack();
+    out.push(line);
 }
 
 #define INFLIGHT 1
@@ -116,58 +122,40 @@ Fetch1::evaluate()
     /* Are we changing stream?
      * (1) Look to the Execute branches first, then
      * (2) predicted changes of stream from Fetch2 */
-
     if (resolved_branch.isStreamChange()) {
         changeStream(resolved_branch);
-        // old_fetch_branch = BranchData();
     } else if (fetch2_branch.is_predicted) {
         changeStream(fetch2_branch);
     }
-    // old_fetch_branch = fetch2_branch;
-
-    // I$ transfers -> F2
-    if (nextStageReserve.canReserve() && /* Next stage is ready */
-        !transfers.empty() &&            /* Data to process */
-        transfers.front()->isComplete()  /* Data completed */
-    ){
-        FetchRequestPtr ireq = transfers.front();
-        nextStageReserve.reserve();
-        processResponse(ireq, *out.inputWire);
-        transfers.pop_front();
-        ireq->untrack();
-    }
 
     /* (fetch@) -> Translate */
-    if (requests.size() < INFLIGHT              /* No other req in TLB */
-    ){
+    if (requests.size() < INFLIGHT){ /* No other req in TLB */
         /* Generate fetch */
         FetchRequestPtr ireq = initiateFetchLine(fetchInfo.fetchAddr);
-        /* Translate */
-        ireq->translateTiming();
-        /* Push */
-        requests.push_back(ireq);
+        ireq->translateTiming(); /* Translate */
+        requests.push_back(ireq); /* Push */
         /* Step the PC for the next line onto the line aligned next address */
         fetchInfo.fetchAddr = fetchInfo.fetchAddr + ireq->request->getSize();
     }
 
+    uint64_t inflights = transfers.size() + out.size();
     /* Translated ->  sendData */
-    if (!requests.empty() &&                 /* Request to process */
-        requests.front()->isTranslated() &&  /* Request is translated */
-        transfers.size() < INFLIGHT    &&    /* No other req in memory */
-        !cpu.icache->isBlocked()             /* Cache ready */
+    if (!requests.empty() &&                /* Request to process */
+        requests.front()->isTranslated() && /* Request is translated */
+        inflights < INFLIGHT &&             /* No other req in memory */
+        !cpu.icache->isBlocked()            /* Cache ready */
     ){
-        // Send data
+        // Change queue (before send data because may spend 0cycle)
         FetchRequestPtr ireq = requests.front();
-        ireq->sendData();
-        // Change queue
         requests.pop_front();
         transfers.push_back(ireq);
+        // Send data
+        ireq->sendData();
     }
 }
 
 void
 Fetch1::flush(){
-    DPRINTF(Fetch, "Flush ...\n");
     for (auto &req: requests){
         req->untrack();
     }
@@ -183,7 +171,7 @@ Fetch1::wakeupFetch() {
     ThreadContext *thread_ctx = cpu.getContext();
     set(fetchInfo.pc, thread_ctx->pcState());
     fetchInfo.fetchAddr = fetchInfo.pc->instAddr();
-    DPRINTF(Fetch, "Changing stream wakeup %s\n", *fetchInfo.pc);
+    DPRINTF(Cva6Fetch, "Changing stream wakeup %s\n", *fetchInfo.pc);
 }
 
 
@@ -264,6 +252,9 @@ Fetch1::FetchRequest::onRecv(PacketPtr pkt) {
     // }
     packet = pkt;
     state = Complete;
+
+    /* fetch end of path */
+    fetch.onRecv(this);
 }
 
 static std::string ITLBRequestStateName[] = {

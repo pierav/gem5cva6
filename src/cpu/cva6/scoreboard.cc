@@ -51,22 +51,26 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg,
     if (reg.valid){
         return true;
     }
-    switch(sb[reg]){
-        case FREE: {
-            /* Read commited value */
-            reg.fromrf = true;
-            if (_sb_is_unsafe[reg]){ /* FIX IT*/
-                reg.set(cpu.pipeline->bc.preg_val[reg]);
-                reg.fromrf_unsafe = true;
-                DPRINTF(Cva6Scoreboard, "Read %s:%lx from RFU!\n", reg,
-                    reg.value);
-            } else {
-                reg.set(cpu.thread->getReg(reg.regid));
-                DPRINTF(Cva6Scoreboard, "Read %s:%lx from RF\n", reg,
-                    reg.value);
-            }
-            break;
+    if (!reg.isRenammedValid){ //
+        /* Read commited value */
+        reg.fromrf = true;
+        if (_sb_is_unsafe[reg]){ /* FIX IT*/
+            reg.set(cpu.pipeline->bc.preg_val[reg]);
+            reg.fromrf_unsafe = true;
+            DPRINTF(Cva6Scoreboard, "Read %s:%lx from RFU!\n", reg,
+                reg.value);
+            // Assert the value in the FRF must be the same as FF ?
+            // fatal_if(reg.value != prf[reg],
+            // "%lx != %lx\n", reg.value, prf[reg]);
+        } else {
+            reg.set(cpu.thread->getReg(reg.regid));
+            DPRINTF(Cva6Scoreboard, "Read %s:%lx from RF\n", reg,
+                reg.value);
         }
+        return reg.valid;
+    }
+    /* Otherwise read the main PRF */
+    switch(sb[reg]){
         case IN_USE: {
             DPRINTF(Cva6Scoreboard, "Read %s IN_USE\n", reg);
             producer = _sb_producer[reg];
@@ -80,6 +84,10 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg,
                 Fault fault = NeverCommitFault::fault();
                 inst_in->setFaultEx(fault);
             }
+            break;
+        }
+        case FREE: {
+            assert(!"UNRECHEABLE");
             break;
         }
     }
@@ -248,7 +256,9 @@ Scoreboard::getCommitInst(size_t index){
 void
 Scoreboard::pre_commit(Cva6DynInstPtr& inst){
     for (auto& reg: inst->regs_dst_phy){
-        _sb_is_unsafe[reg] = true;
+        if (reg.isRenammedValid){
+            _sb_is_unsafe[reg] = true;
+        }
     }
 }
 
@@ -257,7 +267,9 @@ Scoreboard::commitInst(Cva6DynInstPtr& inst){
     assert(!inst->commit_completed); // Already commited
     inst->commit_completed = true;
     for (auto& reg: inst->regs_dst_phy){
-        _sb_is_unsafe[reg] = false;
+        if (reg.isRenammedValid){
+            _sb_is_unsafe[reg] = false;
+        }
     }
     if (!inst->isFault() && inst->staticInst->isNonSpeculative()){
         /* Do the write-back now */

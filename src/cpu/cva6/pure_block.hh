@@ -2,7 +2,6 @@
 
 #include <map>
 
-#include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/dyn_inst.hh"
 #include "cpu/cva6/misc/lru_containers.hh"

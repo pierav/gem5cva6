@@ -80,6 +80,8 @@ class PhysicalRegAllocator : public Named
   std::deque<uint64_t> free_list_popped;
 
   ArchRegFile<uint64_t> rmt;
+  ArchRegFile<uint64_t> rmt_valid;
+
   ArchRegFile<uint64_t> rmt_checkpoint;
 
   // Owner of the physical reg !!!
@@ -90,9 +92,17 @@ class PhysicalRegAllocator : public Named
     FREE_SPEC,
     BUZY
   };
+
   PhysicalRegFile<state_t> isbuzy;
+  PhysicalRegFile<char> inFF;
+
+
   PhysicalRegFile<char> cannotbefreed;
 
+  public:
+  bool isInFF(uint64_t preg){
+    return isbuzy[preg] == FREE_COMMIT && inFF[preg];
+  }
   std::string dump(){
     std::ostringstream os;
     os << '[';
@@ -116,6 +126,7 @@ class PhysicalRegAllocator : public Named
   bool incarchreg; // Scoreboard arch or Full RR
   bool freeregdead;
   bool specrelease;
+  bool specreleasePC;
   public:
   PhysicalRegAllocator(
     const std::string &name_,
@@ -130,7 +141,8 @@ class PhysicalRegAllocator : public Named
     stats(name_, cpu_),
     n(nb_regs), incarchreg(incarchreg_),
     freeregdead(freeregdead_),
-    specrelease(specrelease_) {
+    specrelease(specrelease_),
+    specreleasePC(p.renameSpecReleasePC) {
     fatal_if(incarchreg && nb_regs <= NB_I2ID, "Need more preg");
     // Default RMT
     for (int i = 0; i < 64; i++){
@@ -158,7 +170,7 @@ class PhysicalRegAllocator : public Named
   }
   bool canRename(){
     if (!free_list.size()){
-      DPRINTF(Cva6Rename, "Out of PREG\n");
+      // DPRINTF(Cva6Rename, "Out of PREG\n");
     }
     return free_list.size();
   }
@@ -167,6 +179,7 @@ class PhysicalRegAllocator : public Named
     if (!reg.isRenammed){
       reg.doRename(rmt[reg]);
       reg.producer_id = rmt_owner[reg];
+      reg.isRenammedValid = rmt_valid[reg];
     }
   }
 
@@ -198,10 +211,15 @@ class PhysicalRegAllocator : public Named
     // > to know the old arch reg.
     // rmt_owner[reg] = 0; // Do not let think the owner own the rmt
     // Safe check: do not let multiple allocation
-    rmt.swap_value(preg, PREG_MAGIC);
-    for (uint64_t id: rmt){
-      fatal_if(id == preg, "PREG %d is mapped in RMT\n", id);
+    // rmt.swap_value(preg, PREG_MAGIC);
+    for (int areg = 0; areg < rmt.size(); areg++){
+      if (rmt[areg] == preg){
+        rmt_valid[areg] = false; // Valid instead of magic
+      }
     }
+    // for (uint64_t id: rmt){
+    //   fatal_if(id == preg, "PREG %d is mapped in RMT\n", id);
+    // }
 
     /* pop register from free list */
     fatal_if(!free_list.size(), "No more entry in FL\n");
@@ -217,6 +235,7 @@ class PhysicalRegAllocator : public Named
     }
     /* Mark many things */
     rmt[reg] = preg; /* 1) Update the RMT */
+    rmt_valid[reg] = true;
     rmt_owner[preg] = inst->id.fetchSeqNum; /* 2) The owner */
     isbuzy[preg] = BUZY; /* 3) RMT or FREE list (must be exclusive)*/
     stats.reg_alloc += 1;
@@ -234,15 +253,15 @@ class PhysicalRegAllocator : public Named
 
   bool free_reg(PhysicalReg& reg, bool speculative=false){
     // std::cout << "Free " << idx << std::endl;
-    if (reg.phys_reg_idx != PREG_MAGIC){
+    if (reg.isRenammedValid){
       if (speculative && cannotbefreed[reg]){
         return false;
       }
         DPRINTF(Cva6Rename,
-          "Free reg  %s : isbuzy[%s]=%d rmt_owner[%s]=%lx"
-          "(prod=%lx) :: FL=[%s]\n",
-          reg, reg, isbuzy[reg], reg, rmt_owner[reg],
-          reg.producer_id, dump());
+          "Free reg  %s :: FL=[%s] :: isbuzy[%s]=%d rmt_owner[%s]=%lx"
+          "(prod=%lx)\n",
+          reg, dump(), reg, isbuzy[reg], reg, rmt_owner[reg],
+          reg.producer_id);
       // Safe check: do not release twice
       // Is the reg still in use and we are the owner
       if (isbuzy[reg] == BUZY &&
@@ -312,13 +331,28 @@ class PhysicalRegAllocator : public Named
     return rmt_owner[reg] == reg.producer_id;
   }
 
-  /* Free all registers */
+  void pre_commit(Cva6DynInstPtr& inst){
+    if (specreleasePC){
+      _commit(inst);
+    }
+  }
+
   void commit(Cva6DynInstPtr& inst){
+    if (!specreleasePC){
+      _commit(inst);
+    }
+  }
+
+  /* Free all registers */
+  void _commit(Cva6DynInstPtr& inst){
     if (!incarchreg){ // If no arch reg
       /* free_rd_at_commit */
       for (PhysicalReg& reg: inst->regs_dst_phy){
         inst->free_reg_at_commit = free_reg(reg);
         stats.reg_free_commit += inst->free_reg_at_commit;
+        if (inst->free_reg_at_commit){
+          inFF[reg] = true;
+        }
       }
       return;
     }
@@ -339,6 +373,17 @@ class PhysicalRegAllocator : public Named
     }
   }
 
+  void post_commit(Cva6DynInstPtr& inst){
+    if (!incarchreg){ // If no arch reg
+      /* free_rd_at_commit */
+      for (PhysicalReg& reg: inst->regs_dst_phy){
+        if (inst->free_reg_at_commit){
+          inFF[reg] = false;
+        }
+      }
+      return;
+    }
+  }
   void flush(){
     /* Mv rmt_checkpoint to rmt */
     if (incarchreg){ // Restore a valid RMT
@@ -351,8 +396,10 @@ class PhysicalRegAllocator : public Named
       }
     } else {
       // Symply clear the rmt
-      rmt.setall(PREG_MAGIC);
+      // rmt.setall(PREG_MAGIC);
+      rmt_valid.setall(false);
       isbuzy.setall(FREE_COMMIT);
+      inFF.setall(false);
       cannotbefreed.setall(false);
       // And reset FL
       free_list_popped.clear();
@@ -381,6 +428,9 @@ class BaseScheduler
       return true;
     }
     return false; /* Cannot rename */
+  }
+  virtual size_t size() {
+    return 1;
   }
 };
 
@@ -623,6 +673,8 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
 
   MinLineAnalyserV2 mla;
   MinLineAnalyserBB mlabb;
+
+  PhysicalRegFile<uint64_t> physical2arch;
 
   /* FU ready constraint */
   class FUModel

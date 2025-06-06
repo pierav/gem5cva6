@@ -90,3 +90,4 @@ class RiscvUart8250(Uart8250):
         node.appendCompatible(["ns8250", "ns16550a"])
         yield node
 
+

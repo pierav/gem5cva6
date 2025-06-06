@@ -216,7 +216,7 @@ class Pipeline : public Ticked
 
   protected:
   /** Forward pipeline registers */
-  Latch<ForwardLineData> f1ToF2;      /* fetched line */
+  ForwardLineDataReg     f1ToF2;      /* fetched line */
   ForwardInstData        f2ToD;       /* final insts FIFO */
   ForwardInstData        dToIssue;    /* final insts FIFO */
   ForwardInstData        IssueToE;    /* instructions to execute */
@@ -280,7 +280,6 @@ class Pipeline : public Ticked
       /* Misc */
       plugins(cpu.name(), cpu, p),
       /** Forward pipeline registers */
-      f1ToF2(cpu.name() + ".f1ToF2", "lines"),
       f2ToD(p.issueWidth),
       dToIssue(p.issueWidth),
       IssueToE(p.issueWidth),
@@ -293,7 +292,7 @@ class Pipeline : public Ticked
       issue   (cpu.name() + ".issue", cpu, p,
               dToIssue,
               resolved_branch,
-              IssueToE,                   // issue -> exe
+              IssueToE,
               fus,
               dpe),
       decode  (cpu.name() + ".decode", cpu, p,
@@ -301,16 +300,15 @@ class Pipeline : public Ticked
               resolved_branch,
               dToIssue),
       fetch2  (cpu.name() + ".fetch2", cpu, p,
-              f1ToF2.output(),
+              f1ToF2,
+              f2ToD,
               resolved_branch,
               f2ToF1_nff,
-              f2ToD,
               dpe),
       fetch1  (cpu.name() + ".fetch1", cpu, p,
               resolved_branch,
-              f1ToF2.input(),
-              f2ToF1_nff,
-              fetch2.inputBuffer),
+              f1ToF2,
+              f2ToF1_nff),
       stats(cpu)
   { }
 

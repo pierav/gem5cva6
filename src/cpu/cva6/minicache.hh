@@ -10,14 +10,14 @@
 #include <bitset>
 #include <string>
 #include <vector>
-
 #include "base/named.hh"
 #include "base/statistics.hh"
 #include "cpu/base.hh"
-#include "cpu/cva6/buffers.hh"
 
 namespace gem5 {
 namespace cva6 {
+
+std::string array2str(uint8_t *data, uint64_t size);
 
 const uint64_t MC_CLSIZE = 16;
 

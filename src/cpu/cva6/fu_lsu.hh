@@ -10,10 +10,8 @@
 
 #include <string>
 #include <vector>
-
 #include "base/named.hh"
 #include "base/statistics.hh"
-#include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/dyn_inst.hh"
 #include "cpu/cva6/fu_base.hh"

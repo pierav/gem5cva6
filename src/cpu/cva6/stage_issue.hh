@@ -1,17 +1,17 @@
 /**
- * @file
+ * @file stage_issue.hh
+ * @author Pierre Ravenel (pravenel@kalray.eu)
+ * @brief
+ * @version 0.1
+ * @date 2023-05-25
  *
- * Issue stage
  */
-
 
 #pragma once
 
 #include <vector>
-
 #include "base/named.hh"
 #include "base/types.hh"
-#include "cpu/cva6/buffers.hh"
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/func_unit.hh"
 #include "cpu/cva6/pipe_data.hh"
