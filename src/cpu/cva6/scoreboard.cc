@@ -51,6 +51,7 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg,
     if (reg.valid){
         return true;
     }
+
     if (!reg.isRenammedValid){ //
         /* Read commited value */
         reg.fromrf = true;
@@ -87,7 +88,11 @@ Scoreboard::getRegState(Cva6DynInstPtr inst_in, PhysicalReg& reg,
             break;
         }
         case FREE: {
-            assert(!"UNRECHEABLE");
+            // Functionnal READ fron the thread !
+            reg.set(cpu.thread->getReg(reg.regid));
+                DPRINTF(Cva6Scoreboard, "Read %s:%lx from RF\n", reg,
+                reg.value);
+            // fatal("UNRECHEABLE: reg %s must not be free\n", reg);
             break;
         }
     }

@@ -120,7 +120,10 @@ class ForwardLineData
   public:
     ForwardLineData() {}
 
-    ~ForwardLineData() { line = nullptr; }
+    ~ForwardLineData() {
+      line = nullptr;
+      deletePkt();
+    }
 
   public:
     /** This is a fault, not a line */
@@ -154,6 +157,13 @@ class ForwardLineData
     }
 
     std::ostream& dump(std::ostream &os) const;
+
+    void deletePkt(){
+      if (packet){
+        delete packet;
+        packet = nullptr;
+      }
+    }
 };
 
 class ForwardLineDataReg
@@ -178,11 +188,17 @@ class ForwardLineDataReg
   bool canPop() { return fifo.size(); }
   ForwardLineData *pop() {
     ForwardLineData *ret = fifo.front();
+    ret->deletePkt();// Dirty free
     fifo.pop_front();
     return ret;
   }
   ForwardLineData *front(){ return fifo.front(); }
-  void flush() { fifo.clear(); }
+  void flush() {
+    for (auto &x: fifo){
+      x->deletePkt();// Dirty free
+    }
+    fifo.clear();
+  }
   size_t size() { return fifo.size(); }
   std::ostream& dump(std::ostream &os) const;
 };

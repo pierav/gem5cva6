@@ -79,7 +79,6 @@ Fetch1::changeStream(const BranchData &branch)
 
 ForwardLineData*
 Fetch1::processResponse(Fetch1::FetchRequestPtr response){
-
     ForwardLineData* line_out = out.alloc();
     assert(response->isComplete());
 
@@ -92,7 +91,7 @@ Fetch1::processResponse(Fetch1::FetchRequestPtr response){
     if (response->fault == NoFault) {
         assert(!response->packet->isError());
         line_out->adoptPacketData(response->packet);
-        /* Null the response's packet to prevent the response from
+        /* Null the packet to prevent the response from
         * trying to deallocate the packet */
         response->packet = NULL;
     }

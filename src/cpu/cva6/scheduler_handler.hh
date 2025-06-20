@@ -275,6 +275,10 @@ class SA : public ForwardInstDataPopIntf
     return false; // TODO iq.canInterrupts()
   }
 
+  void tick(){
+    scheduler.tick();
+  }
+
 };
 
 

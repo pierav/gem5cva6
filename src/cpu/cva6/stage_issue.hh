@@ -76,6 +76,9 @@ class IssueUnit : public Named
     struct IssueStats : public statistics::Group
     {
       statistics::Distribution numIssued;
+      statistics::Distribution numIssuedReadFRF;
+      statistics::Distribution numIssuedReadARF;
+
       statistics::Vector2d typeIssued;
       statistics::Scalar issue_stall_front;
       statistics::Scalar issue_stall_serialise;
@@ -99,6 +102,8 @@ class IssueUnit : public Named
         const BaseCva6CPUParams &params) :
         statistics::Group(&cpu, name.c_str()),
         ADD_STAT(numIssued, "Number of insts issued each cycle"),
+        ADD_STAT(numIssuedReadFRF, "Number of read FRF each cycle"),
+        ADD_STAT(numIssuedReadARF, "Number of read ARF each cycle"),
         ADD_STAT(typeIssued, "Number of instructions issued per FU type"),
         ADD_STAT(issue_stall_front, "Frontend stalls issue"),
         ADD_STAT(issue_stall_serialise, "Cycles spent after serialise"),
@@ -116,6 +121,12 @@ class IssueUnit : public Named
         {
         numIssued
           .init(0,params.issueWidth,1)
+          .flags(statistics::pdf);
+        numIssuedReadARF
+          .init(0,params.issueWidth*2,1)
+          .flags(statistics::pdf);
+        numIssuedReadFRF
+          .init(0,params.issueWidth*2,1)
           .flags(statistics::pdf);
 
         typeIssued

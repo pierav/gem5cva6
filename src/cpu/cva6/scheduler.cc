@@ -310,13 +310,14 @@ SchedulerPierreMichaud::getSLMDP(Cva6DynInstPtr &inst){
   if (!inst->isFault() && inst->staticInst->isLoad()){
     /* MDP */
     if (!inst->mdpinst->isBubble()){
-      uint64_t test_line = find_inst_line(inst->mdpinst);
+      // Store may have leave the scheduler
+      // uint64_t test_line = find_inst_line(inst->mdpinst);
       uint64_t mdp_sched_line = 0;
       if (inst->mdpinst->scheduled_time > base_time){
         mdp_sched_line = inst->mdpinst->scheduled_time - base_time;
       }
-      fatal_if(mdp_sched_line != test_line, "%d==%d\n",
-        mdp_sched_line, test_line);
+      // fatal_if(mdp_sched_line != test_line, "%d==%d\n",
+      //   mdp_sched_line, test_line);
       schedule_line = std::max(schedule_line, mdp_sched_line);
       DPRINTF(Cva6Sched, "Schedule (MDP hit      ): line %d T %d for %s\n",
           mdp_sched_line, mdp_sched_line + base_time, dumpInstPreg(inst));
@@ -546,13 +547,7 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
   fumodel.onSchedule(inst, base_time + schedule_line);
   // mldabb.onSchedule(inst, base_time + schedule_line);
   // mlabb.onSchedule(inst, base_time + schedule_line);
-
-  // FIX ARRAY ! TODO NOT NEEDED (only when s2d is empty)
-  while (!s2d.empty() && s2d.front().empty()){
-    s2d.pop_front();
-    base_time ++;
-  }
-
+  tick();
 }
 
 // void apply_reg_barrier(){
@@ -569,21 +564,10 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
 
 Cva6DynInstPtr
 SchedulerPierreMichaud::pop() {
-  inflight_insts_count -= 1;
   /* Pop entry in scheduler */
-  assert(s2d.size());
-  scheduler_entry_t &se = s2d.front();
-  assert(!se.empty());
-  Cva6DynInstPtr inst = se.pop();
-  /* Fix scheduler ring buffer */
-  /* active_line ++ : Drop SE if clearred */
-  while (!s2d.empty() && s2d.front().empty()){
-    s2d.pop_front();
-    base_time ++;
-  }
-  // DPRINTF(Cva6Sched, "size=%d, T=%d, #inflight=%d\n",
-  //   s2d.size(), base_time, inflight_insts_count);
-
+  Cva6DynInstPtr inst = pop_front();
+  tick();
+  inflight_insts_count -= 1;
   DPRINTF(Cva6Sched, "SCHEDPOP: %s\n", dumpInstPreg(inst));
   return inst;
 }
@@ -594,8 +578,8 @@ SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
   bool hit = false;
 
 
-  PhysicalReg& reg = inst->regs_dst_phy[0];
-  uint64_t arch_reg_idx = reg.virt_reg_idx;
+  // PhysicalReg& reg = inst->regs_dst_phy[0];
+  // uint64_t arch_reg_idx = reg.virt_reg_idx;
 
   uint64_t max_schedule_time = 0;
   uint64_t delta;
@@ -604,16 +588,16 @@ SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
   // DPRINTF(Cva6Sched, "canRenameDest line %d T %d : %s\n",
   //   schedule_line, schedule_time, dumpInstPreg(inst));
   for (uint64_t pregi: FL){
-    bool same_mapping = physical2arch[pregi] == arch_reg_idx;
-    bool inFF = cpu.pipeline->sa.regalloc.isInFF(pregi);
+    // bool same_mapping = physical2arch[pregi] == arch_reg_idx;
+    // bool inFF = cpu.pipeline->sa.regalloc.isInFF(pregi);
 
     uint64_t preg_use_time = maxtimeoflasttouch[pregi];
     bool invalid = (preg_use_time > schedule_time); /* Suboptimal schedule */
 
     // (inFF && !same_mapping); // Avoid FF forwarding
 
-    DPRINTF(Cva6Sched, "Try preg : %d %s : T=%d [inFF=%d,%d]\n",
-      pregi, invalid ? ".": "HIT", preg_use_time, inFF, same_mapping);
+    // DPRINTF(Cva6Sched, "Try preg : %d %s : T=%d [inFF=%d,%d]\n",
+    //   pregi, invalid ? ".": "HIT", preg_use_time, inFF, same_mapping);
 
     if (invalid){
       continue;

@@ -63,6 +63,7 @@ Decode::evaluate(){
   }
 
   cpu.pipeline->dpe.perform_window_predictions();
+  cpu.pipeline->sa.tick(); // Tick the scheduler
 
   // while (inp.canPop() && out.canPush()){
   //   Cva6DynInstPtr inst = inp.pop();

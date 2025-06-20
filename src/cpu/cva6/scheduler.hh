@@ -106,17 +106,23 @@ class PhysicalRegAllocator : public Named
   std::string dump(){
     std::ostringstream os;
     os << '[';
-    for (int i = 0; i < n; i++){
-      switch (isbuzy[i]){
-        case FREE_COMMIT:
-          os << i << "C ";
-          break;
-        case FREE_SPEC:
-          os << i << "S ";
-          break;
-        case BUZY:
-          os << " . ";
-          break;
+    if (incarchreg){
+      for (auto x: free_list){
+        os << x << " ";
+      }
+    } else {
+      for (int i = 0; i < n; i++){
+        switch (isbuzy[i]){
+          case FREE_COMMIT:
+            os << i << "C ";
+            break;
+          case FREE_SPEC:
+            os << i << "S ";
+            break;
+          case BUZY:
+            os << " . ";
+            break;
+        }
       }
     }
     os << ']';
@@ -149,6 +155,7 @@ class PhysicalRegAllocator : public Named
       RegId regid = i2id(i);
       PhysicalReg reg(regid);
       rmt[reg] = PREG_MAGIC;
+      rmt_valid[reg] = true;
     }
     /* Initialise all arch regs to physical mapping */
     for (int i = 0; i < nb_regs; i++){
@@ -212,9 +219,11 @@ class PhysicalRegAllocator : public Named
     // rmt_owner[reg] = 0; // Do not let think the owner own the rmt
     // Safe check: do not let multiple allocation
     // rmt.swap_value(preg, PREG_MAGIC);
-    for (int areg = 0; areg < rmt.size(); areg++){
-      if (rmt[areg] == preg){
-        rmt_valid[areg] = false; // Valid instead of magic
+    if (!incarchreg){
+      for (int areg = 0; areg < rmt.size(); areg++){
+        if (rmt[areg] == preg){
+          rmt_valid[areg] = false; // Valid instead of magic
+        }
       }
     }
     // for (uint64_t id: rmt){
@@ -257,11 +266,11 @@ class PhysicalRegAllocator : public Named
       if (speculative && cannotbefreed[reg]){
         return false;
       }
-        DPRINTF(Cva6Rename,
-          "Free reg  %s :: FL=[%s] :: isbuzy[%s]=%d rmt_owner[%s]=%lx"
-          "(prod=%lx)\n",
-          reg, dump(), reg, isbuzy[reg], reg, rmt_owner[reg],
-          reg.producer_id);
+      DPRINTF(Cva6Rename,
+        "Free reg  %s :: FL=[%s] :: isbuzy[%s]=%d rmt_owner[%s]=%lx"
+        "(prod=%lx)\n",
+        reg, dump(), reg, isbuzy[reg], reg, rmt_owner[reg],
+        reg.producer_id);
       // Safe check: do not release twice
       // Is the reg still in use and we are the owner
       if (isbuzy[reg] == BUZY &&
@@ -432,6 +441,7 @@ class BaseScheduler
   virtual size_t size() {
     return 1;
   }
+  virtual void tick(){} /* Tick the scheduler */
 };
 
 class NoScheduler : public BaseScheduler
@@ -696,7 +706,6 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
         }
       }
       return false;
-
     }
     public:
     void onSchedule(Cva6DynInstPtr& inst, uint64_t time){
@@ -740,19 +749,38 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   public:
   /* Interface */
   bool canPush(Cva6DynInstPtr inst) override {
-
     return inflight_insts_count < size &&
            s2d.size() < size; // Avoid huge array
   }
+
   void push(Cva6DynInstPtr inst) override;
   Cva6DynInstPtr front() override {
     assert(inflight_insts_count);
-    assert(s2d.size());
-    assert(s2d.front().size());
-    return s2d.front().front();
+    for (auto e: s2d){
+      if (!e.empty()){
+        return e.front();
+      }
+    }
+    fatal("Unrecheable!\n");
+    // assert(s2d.size());
+    // assert(s2d.front().size());
+    // return s2d.front().front();
   };
+  protected:
+  Cva6DynInstPtr pop_front(){
+    assert(inflight_insts_count);
+    for (auto& e: s2d){
+      if (!e.empty()){
+        return e.pop();
+      }
+    }
+    fatal("Unrecheable!\n");
+  }
+
+  public:
   Cva6DynInstPtr pop() override;
   bool canPop() override { return inflight_insts_count; }
+  // bool canPop() override { return s2d.size() && !s2d.front().empty(); }
   void flush() override {
     /* Set base time to final time (clean debug)*/
     base_time += s2d.size();
@@ -766,6 +794,15 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
 
   bool canRenameDest(Cva6DynInstPtr &inst,
     std::deque<uint64_t> &FL, uint64_t &preg) override;
+
+  void tick() override {
+    /* Try to increase base time */
+    while (!s2d.empty() && s2d.front().empty()){
+      s2d.pop_front();
+      base_time ++;
+      DPRINTF(Cva6Sched, "SCHED L0 <-> T%ld\n", base_time);
+    }
+  }
 
   /* Constructor */
   SchedulerPierreMichaud(

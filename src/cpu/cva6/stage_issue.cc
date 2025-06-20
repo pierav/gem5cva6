@@ -20,7 +20,11 @@ const char* OCSNames[] = {"NoOp", "Alu", "Fpu", "Control", "Read", "Write"};
 void
 IssueUnit::evaluate(){
     int nb_issued = 0;
+    int readarf = 0;
+    int readfrf = 0;
     // int cnt_push_load = 0;
+
+
     for (int i = 0; i < nb_issue_port; i++){ // Try to issue instruction
         bool is_over_serialise, is_raw, is_waw;
         Cva6DynInstPtr producer = Cva6DynInst::bubble();
@@ -144,10 +148,17 @@ IssueUnit::evaluate(){
         if (!inst->isFault()){
             stats.typeIssued[0][getOcs(inst)]++;
         }
+        for (PhysicalReg& reg: inst->regs_src_phy){
+            readarf += !reg.isRenammedValid;
+            readfrf += reg.isRenammedValid;
+        }
         nb_issued += 1;
     }
     stats.issue_stall_port += nb_issued == nb_issue_port;
+
     stats.numIssued.sample(nb_issued);
+    stats.numIssuedReadFRF.sample(readfrf);
+    stats.numIssuedReadARF.sample(readarf);
 
     /* Do dispatch after (1 cycle delay)*/
     scoreboard.dispatch();
