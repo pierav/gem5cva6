@@ -11,7 +11,11 @@
 #include <chrono>
 #include "debug/Cva6X.hh"
 
+#define FAST_SIM 1
 uint64_t tictac(){
+    if (FAST_SIM){
+        return 0;
+    }
     using namespace std::chrono;
     static auto start = high_resolution_clock::now();
     auto now = high_resolution_clock::now();

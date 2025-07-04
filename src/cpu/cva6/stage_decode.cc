@@ -41,6 +41,7 @@ Decode::evaluate(){
   // Decode stage :
   DPRINTF(Decode, "Have %d insts to send\n", inp.size());
   while (inp.canPop() &&
+    (inp.front()->ts_fetch_completed + front_latency) < cpu.curCycle() &&
     cpu.pipeline->rob.canPush()
   ) {
     /* !!! do can_push_scheduler at last because perform rename !!! */
@@ -72,6 +73,7 @@ Decode::evaluate(){
   //   /* Push also in rob to keep track of isntruction order */
   //   cpu.pipeline->rob.push(inst);
   // }
+
 }
 
 void

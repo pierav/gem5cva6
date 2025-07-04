@@ -234,6 +234,7 @@ Fetch2::output_inst(Cva6DynInstPtr inst){
         }
       }
     }
+    inst->ts_fetch_completed = cpu.curCycle();
     out.push(inst);
     DPRINTF(Cva6Fetch, "Fetched/PreDecoded %s\n", *inst);
 }

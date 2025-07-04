@@ -389,6 +389,7 @@ class Cva6DynInst : public RefCounted
     PCStateBasePtr predictedTarget; /** Predicted branch target */
     // is there a store load dependancy
     Cva6DynInstPtr mdpinst = bubble();
+    uint64_t ts_fetch_completed = 0;
 
     /************ Decode stage ***********/
     bool stage_decode_enter = false;  // Entered Decode stage

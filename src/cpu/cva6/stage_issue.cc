@@ -22,7 +22,7 @@ IssueUnit::evaluate(){
     int nb_issued = 0;
     int readarf = 0;
     int readfrf = 0;
-    // int cnt_push_load = 0;
+    int cnt_push_load = 0;
 
 
     for (int i = 0; i < nb_issue_port; i++){ // Try to issue instruction
@@ -89,16 +89,15 @@ IssueUnit::evaluate(){
         }
 
         /* 3) Is FU contention ? */
-        // if (!inst->isFault() && inst->staticInst->isLoad()){
-        //     if (cnt_push_load >= 2){
-        //         DPRINTF(Cva6Issue, "(port %d) LOAD stall... %s\n",
-        // i, *inst);
-        //         stats.issue_stall_fu += 1;
-        //         break; // No available FU
-        //     } else {
-        //         cnt_push_load += 1;
-        //     }
-        // }
+        if (!inst->isFault() && inst->staticInst->isLoad()){
+            if (cnt_push_load >= loadPerCycle){
+                DPRINTF(Cva6Issue, "(port %d) LOAD stall... %s\n",
+        i, *inst);
+                stats.issue_stall_fu += 1;
+                break; // No available FU
+            }
+            cnt_push_load += 1;
+        }
         /*
         if (!inst->isFault() && inst->staticInst->isStore()){
             if (cnt_push_store){

@@ -33,6 +33,8 @@ class Decode : public Named
     /** Output port carrying micro-op decomposed instructions to Issue */
     ForwardInstData &out;
 
+    size_t front_latency; /* Add extra delay */
+
   protected:
     /** Decode microops */
     Cva6DynInstPtr decodeInst(Cva6DynInstPtr inst, bool &input_finished);
@@ -41,7 +43,7 @@ class Decode : public Named
   public:
     Decode(const std::string &name,
       Cva6CPU &cpu_,
-      const BaseCva6CPUParams &params,
+      const BaseCva6CPUParams &p,
       ForwardInstData &inp_,
       BranchData &resolved_branch_,
       ForwardInstData &out_):
@@ -49,7 +51,8 @@ class Decode : public Named
       cpu(cpu_),
       inp(inp_),
       resolved_branch(resolved_branch_),
-      out(out_)
+      out(out_),
+      front_latency(p.frontLatency)
     { }
 
   public:

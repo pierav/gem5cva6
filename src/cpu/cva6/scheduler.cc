@@ -439,6 +439,15 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta){
   } else {
     schedule_line = std::max({schedule_line, sl_rr, sl_bb, sl_fu});
   }
+
+  /* Fix the schedule line to avoid multiple load */
+  if (!inst->isFault() && inst->staticInst->isLoad()){
+    while (schedule_line < s2d.size() &&
+      s2d[schedule_line].load_pushed >= loadPerCycle ){
+        schedule_line ++;
+      }
+  }
+
   return schedule_line;
 }
 
@@ -494,6 +503,12 @@ SchedulerPierreMichaud::push(Cva6DynInstPtr inst) {
   /* Insert instruction */
   assert(s2d[schedule_line].canPush());
   s2d[schedule_line].push(inst, delta);
+
+
+  /* Test a funky serialisation */
+  // if (!s2d[schedule_line].canPush()){
+  //   last_serialisation_time = base_time + schedule_line;
+  // }
 
   /* Mark instruction scheduled line */
   inst->scheduled_time = base_time + schedule_line;

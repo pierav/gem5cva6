@@ -72,6 +72,7 @@ class IssueUnit : public Named
     Scoreboard& scoreboard;
     /** Configuration */
     int nb_issue_port;
+    int loadPerCycle;
 
     struct IssueStats : public statistics::Group
     {
@@ -166,6 +167,7 @@ class IssueUnit : public Named
         fus(fus_),
         scoreboard(scoreboardInit(name_, cpu, params, inp)),
         nb_issue_port(params.issueWidth),
+        loadPerCycle(params.loadPerCycle),
         stats(name_, cpu_, params) {}
 
     public:

@@ -63,8 +63,10 @@ common_config = {
 
 cva6_config = {
     **common_config,
-    "lsuSQCWidth" : DEFAULT(16), # SQCommit size
-    "lsuSQSWidth" : DEFAULT(16), # SQSpecualtive size
+    "lsuSQCWidth" : DEFAULT(32), # SQCommit size
+    "lsuSQSWidth" : DEFAULT(32), # SQSpecualtive size
+    "loadPerCycle" : DEFAULT(2), # Number of load per cycle
+    "frontLatency" : DEFAULT(0), # Branch pred miss extra penality
     "mcSize" : DEFAULT(0), # The minicache size
     "vpSize" : DEFAULT(0), # The Value Predictor Size
     "vpType" : DEFAULT(0), # The Value Predictor Type
@@ -84,7 +86,7 @@ cva6_config = {
     "renameIncArchReg": DEFAULT(0), # Include ARCH in PRF
     "renameFreeRegDead": DEFAULT(0), # Free reg dead (bugs)
     "renameSpecRelease": DEFAULT(0), # Speculative Release
-    "renameSpecReleasePC": DEFAULT(0),
+    "renameSpecReleasePC": DEFAULT(0), # SR at pre commit
     "oracleEarlyCommit": DEFAULT(0)
 }
 

@@ -35,6 +35,9 @@ class BaseCva6CPU(BaseCPU):
     # LSU
     lsuSQCWidth = Param.Unsigned(16, "Store Queue Commit size")
     lsuSQSWidth = Param.Unsigned(16, "Store Queue Speculative size")
+    loadPerCycle = Param.Unsigned(4, "Load issued per cycle (max)")
+
+    frontLatency = Param.Unsigned(1, "Decode stage latency")
 
     mcSize = Param.Unsigned(16, "Minicache size; 0 for disable")
     # VP

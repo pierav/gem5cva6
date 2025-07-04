@@ -469,6 +469,7 @@ class MinLineAnalyserV2
   uint64_t themll = 0;
   uint64_t mll = 0; /* Min Last Line */
   uint64_t size; // For now the SQ size
+
   std::deque<uint64_t /* Times */> times;
 
   public:
@@ -512,9 +513,10 @@ class MinLineAnalyserV2
   }
 };
 
-class scheduler_entry_t
+struct scheduler_entry_t
 {
   uint64_t pushed = 0;
+  uint64_t load_pushed = 0;
   std::deque<Cva6DynInstPtr> slots;
   // PhysicalRegFile<unsigned int> holdregs;
   // PhysicalRegFile<unsigned int> latencyregs;
@@ -525,6 +527,7 @@ class scheduler_entry_t
   bool canPush(){ return pushed < width; }
   void push(Cva6DynInstPtr inst, uint64_t latency=0){
     pushed++;
+    load_pushed += !inst->isFault() && inst->staticInst->isLoad();
     slots.push_back(inst);
   }
 
@@ -670,6 +673,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
 
   /* The main containers */
   uint64_t size;
+  size_t loadPerCycle;
   std::deque<scheduler_entry_t> s2d; // 2D array Scheduler
   uint64_t inflight_insts_count = 0;
 
@@ -810,7 +814,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
     Cva6CPU &cpu_,
     const BaseCva6CPUParams &p
   ) : Named(name), cpu(cpu_),
-      stats(cpu_), size(p.schedSize),
+      stats(cpu_), size(p.schedSize), loadPerCycle(p.loadPerCycle),
       mla(16), mlabb(6) {
         scheduler_entry_t::width = p.schedWidth;
       }
