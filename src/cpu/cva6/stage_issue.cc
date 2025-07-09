@@ -143,6 +143,11 @@ IssueUnit::evaluate(){
             scoreboard.completeInst(inst);  /* Notify scoreboard */
         }
 
+        /* Mdp things */
+        if (!inst->isFault() && inst->staticInst->isStore()){
+            cpu.pipeline->mdp.popStore(inst->pc->instAddr(), inst);
+        }
+
         /* Some statistics */
         if (!inst->isFault()){
             stats.typeIssued[0][getOcs(inst)]++;

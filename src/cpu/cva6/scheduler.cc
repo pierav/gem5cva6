@@ -307,7 +307,7 @@ SchedulerPierreMichaud::getSLRR(Cva6DynInstPtr &inst){
 uint64_t
 SchedulerPierreMichaud::getSLMDP(Cva6DynInstPtr &inst){
   uint64_t schedule_line = 0;
-  if (!inst->isFault() && inst->staticInst->isLoad()){
+  if (!inst->isFault() && inst->staticInst->isMemRef()){
     /* MDP */
     if (!inst->mdpinst->isBubble()){
       // Store may have leave the scheduler
@@ -364,6 +364,7 @@ SchedulerPierreMichaud::getSLSTORE(Cva6DynInstPtr &inst){
         schedule_line, schedule_line + base_time, dumpInstPreg(inst));
     }
   }
+
   if (mla.isConstraints(inst)){
     uint64_t mla_time = mla.getMinSchedulerTime(inst);
     if (mla_time > base_time){
@@ -376,18 +377,6 @@ SchedulerPierreMichaud::getSLSTORE(Cva6DynInstPtr &inst){
   return schedule_line;
 }
 
-uint64_t
-SchedulerPierreMichaud::getSLBBdep(Cva6DynInstPtr &inst){
-  return 0;
-  uint64_t schedule_line = 0;
-  uint64_t mlabb_time = mlabb.getMinSchedulerTime(inst);
-    if (mlabb_time > base_time){
-      schedule_line = mlabb_time - base_time + 1;
-      DPRINTF(Cva6Sched, "Schedule (BB Deps      ): line %d T %d for %s\n",
-        schedule_line, schedule_line + base_time, dumpInstPreg(inst));
-    }
-  return schedule_line;
-}
 uint64_t
 SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta){
   uint64_t schedule_line = 0; // Active line
@@ -411,7 +400,6 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta){
   uint64_t sl_rr = getSLRR(inst);
   uint64_t sl_mdp = getSLMDP(inst);
   uint64_t sl_st = getSLSTORE(inst);
-  uint64_t sl_bb = getSLBBdep(inst);
   uint64_t sl_fu = getSLFU(inst);
 
   /* Add our wip constraint */
@@ -427,17 +415,17 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta){
     /* Also do not mark prediction if useless (sl_rr > sl_mdp)*/
     if (inst->vp_data.addr_ready && (sl_mdp < sl_rr)){
       // delta += (sl_rr - sl_mdp); // The defautl schedule
-      schedule_line = std::max({schedule_line, sl_mdp, sl_bb});
+      schedule_line = std::max({schedule_line, sl_mdp});
        DPRINTF(Cva6Sched, "Schedule (ADDR PRED    ): line %d T %d for %s\n",
         schedule_line, schedule_line + base_time, dumpInstPreg(inst));
       inst->vp_data.addr_taken = true; /* Mark taken */
     } else {
-      schedule_line = std::max({schedule_line, sl_rr, sl_mdp, sl_bb});
+      schedule_line = std::max({schedule_line, sl_rr, sl_mdp});
     }
   } else if (!inst->isFault() && inst->staticInst->isStore()) {
-    schedule_line = std::max({schedule_line, sl_rr, sl_st, sl_bb});
+    schedule_line = std::max({schedule_line, sl_rr, sl_st, sl_mdp});
   } else {
-    schedule_line = std::max({schedule_line, sl_rr, sl_bb, sl_fu});
+    schedule_line = std::max({schedule_line, sl_rr, sl_fu});
   }
 
   /* Fix the schedule line to avoid multiple load */

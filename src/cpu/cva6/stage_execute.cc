@@ -288,23 +288,30 @@ Execute::evaluate() {
             break;
         }
 
-        /* Check is mdpc is valid */
-        /* Care inst must have a valid paddr */
-        // if (cpu.pipeline->mdpc.isViolation(inst) !=
-        //        !inst->break_memory_order->isBubble()){
-        //     fatal("REF: %s\n testid: %d, mdpccommitid: %d\n",
-        //      *inst->break_memory_order,
-        //         inst->last_store_id,
-        //    cpu.pipeline->mdpc.commit_table.checkLoad(inst));
-        // }
         uint64_t pcstore;
         bool is_mem_violation = cpu.pipeline->mdpc.isViolation(inst, pcstore);
+        /* Check is mdpc is valid */
+        /* Care inst must have a valid paddr */
+        // if (is_mem_violation != !inst->break_memory_order->isBubble()){
+        //     fatal("REF: %s\n VS testid: %d / pc %lx\n",
+        //      *inst->break_memory_order, inst->last_store_id,
+        //         inst->last_store_pc);
+        // }
+
         /* Inst produced bad value */
         if (is_mem_violation){
             DPRINTF(Cva6Execute, "MISSPRED MEM ORDER : %s\n", *inst);
             resolved_branch = BranchData::SquashAt(cpu);
-            uint64_t pcload = inst->pc->instAddr();
-            cpu.pipeline->mdp.violation(pcstore, pcload);
+            uint64_t pcself = inst->pc->instAddr();
+            DPRINTF(Cva6Execute, "Mark violation %lx -> %lx\n",
+                    pcstore, pcself);
+            if (inst->staticInst->isLoad()){
+                cpu.pipeline->mdp.violation(pcstore, pcself);
+            } else {
+                assert(0); // Cannot go here
+                cpu.pipeline->mdp.violation(pcself, pcstore);
+                cpu.pipeline->mdp.violation(pcstore, pcself);
+            }
             stats.flush ++;
             stats.flush_mdp += 1;
             cpu.pipeline->hcpred.violation(inst);
@@ -332,6 +339,9 @@ Execute::evaluate() {
         cpu.pipeline->mdpc.commit(inst); /* must be pre-commit ?? */
         /* Fault have to be detected before enter BC ? */
         cpu.pipeline->sa.pre_commit(inst); /* Annotate can commit */
+
+        /* oracle to mark MDP missprediction */
+        // cpu.pipeline->iq.markMemoryViolation(inst);
 
         // bool is_serialise = !inst->isFault() && needSerial
         //     inst->isLastOpInInst() &&
@@ -451,6 +461,7 @@ Execute::flushfrom(Cva6DynInstPtr inst){
     assert(inst->isBubble());
     cpu.pipeline->dpe.flush();
     cpu.pipeline->mdp.flush();
+    cpu.pipeline->mdpc.flush();
     cpu.pipeline->bc.flush(); // Clear inflights pre-committed
 }
 

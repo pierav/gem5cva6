@@ -235,6 +235,15 @@ Fetch2::output_inst(Cva6DynInstPtr inst){
       }
     }
     inst->ts_fetch_completed = cpu.curCycle();
+    /* Predict MDP */
+    /* Predict memory dependancies */
+    if (!inst->isFault() && inst->staticInst->isMemRef()){
+        cpu.pipeline->mdp.checkInst(inst->pc->instAddr(), &inst->mdpinst);
+    }
+    /* mark store if needed. Predict before update. */
+    if (!inst->isFault() && inst->staticInst->isStore()){
+        cpu.pipeline->mdp.pushStore(inst->pc->instAddr(), inst);
+    }
     out.push(inst);
     DPRINTF(Cva6Fetch, "Fetched/PreDecoded %s\n", *inst);
 }

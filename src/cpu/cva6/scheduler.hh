@@ -741,8 +741,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   uint64_t getSLFU(Cva6DynInstPtr &inst); /* FU deps */
   uint64_t getSLRR(Cva6DynInstPtr &inst); /* Dataflow deps */
   uint64_t getSLMDP(Cva6DynInstPtr &inst); /* MDP deps */
-  uint64_t getSLSTORE(Cva6DynInstPtr &inst); /* Store Ser */
-  uint64_t getSLBBdep(Cva6DynInstPtr &inst); /* */
+  uint64_t getSLSTORE(Cva6DynInstPtr &inst); /* Store Set */
 
   uint64_t getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta);
   // uint64_t getScheduleLineForLoadAddr(uint64_t addr, Cva6DynInstPtr*inst);
