@@ -346,6 +346,15 @@ SchedulerPierreMichaud::getSLMDP(Cva6DynInstPtr &inst){
     // /* Schedule with ideal */
     // stats.load_bypass_store += 0; // TODO
     // schedule_line = std::max(schedule_line, ideal_mdp_sched_line);
+
+    /* Is there a store dependancy : Force store -> load serilation*/
+    // if (last_store_time > base_time){
+    //   uint64_t store_schedule_line = last_store_time - base_time + 1;
+    //   // +1 to avoid Store leak ??!
+    //   schedule_line = std::max(schedule_line, store_schedule_line);
+    //   DPRINTF(Cva6Sched, "Schedule (MDP S order  ): line %d T %d for %s\n",
+    //     schedule_line, schedule_line + base_time, dumpInstPreg(inst));
+    // }
   }
   return schedule_line;
 }

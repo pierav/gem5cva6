@@ -550,7 +550,7 @@ LSUBase::advance(){
             }
         }
         /* Store serialisation */
-        if (!inst->staticInst->isLoad()){
+        if (!inst->staticInst->isLoad() || 1){
             if (isStoreBefore){
                 DPRINTF(Cva6LSU, "Break on store : %s \n",
                     *inst, inst->dreq->name());
@@ -569,8 +569,12 @@ LSUBase::advance(){
                 *inst, inst->dreq->name());
             /* Push inst */
             destUnit(inst)->push(inst);
+            if (!inst->isFault() && inst->staticInst->isStore()){
+                last_store_id = inst->id.fetchSeqNum;
+            }
             /* Mark MDP checker */
-            cpu.pipeline->mdpc.issue(inst);
+            // cpu.pipeline->mdpc.issue(inst);
+            inst->last_store_id = last_store_id; // use global one
             it=lsu_fifo.erase(it);
             continue;
         } else {

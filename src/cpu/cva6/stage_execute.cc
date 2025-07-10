@@ -315,6 +315,7 @@ Execute::evaluate() {
             stats.flush ++;
             stats.flush_mdp += 1;
             cpu.pipeline->hcpred.violation(inst);
+            // assert(0);
             flush();
             return; /* EARLY FLUSH : do not commit */
         }

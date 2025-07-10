@@ -8,9 +8,21 @@
  */
 
 #include "cpu/cva6/cpu.hh"
+#include "debug/Cva6MDP.hh"
 
 namespace gem5 {
 namespace cva6 {
+
+inline uint64_t foldn(uint64_t v, uint8_t n){
+  uint64_t res = 0;
+  while (v){
+      res ^= v;
+      v >>= n;
+  }
+  return res % (1 << n);
+}
+
+#define M 0b111111111111
 
 /**
  * A simple memory order checker
@@ -26,25 +38,28 @@ class MemOrderChecker : public Named
       return {inst->id.fetchSeqNum, inst->pc->instAddr()};
     }
 
-    std::map<uint64_t /*Addr*/, data_t> lsidt; /* LastStoreID T*/
+    std::map<uint64_t /*Key/Addr*/, data_t> lsidt; /* LastStoreID T*/
+
+    virtual uint64_t key(Cva6DynInstPtr &inst) = 0;
+
     Table(std::string name) : Named(name) {}
 
     void markStore(Cva6DynInstPtr &inst){
-      assert(inst->dreq);
-      lsidt[inst->dreq->getDWPaddr()] = inst2dat(inst);
-      DPRINTF(Cva6MDP, "MDPCW [%lx] <- %d\n", inst->dreq->getDWPaddr(),
-        inst->id.fetchSeqNum);
+      lsidt[key(inst)] = inst2dat(inst);
+      DPRINTF(Cva6MDP, "MDPCW [%lx:%ld] <- %d (pc=%lx)\n",
+        inst->dreq->getDWPaddr(), key(inst),
+        inst->id.fetchSeqNum, inst->pc->instAddr());
     }
 
     uint64_t checkLoad(Cva6DynInstPtr &inst){
-      assert(inst->dreq);
-      DPRINTF(Cva6MDP, "MDPCR [%lx] <- %d\n", inst->dreq->getDWPaddr(),
-        lsidt[inst->dreq->getDWPaddr()].first);
-      return lsidt[inst->dreq->getDWPaddr()].first;
+      DPRINTF(Cva6MDP, "MDPCR [%lx:%ld] -> %d (pc=%lx)\n",
+        inst->dreq->getDWPaddr(), key(inst),
+        lsidt[key(inst)].first, inst->pc->instAddr());
+      return lsidt[key(inst)].first;
     }
 
     data_t operator[](Cva6DynInstPtr &inst){
-      return lsidt[inst->dreq->getDWPaddr()];
+      return lsidt[key(inst)];
     }
 
     Table& operator=(const Table& o){
@@ -54,10 +69,31 @@ class MemOrderChecker : public Named
 
   };
 
+  class TableH : public Table
+  {
+    public:
+    TableH(std::string name) : Table(name) {}
+    uint64_t key(Cva6DynInstPtr &inst) override {
+      uint64_t addr = inst->dreq->getDWPaddr();
+      return foldn(addr >> 12, 8);
+    }
+  };
+
+  class TableL : public Table
+  {
+    public:
+    TableL(std::string name) : Table(name) {}
+    uint64_t key(Cva6DynInstPtr &inst) override {
+      uint64_t addr = inst->dreq->getDWPaddr();
+      return foldn(addr & M, 8);
+    }
+  };
+
   public: /* TODO private */
   Cva6CPU &cpu;
-  Table issue_table;
-  Table commit_table;
+  // Table issue_table;
+  TableH cth;
+  TableL ctl;
 
   public:
   struct Stats : public statistics::Group
@@ -75,18 +111,20 @@ class MemOrderChecker : public Named
   MemOrderChecker(const std::string &name,
                   Cva6CPU &cpu_) : Named(name),
                   cpu(cpu_),
-                  issue_table("TI"),
-                  commit_table("TC"),
+                  // issue_table("TI"),
+                  cth(name + ".cth"),
+                  ctl(name + ".ctl"),
                   stats(cpu_) {}
 
   void issue(Cva6DynInstPtr &inst){
-    if (!inst->isFault() && inst->staticInst->isMemRef()){
-      inst->last_store_id = issue_table.checkLoad(inst);
-      inst->last_store_pc = issue_table[inst].second;
-    }
-    if (!inst->isFault() && inst->staticInst->isStore()){
-      issue_table.markStore(inst);
-    }
+    return; // Nothing to do
+    // if (!inst->isFault() && inst->staticInst->isMemRef()){
+    //   inst->last_store_id = issue_table.checkLoad(inst);
+    //   inst->last_store_pc = issue_table[inst].second;
+    // }
+    // if (!inst->isFault() && inst->staticInst->isStore()){
+    //   issue_table.markStore(inst);
+    // }
   }
 
   /**
@@ -94,7 +132,8 @@ class MemOrderChecker : public Named
    */
   bool commit(Cva6DynInstPtr &inst){
     if (!inst->isFault() && inst->staticInst->isStore()){
-      commit_table.markStore(inst);
+      cth.markStore(inst);
+      ctl.markStore(inst);
       // assert(commit_table[inst].first <= issue_table[inst].first);
     }
     // if (!inst->isFault() && inst->staticInst->isLoad()){
@@ -109,23 +148,33 @@ class MemOrderChecker : public Named
     }
     bool is_violation = false;
     if (inst->staticInst->isLoad()){
-      uint64_t refid = commit_table[inst].first;
-      pcstore = commit_table[inst].second;
-
-      is_violation = inst->last_store_id < refid;
+      // uint64_t refid = commit_table[inst].first;
+      // pcstore = commit_table[inst].second;
+      uint64_t idh = cth[inst].first;
+      uint64_t idl = ctl[inst].first;
+                      // 5 < 35 && 5 < 25
+      is_violation = inst->last_store_id < idh &&
+                     inst->last_store_id < idl;
       /* Use != for perfect serialisation => No skip InFLight stores */
-      DPRINTF(Cva6MDP, "Violation [%d] : %d != %d\n", is_violation,
-        inst->last_store_id, refid);
+      DPRINTF(Cva6MDP, "Violation [%d] : %d < (%d, %d) \n", is_violation,
+        inst->last_store_id, idh, idl);
+      if (is_violation){
+        if (idh < idl){
+          pcstore = cth[inst].second;
+        } else {
+          pcstore = ctl[inst].second;
+        }
+      }
     } else {
       is_violation = inst->id.fetchSeqNum < inst->last_store_id;
       pcstore = inst->last_store_pc;
       if (is_violation){
-        DPRINTF(Cva6MDP, "Violation Store Store : %d != %d\n",
-          inst->id.fetchSeqNum, inst->last_store_id);
+        // DPRINTF(Cva6MDP, "Violation Store Store : %d != %d\n",
+        //   inst->id.fetchSeqNum, inst->last_store_id);
         // FIX spec table
         assert(0);
-        issue_table.markStore(inst);
-        commit_table.markStore(inst);
+        // issue_table.markStore(inst);
+        // commit_table.markStore(inst);
       }
     }
     stats.req += 1;
@@ -136,7 +185,7 @@ class MemOrderChecker : public Named
   void flush(){
     /* Is there something to flush ? */
     /* TODO: the speculative table must be corrupted ! copy on flush ?*/
-    issue_table = commit_table;
+    // issue_table = commit_table;
   }
 };
 

@@ -227,6 +227,7 @@ class LSUBase
     LSUStoreUnit store_unit;
     LSULoadUnitNoLock load_unit;
     Cva6DynInstChunk lsu_fifo; /** Lsu bypass buffer */
+    uint64_t last_store_id = 0;
 
   public:
     LSUBase(const std::string &name,
