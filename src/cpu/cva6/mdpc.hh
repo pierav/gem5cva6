@@ -75,7 +75,7 @@ class MemOrderChecker : public Named
     TableH(std::string name) : Table(name) {}
     uint64_t key(Cva6DynInstPtr &inst) override {
       uint64_t addr = inst->dreq->getDWPaddr();
-      return foldn(addr >> 12, 8);
+      return foldn(addr >> 12, 7);
     }
   };
 
@@ -85,7 +85,7 @@ class MemOrderChecker : public Named
     TableL(std::string name) : Table(name) {}
     uint64_t key(Cva6DynInstPtr &inst) override {
       uint64_t addr = inst->dreq->getDWPaddr();
-      return foldn(addr & M, 8);
+      return foldn(addr & M, 7);
     }
   };
 
