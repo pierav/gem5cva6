@@ -691,6 +691,7 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   PhysicalRegFile<uint64_t> physical2arch;
 
   /* FU ready constraint */
+  public:
   class FUModel
   {
     // We have 2 divisor

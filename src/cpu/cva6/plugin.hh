@@ -16,11 +16,9 @@
 #include "base/time.hh"
 #include "cpu/cva6/dyn_inst.hh"
 #include "cpu/cva6/hmp.hh"
+#include "cpu/cva6/preschedulers/oracle.hh"
 #include "cpu/cva6/pure_block.hh"
-#include "cpu/cva6/scheduler.hh"
 #include "debug/Cva6Plugin.hh"
-#include "debug/Cva6Sched.hh"
-#include "debug/Cva6SchedSched.hh"
 #include "mem/packet.hh"
 
 namespace gem5 {
@@ -405,6 +403,31 @@ class PluginTageHC : public Plugin
 };
 
 
+class PluginScheduler : public Plugin
+{
+  protected:
+    std::deque<OracleBench*> benchs;
+
+  public:
+    PluginScheduler(const std::string &name,
+    Cva6CPU &cpu,
+    const BaseCva6CPUParams &p) :
+    Plugin(name, cpu) {
+        // std::vector<int> sizes = {8, 16, 32, 64, 128, 256, 512};
+        // std::vector<int> sizes = {128}; // debug
+        // for (int x : sizes){
+        //}
+        benchs.push_back(new OracleBench(cpu, "sched128", 128, 0, 0));
+        benchs.push_back(new OracleBench(cpu, "sched128ser", 128, 1, 1));
+    }
+
+    void commit(Cva6DynInstPtr inst){
+        for (auto &bench: benchs){
+            bench->tick(inst);
+        }
+    }
+};
+
 class Plugins
 {
   /** Plugins */
@@ -423,7 +446,7 @@ class Plugins
     plugins.push_back(new PluginGoodbadTrap(name_ + "gbt", cpu, params));
     // plugins.push_back(new PluginLambda(name_ + "lambda", cpu, params));
     // plugins.push_back(new PluginMemConst(name_ + "memc", cpu, params));
-    // plugins.push_back(new PluginScheduler(name_ + ".sched", cpu, params));
+    plugins.push_back(new PluginScheduler(name_ + ".sched", cpu, params));
     plugins.push_back(new PluginHMP(name_ + ".hmp", cpu, params));
     plugins.push_back(new PluginChecker(name_ + ".checker", cpu, params));
     plugins.push_back(new PluginTageHC(name_ + ".tagehc", cpu, params));
