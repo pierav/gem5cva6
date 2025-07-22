@@ -170,7 +170,7 @@ class Scoreboard : public Named
       return !inst->execute_completed && inst->issue_completed;
     }
     /** Notify scoreboard functional unit finished */
-    void completeInst(Cva6DynInstPtr inst);
+    virtual void completeInst(Cva6DynInstPtr inst);
 
     /** Return the instruction to commit. Bubble is none. */
     Cva6DynInstPtr getCommitInst(size_t index=0);
@@ -180,7 +180,7 @@ class Scoreboard : public Named
     virtual void commitInst(Cva6DynInstPtr& inst);
 
     /** Tick the scoreboard: evaluate flip flops*/
-    void tick();
+    virtual void tick();
     /** Flush issue queue and clear down all the reg dependencies */
     virtual void flush();
 
@@ -209,7 +209,7 @@ class Scoreboard : public Named
 
     bool markMemoryViolation(Cva6DynInstPtr inst);
     bool isUnissedStoreBefore(Cva6DynInstPtr inst_in);
-    void dump();
+    virtual void dump();
 };
 
 
@@ -307,6 +307,257 @@ class ScoreboardO3 : public Scoreboard
     store_order.clear();
     inflight_stores = 0;
     Scoreboard::flush();
+  }
+};
+
+
+class ScoreboardFSC : public Scoreboard
+{
+  // using queue_t = std::deque<Cva6DynInstPtr>;
+
+  class queue_t : public std::deque<Cva6DynInstPtr>
+  {
+    public:
+    const char *name;
+    queue_t(const char *name_) :
+      std::deque<Cva6DynInstPtr>(), name(name_) {}
+  };
+
+  queue_t ml;
+  queue_t dll;
+  queue_t del;
+  queue_t hl;
+  uint8_t cpt_hl = 0;
+
+  std::vector<queue_t*> queues;
+
+  queue_t sq_order;
+
+  struct Stats : public statistics::Group
+  {
+      statistics::Scalar ml;
+      statistics::Scalar dll;
+      statistics::Scalar del;
+      statistics::Scalar hl;
+      Stats(const std::string &name, BaseCPU &cpu) :
+        statistics::Group(&cpu, name.c_str()),
+        ADD_STAT(ml, ""),
+        ADD_STAT(dll, ""),
+        ADD_STAT(del, ""),
+        ADD_STAT(hl, "") {}
+    } stats;
+
+  public:
+  ScoreboardFSC(const std::string &name, Cva6CPU &cpu_, uint64_t size,
+        ForwardInstDataPopIntf& inp_) :
+        Scoreboard(name, cpu_, size, inp_),
+        ml(" ml"), dll("dll"), del("del"), hl(" hl"), sq_order("SQ"),
+        stats(name + ".fsc", cpu_) {
+          queues.push_back(&ml);
+          queues.push_back(&dll);
+          queues.push_back(&del);
+          queues.push_back(&hl);
+  }
+
+  /* Check IRO, FUs and MDP deps*/
+  bool isReady(Cva6DynInstPtr& inst, bool &is_raw,
+    Cva6DynInstPtr &producer, bool &is_waw, bool &is_ss,
+    bool &mdp_dep, bool &fu_stall);
+
+  inline bool isStore(Cva6DynInstPtr& inst){
+    return !inst->isFault() && inst->staticInst->isMemRef() &&
+           !inst->staticInst->isLoad();
+  }
+
+  inline bool isLoad(Cva6DynInstPtr& inst){
+    return !inst->isFault() && inst->staticInst->isLoad();
+  }
+
+  /* Forward slice identification */
+  PhysicalRegFile<char> isFS;
+  bool isFromFS(Cva6DynInstPtr& inst){
+    for (PhysicalReg& reg: inst->regs_src_phy){
+      if (isFS[reg]){
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void markForwardSlice(Cva6DynInstPtr& inst){
+    bool isfs = isLoad(inst) || isFromFS(inst);
+    for (PhysicalReg& reg: inst->regs_dst_phy){
+      isFS[reg] = isfs;
+    }
+  }
+
+  void clearForwardSlice(Cva6DynInstPtr& inst){
+    for (PhysicalReg& reg: inst->regs_dst_phy){
+      isFS[reg] = false;
+    }
+  }
+
+  /* Stearing mechanism */
+  queue_t* getQueue(Cva6DynInstPtr inst){
+    if (isFromFS(inst)){
+      if (!inst->isFault() && inst->staticInst->isLoad()){
+        return &dll;
+      } else {
+        return &del;
+      }
+    } else {
+      return &ml;
+    }
+  }
+
+  void dispatch() override {
+    /* Dispatch : try to fill IQ*/
+    DPRINTF(Cva6Scoreboard, "IQ size: DLL%d DEL:%d ML:%d HL:%d %s\n",
+      dll.size(), del.size(), ml.size(), hl.size(),
+      is_serialise_inflight ? "[DRAIN]" : "");
+    if (is_serialise_inflight){
+      DPRINTF(Cva6Scoreboard, "IQ Drain %d insts\n", is_serialise_inflight);
+    }
+
+    for (int i = 0; i < 4; i++){
+      if (!(inp.canPop() && /* Instructions ready to be scheduled */
+            !is_serialise_inflight /* Wait serialisation drain */)){
+        break;
+      }
+      queue_t* queue = getQueue(inp.front());
+      if (queue->size() >= 16){
+        return;
+      }
+      // Finally dispatch
+      Cva6DynInstPtr inst = inp.pop();
+      queue->push_back(inst); /* Fill the IQ */
+      inst->steered_queue = queue; // annotate dispatch queue
+      onInsert(inst); /* Markup rd buzy */
+      // Update forward slices
+      markForwardSlice(inst);
+      if (isStore(inst)){
+        sq_order.push_back(inst);
+      }
+      DPRINTF(Cva6Scoreboard, "IQ dispatch in %s : %s\n", queue->name, *inst);
+    }
+  }
+
+  Cva6DynInstPtr getIssueInst(
+      bool &is_os,
+      bool &is_raw,
+      Cva6DynInstPtr &producer,
+      bool &is_waw
+  ) override {
+    /* Try to find ready candidate */
+    is_os = false; // We cannot issues instructions upon a serialization
+    bool is_ss = false; /* is store serialise */
+    bool mdp_dep = false;
+    bool fu_stall = false;
+    Cva6DynInstPtr ret = Cva6DynInst::bubble();
+    queue_t* hitqueue = nullptr;
+
+    for (queue_t* queue: queues){
+      if (!queue->size()){
+        DPRINTF(Cva6Scoreboard, "IQ(%s) Empty\n", queue->name);
+        continue;
+      }
+      Cva6DynInstPtr inst = queue->front();
+      if (isReady(inst, is_raw, producer, is_waw, is_ss, mdp_dep, fu_stall)){
+        DPRINTF(Cva6Scoreboard, "IQ(%s) %s Ready\n", queue->name, *inst);
+        if (ret->isBubble() || ret->isAfterOrEqual(inst)){
+          ret = inst; // Take the youngest
+          hitqueue = queue;
+        }
+      } else {
+        DPRINTF(Cva6Scoreboard, "IQ(%s) %s %s%s%s\n", queue->name, *inst,
+          is_raw ? "[RaW]" : "",
+          is_ss ? "[SS]" : "",
+          mdp_dep ? "[MDP]" : "",
+          fu_stall ? "[FU]" : "");
+      }
+    }
+    if (!ret->isBubble()){
+      assert(ret == hitqueue->front());
+      // hitqueue->pop_front();
+      // Recompute ready flags
+      isReady(ret, is_raw, producer, is_waw, is_ss, mdp_dep, fu_stall);
+      return ret;
+    }
+    return Cva6DynInst::bubble();
+  }
+
+
+  void issueInst(Cva6DynInstPtr inst) override {
+    /* Remove inst from the IQ */
+    int check = 0;
+    for (queue_t* queue: queues){
+      if (queue->size() &&
+        queue->front()->id == inst->id){
+        queue->pop_front();
+        check++;
+        assert(queue == inst->steered_queue);
+        if (queue == &hl){
+          cpt_hl = 0;
+        }
+      }
+    }
+    assert(check == 1);
+    /* complete the issue */
+    completeIssueInst(inst);
+    if (isStore(inst)){
+      assert(sq_order.front() == inst);
+      sq_order.pop_front();
+    }
+    stats.ml += inst->steered_queue == &ml;
+    stats.dll += inst->steered_queue == &dll;
+    stats.del += inst->steered_queue == &del;
+    stats.hl += inst->steered_queue == &hl;
+  }
+
+  void completeInst(Cva6DynInstPtr inst) override {
+    // An SBV bit is cleared when the instruction executes and has
+    // computed its destination physical register.
+    clearForwardSlice(inst);
+    Scoreboard::completeInst(inst);
+  }
+
+  void commitInst(Cva6DynInstPtr& inst) override {
+    Scoreboard::commitInst(inst);
+  }
+
+  void tick() override {
+    if (del.size()){
+      cpt_hl ++;
+      if (cpt_hl >= 5 && hl.size() < 16){ // Do the move
+        Cva6DynInstPtr inst = del.front();
+        assert(inst->steered_queue == &del);
+        inst->steered_queue = &hl;
+        hl.push_back(inst);
+        del.pop_front();
+        cpt_hl = 0;
+      }
+    }
+    Scoreboard::tick();
+  }
+
+  void flush() override {
+    for (queue_t* queue: queues){
+      queue->clear();
+    }
+    sq_order.clear();
+    cpt_hl = 0;
+    Scoreboard::flush();
+  }
+
+  void dump() override {
+    Scoreboard::dump();
+    for (queue_t* queue: queues){
+      queue_t&q = *queue;
+      DPRINTF(Cva6Scoreboard, "**** %s (#%d) **** \n", q.name, q.size());
+      for (int i = 0; i < q.size(); i++){
+        DPRINTF(Cva6Scoreboard, "%s[%d] = %s\n", q.name, i, *q[i]);
+      }
+    }
   }
 };
 

@@ -58,6 +58,8 @@ class BaseCva6CPU(BaseCPU):
     # IEW
     sbSize = Param.Unsigned(32, "Scoreboard size")
     sbOoO = Param.Unsigned(0, "Enable OoO IQ")
+    sbFSC = Param.Unsigned(0, "Enable FSC cpu model")
+
     numROBEntries = Param.Unsigned(64, "Rob size")
 
     issueWidth = Param.Unsigned(4, "Issue width")

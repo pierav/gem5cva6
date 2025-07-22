@@ -583,5 +583,24 @@ bool ScoreboardO3::isReady(Cva6DynInstPtr& inst, bool &is_raw,
     return !is_raw && !fu_stall && !is_ss && !mdp_dep;
 }
 
+/* Check IRO, FUs and MDP deps*/
+bool ScoreboardFSC::isReady(Cva6DynInstPtr& inst, bool &is_raw,
+    Cva6DynInstPtr &producer, bool &is_waw, bool &is_ss,
+    bool &mdp_dep, bool &fu_stall){
+    chechIssueInst(inst, is_raw, producer, is_waw);
+    is_waw = false; // There is no WaW in FSC
+    fu_stall = !cpu.pipeline->fus.canPush(inst);
+    is_ss = isStore(inst) && inst != sq_order.front();
+    mdp_dep = false;
+    if (!inst->isFault() && !inst->mdpinst->isBubble()){
+        mdp_dep = !inst->mdpinst->issue_completed;
+        if (mdp_dep){
+            DPRINTF(Cva6Scoreboard, "MDPDEP %s <- %s\n",
+                *inst, *inst->mdpinst);
+        }
+    }
+    return !is_raw && !fu_stall && !is_ss && !mdp_dep;
+}
+
 } // namespace cva6
 } // namespace gem5

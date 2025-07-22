@@ -52,10 +52,11 @@ inline OCS getOcs(Cva6DynInstPtr &inst){
 inline Scoreboard& scoreboardInit(const std::string &name,
         Cva6CPU &cpu,  const BaseCva6CPUParams &p,
         ForwardInstDataPopIntf& inp){
-  bool useO3 = p.sbOoO;
-  if (useO3){
+  if (p.sbOoO){
     return *new ScoreboardO3(name + ".sb", cpu, p.sbSize, inp,
       p.lsuSQSWidth);
+  } else if (p.sbFSC) {
+    return *new ScoreboardFSC(name + ".sb", cpu, p.sbSize, inp);
   } else {
     return *new Scoreboard(name + ".sb", cpu, p.sbSize, inp);
   }

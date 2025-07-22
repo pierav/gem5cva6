@@ -273,8 +273,6 @@ class InstId
     static const InstSeqNum firstExecSeqNum = 1;
 
   public:
-
-
     /** Fetch sequence number.  This is 0 for bubbles and an ascending
      *  sequence for the stream of all fetched instructions */
     InstSeqNum fetchSeqNum;
@@ -285,7 +283,7 @@ class InstId
     InstSeqNum execSeqNum;
 
     /* Annotate extra uOp inserted on flight */
-    uint64_t uop_extra = 0;
+    uint64_t uop_extra = 0; // TODO ?
 
   public:
     /** Very boring default constructor */
@@ -298,14 +296,9 @@ class InstId
 
   public:
     /* Equal if set sequence number matches */
-    bool
-    operator== (const InstId &rhs)
-    {
-        bool ret = (
-            fetchSeqNum == rhs.fetchSeqNum &&
-            execSeqNum == rhs.execSeqNum);
-
-        return ret;
+    bool operator==(const InstId &rhs) {
+        return fetchSeqNum == rhs.fetchSeqNum &&
+               execSeqNum == rhs.execSeqNum;
     }
 };
 
@@ -412,6 +405,9 @@ class Cva6DynInst : public RefCounted
     uint64_t last_store_id = 0; /* Used to detech mem hazard */
     uint64_t last_store_pc = 0; /* Pc of the match store */
 
+    /* Steered queue annotation used by sOoO cores */
+    void *steered_queue = nullptr;
+
     /************ Execute stage ************/
     bool execute_completed = false;
     bool ex_request_squash = false;
@@ -479,6 +475,7 @@ class Cva6DynInst : public RefCounted
       //   staticInst, *pc, staticInst);
     }
 
+    #if 1
     //<PC, rs1, rs2, rs3, rd>
     struct inststate_t
     {
@@ -538,7 +535,7 @@ class Cva6DynInst : public RefCounted
         return inststate_t(lhs) == inststate_t(rhs);
       }
     };
-
+    #endif
 
   public:
     /** The BubbleIF interface. */
