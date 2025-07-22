@@ -156,6 +156,7 @@ class Scoreboard : public Named
   public:
 
     virtual void dispatch() { /* Default: no dispatch */}
+    virtual void dispatch_before() { /* Default: no dispatch */}
     /** Issue Stage */
     /* Return the instruction to issue. Bubble if none. */
     /** Can this instruction be issued.  Are any of its source registers
@@ -410,7 +411,7 @@ class ScoreboardFSC : public Scoreboard
     }
   }
 
-  void dispatch() override {
+  void dispatch_before() override {
     /* Dispatch : try to fill IQ*/
     DPRINTF(Cva6Scoreboard, "IQ size: DLL%d DEL:%d ML:%d HL:%d %s\n",
       dll.size(), del.size(), ml.size(), hl.size(),

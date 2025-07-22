@@ -24,6 +24,8 @@ IssueUnit::evaluate(){
     int readfrf = 0;
     int cnt_push_load = 0;
 
+    /* Do dispatch before if needed */
+    scoreboard.dispatch_before();
 
     for (int i = 0; i < nb_issue_port; i++){ // Try to issue instruction
         bool is_over_serialise, is_raw, is_waw;
