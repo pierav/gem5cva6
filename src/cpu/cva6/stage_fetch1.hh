@@ -190,8 +190,6 @@ class Fetch1 : public Named
     std::deque<FetchRequestPtr> transfers;
 
   protected:
-    /** Start fetching from a new address. */
-    void changeStream(const BranchData &branch);
 
     /** Convert a response to a ForwardLineData */
     ForwardLineData* processResponse(FetchRequestPtr req);
@@ -216,6 +214,8 @@ class Fetch1 : public Named
 
     /** Flush the stage */
     void flush();
+    /** Start fetching from a new address. */
+    void changeStream(const BranchData &branch);
 
     /** Initiate fetch1 fetching */
     void wakeupFetch();

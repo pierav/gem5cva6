@@ -46,7 +46,9 @@ VPDPE::insert(Cva6DynInstPtr inst){
   // Compute inst context
   inst->vp_data.seqNum = inst->id.fetchSeqNum;
   ghist.insert(inst);
-  inflights.push_back(inst);
+  if (!DPE_IGNORE){
+    inflights.push_back(inst);
+  }
   // Compute static data
   if (!inst->isFault() &&        /** Not a adress fault */
       inst->staticInst->isLoad() /** Only predict memory load */
@@ -123,7 +125,7 @@ VPDPE::vp_perform_issue(Cva6DynInstPtr inst){
 
     // First invalidate inflight instructions
     uint64_t eff_tag = eff_addr >> 3;
-    for (Cva6DynInstPtr ifinst: inflights){
+    for (Cva6DynInstPtr ifinst: inflights){ // TODO ! care DPE_IGNORE
       vp_inst_metadata_t *res = &ifinst->vp_data;
       uint64_t res_eff_tag = (res->t1_addr + res->inst_mem_req_imm) >> 3;
       if (res_eff_tag == eff_tag){
@@ -138,14 +140,14 @@ VPDPE::vp_perform_issue(Cva6DynInstPtr inst){
 /**  Make prediction int the 2 DeltaCycle Window */
 void
 VPDPE::perform_window_predictions(){
+  if (DPE_IGNORE){/* Ignore prediction window */
+    return;
+  }
+
   /* Remove issued instructions */
   while (!inflights.empty() && inflights.front()->issue_completed){
     issued.push_back(inflights.front());
     inflights.pop_front();
-  }
-
-  if (DPE_IGNORE){/* Ignore prediction window */
-    return;
   }
 
   int start = -1;
@@ -235,8 +237,11 @@ VPDPE::post_commit(Cva6DynInstPtr inst){
 /* TODO PERFORM INFLIGHT REPLAY! */
 bool
 VPDPE::commit(Cva6DynInstPtr inst){
-    assert(issued.front() == inst);
-    issued.pop_front();
+    if (!DPE_IGNORE){/* Ignore prediction window */
+      assert(issued.front() == inst);
+      issued.pop_front();
+    }
+
     if (vp.isEnable() &&
       !inst->isFault() &&
       inst->staticInst->isMemRef()

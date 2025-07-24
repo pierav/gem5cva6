@@ -38,7 +38,6 @@ class Decode : public Named
   protected:
     /** Decode microops */
     Cva6DynInstPtr decodeInst(Cva6DynInstPtr inst, bool &input_finished);
-    void flush();
 
   public:
     Decode(const std::string &name,
@@ -52,11 +51,10 @@ class Decode : public Named
       inp(inp_),
       resolved_branch(resolved_branch_),
       out(out_),
-      front_latency(p.frontLatency)
-    { }
+      front_latency(p.frontLatency) { }
 
-  public:
     void evaluate();
+    void flush();
 };
 
 } // namespace cva6

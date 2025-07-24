@@ -175,27 +175,16 @@ class IssueUnit : public Named
 
     void evaluate();
 
-    void execute(){
-      for (Cva6DynInstPtr inst: scoreboard.getIssueQueue()){
-        if (scoreboard.isInstInFu(inst)){
-          // For all instructions in FUs try to complete the execution
-          if (fus.canPop(inst)){
-            fus.pop(inst);                  /* Compute FU and pop */
-            inst->executeComplete();        /* Complete FU result */
-            scoreboard.completeInst(inst);  /* Notify scoreboard */
-          }
-        }
-      }
+    void completeInst(Cva6DynInstPtr inst){
+      scoreboard.completeInst(inst);
     }
 
     bool isCommitInst(Cva6DynInstPtr inst){
       return scoreboard.getCommitInst() == inst;
     }
-
     Cva6DynInstPtr getCommitInst(size_t index){
       return scoreboard.getCommitInst(index);
     }
-
     void pre_commit(Cva6DynInstPtr inst){
       scoreboard.pre_commit(inst);
     }
@@ -203,8 +192,8 @@ class IssueUnit : public Named
       scoreboard.commitInst(inst);
     }
 
-    void flush(){
-      scoreboard.flush();
+    void flushfrom(Cva6DynInstPtr inst){
+      scoreboard.flushfrom(inst);
     }
 
     bool canInterrupts(){
@@ -241,6 +230,12 @@ class IssueUnit : public Named
     void forwardSpeculativeRegVal(PhysicalReg &reg, RegVal regval){
       scoreboard.forwardSpeculativeRegVal(reg, regval);
     }
+
+    Scoreboard::iq_t &getIssueQueue(){
+      return scoreboard.getIssueQueue();
+    }
+
+
 };
 
 /** Issue stage. */
@@ -279,7 +274,7 @@ class Issue : public Named
     void evaluate();
 
     /** Flush input and scoreboard. */
-    void flush();
+    void flushfrom(Cva6DynInstPtr inst);
 };
 
 } // namespace cva6

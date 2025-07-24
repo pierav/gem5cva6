@@ -199,7 +199,7 @@ Scoreboard::completeIssueInst(Cva6DynInstPtr inst){
     /* Finally insert in the issue_queue (debug) */
     // assert(issue_queue.size() < nr_entries);
     // The queue cannot overflow as we use PRF
-    issue_queue.push_back(inst);
+    issue_queue.push(inst);
 }
 
 void
@@ -280,6 +280,11 @@ Scoreboard::commitInst(Cva6DynInstPtr& inst){
         /* Do the write-back now */
         writeBackRF(inst);
     }
+    // Remove the inst from the issue queue
+    issue_queue.erase(inst);
+    is_serialise_inflight -= inst->needArchSerialize;
+    DPRINTF(Cva6Scoreboard, "Commit %s %s\n",
+        *inst, inst->needArchSerialize ? "[SER]" : "");
     /* There is no need to free the register !! */
     /* Free registers  */
     // for (PhysicalReg &reg: inst->regs_dst_phy){
@@ -291,27 +296,60 @@ Scoreboard::commitInst(Cva6DynInstPtr& inst){
 void
 Scoreboard::tick(){
     /* For all instructions to commit */
-    while (!issue_queue.empty() &&
-          issue_queue.front()->commit_completed) {
-        /* Remove instruction from sb*/
-        /* pop issue queue*/
-        Cva6DynInstPtr inst = issue_queue.front();
-        issue_queue.pop_front();
-        is_serialise_inflight -= inst->needArchSerialize;
-    }
+    // while (!issue_queue.empty() &&
+    //       issue_queue.front()->commit_completed) {
+    //     /* Remove instruction from sb*/
+    //     /* pop issue queue*/
+    //     Cva6DynInstPtr inst = issue_queue.pop();
+    //     is_serialise_inflight -= inst->needArchSerialize;
+    // }
 }
 
 void
-Scoreboard::flush(){
-    DPRINTF(Cva6Scoreboard, "flush\n");
-    // Flush issue queue
-    issue_queue.clear();
-    /* Clear inflights registers */
-    sb.setall(FREE);
-    prf_isfault.setall(false);
-    prf_isvp.setall(false);
-    is_serialise_inflight = 0;
-    _sb_is_unsafe.setall(false);
+Scoreboard::flushfrom(Cva6DynInstPtr inst){
+    DPRINTF(Cva6Scoreboard, "flush from %s\n", *inst);
+
+    /* Cancel instruction one by one */
+    if (inst->isBubble()){ // Clear everything (fast)
+        // Flush issue queue
+        issue_queue.flush();
+        /* Clear inflights registers */
+        sb.setall(FREE);
+        prf_isfault.setall(false);
+        prf_isvp.setall(false);
+        is_serialise_inflight = 0;
+        _sb_is_unsafe.setall(false);
+    } else {
+        // Fix IQ
+        issue_queue.flushfrom(inst);
+        // Fix regs
+        auto rob = cpu.pipeline->rob;
+        for (auto it = rob.rbegin(); it != rob.rend(); it++){
+            Cva6DynInstPtr &i2 = *it;
+            if (!i2->isAfterOrEqual(inst)){ // Keep it
+               break; // InO no need to continue
+            }
+            if (!i2->stage_issue_enter){
+                continue; // Skip instruction that do not affect sb
+            }
+            // Undo instruction effects
+            for (PhysicalReg &reg: i2->regs_dst_phy){
+                DPRINTF(Cva6Scoreboard,
+                    "Flush %s :: %s :: #ser=%d%s\n",
+                    *i2, reg, is_serialise_inflight,
+                    i2->needArchSerialize ? "(-1)" : "");
+                prf_isvp[reg] = false;
+                sb[reg] = FREE;
+                prf_isfault[reg] = false;
+                _sb_is_unsafe[reg] = false;
+            }
+            if (i2->needArchSerialize){
+                assert(is_serialise_inflight);
+            }
+            is_serialise_inflight -= i2->needArchSerialize;
+            continue;
+        }
+    }
 }
 
 #if 0

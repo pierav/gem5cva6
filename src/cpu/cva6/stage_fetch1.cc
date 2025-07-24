@@ -121,9 +121,7 @@ Fetch1::evaluate()
     /* Are we changing stream?
      * (1) Look to the Execute branches first, then
      * (2) predicted changes of stream from Fetch2 */
-    if (resolved_branch.isStreamChange()) {
-        changeStream(resolved_branch);
-    } else if (fetch2_branch.is_predicted) {
+    if (fetch2_branch.is_predicted) {
         changeStream(fetch2_branch);
     }
 

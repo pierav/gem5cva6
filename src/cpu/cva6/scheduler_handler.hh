@@ -263,12 +263,8 @@ class SA : public ForwardInstDataPopIntf
   // }
 
   void flushfrom(Cva6DynInstPtr inst){
-    if (!inst->isBubble()){
-      fatal("Must implem\n");
-    }
-    scheduler.flush();
-    regalloc.flush();
-    // oooch.flush();
+    scheduler.flush(); // Scheduler insts must be before inst
+    regalloc.flushfrom(inst);
   }
 
   bool canInterrupts(){

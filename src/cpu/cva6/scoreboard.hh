@@ -54,7 +54,7 @@ namespace cva6 {
 
 class Scoreboard : public Named
 {
-  public:
+  protected:
     Cva6CPU &cpu;
     struct Stats : public statistics::Group
     {
@@ -75,9 +75,11 @@ class Scoreboard : public Named
     /* number of entries un issue queue*/
     const unsigned nr_entries;
 
+  public:
+    using iq_t = Cva6DynInstChunk;
   protected:
     /* this is the FIFO struct of the issue queue  */
-    std::deque<Cva6DynInstPtr> issue_queue;
+    iq_t issue_queue;
 
     // FSM reg_state_t
     //                          Commit            ┌───────────┐
@@ -132,6 +134,7 @@ class Scoreboard : public Named
         cpu(cpu_),
         stats(name, cpu_),
         nr_entries(size),
+        issue_queue("sbiq"),
         inp(inp_) { }
 
   protected:
@@ -167,9 +170,6 @@ class Scoreboard : public Named
     /** Issue the instruction (notify instruction is issued) */
     virtual void issueInst(Cva6DynInstPtr inst);
 
-    bool isInstInFu(Cva6DynInstPtr inst){
-      return !inst->execute_completed && inst->issue_completed;
-    }
     /** Notify scoreboard functional unit finished */
     virtual void completeInst(Cva6DynInstPtr inst);
 
@@ -183,7 +183,7 @@ class Scoreboard : public Named
     /** Tick the scoreboard: evaluate flip flops*/
     virtual void tick();
     /** Flush issue queue and clear down all the reg dependencies */
-    virtual void flush();
+    virtual void flushfrom(Cva6DynInstPtr inst);
 
     /* Misspredict inst_error: reset scoreboard.
      * Backend must flush from returned instruction */
@@ -204,7 +204,7 @@ class Scoreboard : public Named
       return false;
     }
 
-    std::deque<Cva6DynInstPtr> &getIssueQueue(){
+    iq_t &getIssueQueue(){
       return issue_queue;
     }
 
@@ -221,13 +221,12 @@ class ScoreboardO3 : public Scoreboard
         ForwardInstDataPopIntf& inp_, uint64_t sqssize) :
         Scoreboard(name, cpu_, size, inp_),
         iq(name + ".iq"),
-        max_inflight_stores(sqssize) { }
+        max_inflight_stores(sqssize),
+        store_order("soq") { }
 
   Cva6DynInstChunk iq; // The IQ of the scheduler
-  uint64_t inflight_stores = 0;
   uint64_t max_inflight_stores;
-
-  std::deque<Cva6DynInstPtr> store_order;
+  Cva6DynInstChunk store_order;
 
   /* Check IRO, FUs and MDP deps*/
   bool isReady(Cva6DynInstPtr& inst, bool &is_raw,
@@ -244,14 +243,14 @@ class ScoreboardO3 : public Scoreboard
     for (int i = 0; i < 4; i++){
       if (!(inp.canPop() && /* Instructions ready to be scheduled */
             iq.size() < nr_entries && /* Remaining space in IQ */
-            !is_serialise_inflight && /* Wait serialisation drain */
-            inflight_stores < max_inflight_stores)){
+            !is_serialise_inflight /* Wait serialisation drain */
+            /*cpu.pipeline->getNbinflightStoresInRob() < max_inflight_stores*/
+          )){
         break;
       }
       Cva6DynInstPtr inst = inp.pop();
       if (isStore(inst)){
-        inflight_stores ++;
-        store_order.push_back(inst);
+        store_order.push(inst);
       }
       iq.push(inst); /* Fill the IQ */
       onInsert(inst); /* Markup rd buzy */
@@ -292,22 +291,20 @@ class ScoreboardO3 : public Scoreboard
     iq.erase(inst);
     if (isStore(inst)){
       assert(inst == store_order.front());
-      store_order.pop_front();
+      store_order.pop();
     }
     /* complete the issue */
     completeIssueInst(inst);
   }
 
   void commitInst(Cva6DynInstPtr& inst) override {
-    inflight_stores -= isStore(inst);
     Scoreboard::commitInst(inst);
   }
 
-  void flush() override {
-    iq.flush();
-    store_order.clear();
-    inflight_stores = 0;
-    Scoreboard::flush();
+  void flushfrom(Cva6DynInstPtr inst) override {
+    iq.flushfrom(inst);
+    store_order.flushfrom(inst);
+    Scoreboard::flushfrom(inst);
   }
 };
 
@@ -316,13 +313,15 @@ class ScoreboardFSC : public Scoreboard
 {
   // using queue_t = std::deque<Cva6DynInstPtr>;
 
-  class queue_t : public std::deque<Cva6DynInstPtr>
-  {
-    public:
-    const char *name;
-    queue_t(const char *name_) :
-      std::deque<Cva6DynInstPtr>(), name(name_) {}
-  };
+  // class queue_t : public std::deque<Cva6DynInstPtr>
+  // {
+  //   public:
+  //   const char *name;
+  //   queue_t(const char *name_) :
+  //     std::deque<Cva6DynInstPtr>(), name(name_) {}
+  // };
+
+  using queue_t = Cva6DynInstChunk;
 
   queue_t ml;
   queue_t dll;
@@ -431,15 +430,16 @@ class ScoreboardFSC : public Scoreboard
       }
       // Finally dispatch
       Cva6DynInstPtr inst = inp.pop();
-      queue->push_back(inst); /* Fill the IQ */
+      queue->push(inst); /* Fill the IQ */
       inst->steered_queue = queue; // annotate dispatch queue
       onInsert(inst); /* Markup rd buzy */
       // Update forward slices
       markForwardSlice(inst);
       if (isStore(inst)){
-        sq_order.push_back(inst);
+        sq_order.push(inst);
       }
-      DPRINTF(Cva6Scoreboard, "IQ dispatch in %s : %s\n", queue->name, *inst);
+      DPRINTF(Cva6Scoreboard, "IQ dispatch in %s : %s\n",
+        queue->name(), *inst);
     }
   }
 
@@ -459,18 +459,18 @@ class ScoreboardFSC : public Scoreboard
 
     for (queue_t* queue: queues){
       if (!queue->size()){
-        DPRINTF(Cva6Scoreboard, "IQ(%s) Empty\n", queue->name);
+        DPRINTF(Cva6Scoreboard, "IQ(%s) Empty\n", queue->name());
         continue;
       }
       Cva6DynInstPtr inst = queue->front();
       if (isReady(inst, is_raw, producer, is_waw, is_ss, mdp_dep, fu_stall)){
-        DPRINTF(Cva6Scoreboard, "IQ(%s) %s Ready\n", queue->name, *inst);
+        DPRINTF(Cva6Scoreboard, "IQ(%s) %s Ready\n", queue->name(), *inst);
         if (ret->isBubble() || ret->isAfterOrEqual(inst)){
           ret = inst; // Take the youngest
           hitqueue = queue;
         }
       } else {
-        DPRINTF(Cva6Scoreboard, "IQ(%s) %s %s%s%s\n", queue->name, *inst,
+        DPRINTF(Cva6Scoreboard, "IQ(%s) %s %s%s%s\n", queue->name(), *inst,
           is_raw ? "[RaW]" : "",
           is_ss ? "[SS]" : "",
           mdp_dep ? "[MDP]" : "",
@@ -487,14 +487,13 @@ class ScoreboardFSC : public Scoreboard
     return Cva6DynInst::bubble();
   }
 
-
   void issueInst(Cva6DynInstPtr inst) override {
     /* Remove inst from the IQ */
     int check = 0;
     for (queue_t* queue: queues){
       if (queue->size() &&
         queue->front()->id == inst->id){
-        queue->pop_front();
+        queue->pop();
         check++;
         assert(queue == inst->steered_queue);
         if (queue == &hl){
@@ -507,7 +506,7 @@ class ScoreboardFSC : public Scoreboard
     completeIssueInst(inst);
     if (isStore(inst)){
       assert(sq_order.front() == inst);
-      sq_order.pop_front();
+      sq_order.pop();
     }
     stats.ml += inst->steered_queue == &ml;
     stats.dll += inst->steered_queue == &dll;
@@ -533,30 +532,30 @@ class ScoreboardFSC : public Scoreboard
         Cva6DynInstPtr inst = del.front();
         assert(inst->steered_queue == &del);
         inst->steered_queue = &hl;
-        hl.push_back(inst);
-        del.pop_front();
+        hl.push(inst);
+        del.pop();
         cpt_hl = 0;
       }
     }
     Scoreboard::tick();
   }
 
-  void flush() override {
+  void flushfrom(Cva6DynInstPtr inst) override {
     for (queue_t* queue: queues){
-      queue->clear();
+      queue->flushfrom(inst);
     }
-    sq_order.clear();
+    sq_order.flushfrom(inst);
     cpt_hl = 0;
-    Scoreboard::flush();
+    Scoreboard::flushfrom(inst);
   }
 
   void dump() override {
     Scoreboard::dump();
     for (queue_t* queue: queues){
       queue_t&q = *queue;
-      DPRINTF(Cva6Scoreboard, "**** %s (#%d) **** \n", q.name, q.size());
+      DPRINTF(Cva6Scoreboard, "**** %s (#%d) **** \n", q.name(), q.size());
       for (int i = 0; i < q.size(); i++){
-        DPRINTF(Cva6Scoreboard, "%s[%d] = %s\n", q.name, i, *q[i]);
+        DPRINTF(Cva6Scoreboard, "%s[%d] = %s\n", q.name(), i, *q[i]);
       }
     }
   }

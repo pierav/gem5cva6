@@ -393,31 +393,8 @@ class PhysicalRegAllocator : public Named
       return;
     }
   }
-  void flush(){
-    /* Mv rmt_checkpoint to rmt */
-    if (incarchreg){ // Restore a valid RMT
-      rmt = rmt_checkpoint;
-      /* Fix free list */
-      /* [...|...|...]FL.front() <- FLP.back()[...|...] */
-      while (free_list_popped.size()){ /* Both revsersed */
-        free_list.push_front(free_list_popped.back());
-        free_list_popped.pop_back();
-      }
-    } else {
-      // Symply clear the rmt
-      // rmt.setall(PREG_MAGIC);
-      rmt_valid.setall(false);
-      isbuzy.setall(FREE_COMMIT);
-      inFF.setall(false);
-      cannotbefreed.setall(false);
-      // And reset FL
-      free_list_popped.clear();
-      free_list.clear();
-      for (int i = 0; i < n; i++){
-        free_list.push_back(i);
-      }
-    }
-  }
+
+  void flushfrom(Cva6DynInstPtr& inst);
 };
 
 

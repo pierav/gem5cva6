@@ -325,12 +325,20 @@ class Cva6DynInst : public RefCounted
     const StaticInstPtr staticInst = nullStaticInstPtr;
 
     InstId id;
+    bool _no_equal_when_match = false; // Configure
     bool isAfterOrEqual(Cva6DynInstPtr inst_){
       assert(inst_);
       assert(!isBubble());
       if (inst_->isBubble()){
         return true;
       }
+
+      if ((_no_equal_when_match || inst_->_no_equal_when_match) &&
+        id.fetchSeqNum == inst_->id.fetchSeqNum &&
+        id.uop_extra >= inst_->id.uop_extra){
+          return false; // Bupass !
+      }
+
       if (id.fetchSeqNum == inst_->id.fetchSeqNum){
         return id.uop_extra >= inst_->id.uop_extra;
       }
@@ -544,6 +552,10 @@ class Cva6DynInst : public RefCounted
     /** There is a single bubble inst */
     static Cva6DynInstPtr bubble() { return bubbleInst; }
 
+    bool isInFu(){
+      return !execute_completed && issue_completed;
+    }
+
     void reset(){
       assert(!commit_completed);
       // Reset Issue
@@ -582,6 +594,16 @@ class Cva6DynInst : public RefCounted
       return fault != NoFault || fault_ex != NoFault;
     }
 
+    bool isMisspredict() const {
+      assert(execute_completed);
+      return triedToPredict && *predictedTarget != *pc_next;
+    }
+
+    void fixBranchPrediction(){
+      assert(isMisspredict());
+      set(predictedTarget, pc_next);
+    }
+
     bool isASquash(){
       assert(execute_completed);
       bool is_serialise = !isFault() &&
@@ -589,10 +611,8 @@ class Cva6DynInst : public RefCounted
           ( staticInst->isSerializeAfter() ||
             staticInst->isSquashAfter());
       /* PR: TODO not all Serialise after requires squash ! */
-      bool is_addr_unmatch = triedToPredict &&
-                            *predictedTarget != *pc_next;
+      bool is_addr_unmatch = isMisspredict();
       bool is_fault = isFault();
-
       bool need_squash = is_addr_unmatch ||
                           is_fault ||
                           is_serialise;

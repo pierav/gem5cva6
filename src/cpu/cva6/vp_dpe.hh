@@ -146,7 +146,6 @@ class ghist_t
       flush();
       return;
     }
-    return; // flush from inst is impossible !
     hist_entry_t h = i2h(inst);
     while (1) {
       assert(hist.size());
@@ -158,7 +157,6 @@ class ghist_t
       if (hist[0].id < h.id){ // Reach end, exit
         return;
       }
-
       hist.pop_front();
     }
   }
@@ -264,6 +262,10 @@ class VPDPE : public Named
 
     void flushfrom(Cva6DynInstPtr inst){
       ghist.flushfrom(inst);
+      // Assumed InO here : DPE must be disabled when OoO (Obviously haha)
+      // DPE_IGNORE must be true in OoO
+      // With this, inflights and issued are empty as predictions are made
+      // on insertion (serialised in the frontend).
       while (!issued.empty() && issued.back()->isAfterOrEqual(inst)){
           inflights.push_front(issued.back());
           issued.pop_back();

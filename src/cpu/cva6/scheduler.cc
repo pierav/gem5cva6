@@ -13,6 +13,59 @@ namespace gem5 {
 namespace cva6 {
 
 void
+PhysicalRegAllocator::flushfrom(Cva6DynInstPtr& inst){
+  /* Mv rmt_checkpoint to rmt */
+  if (incarchreg){ // Restore a valid RMT
+    if (inst->isBubble()){
+      rmt = rmt_checkpoint;
+      /* Fix free list */
+      /* [...|...|...]FL.front() <- FLP.back()[...|...] */
+      while (free_list_popped.size()){ /* Both revsersed */
+        free_list.push_front(free_list_popped.back());
+        free_list_popped.pop_back();
+      }
+    } else {
+      // Cancel all allocation one by one
+      auto rob = cpu.pipeline->rob;
+      for (auto it = rob.rbegin(); it != rob.rend(); it++){
+        Cva6DynInstPtr &i2 = *it;
+        // ([][][x])[][]
+        if (!i2->isAfterOrEqual(inst)){
+          break; // InO no need to continue
+        }
+        if (i2->regs_dst_phy.size()){
+          DPRINTF(Cva6Rename, "Free inst : %s :: %s\n",
+            *i2, i2->regs_dst_phy.front());
+          assert(i2->phys_reg_to_free.size() == 1);
+          PhysicalReg& new_mapping = i2->regs_dst_phy.front();
+          PhysicalReg& old_mapping = i2->phys_reg_to_free.front();
+          // Fix things:
+          assert(new_mapping.virt_reg_idx == old_mapping.virt_reg_idx);
+          assert(free_list_popped.back() == new_mapping.phys_reg_idx);
+          free_list.push_front(new_mapping.phys_reg_idx);
+          free_list_popped.pop_back();
+          rmt[old_mapping] = old_mapping.phys_reg_idx;
+        }
+      }
+    }
+  } else {
+    // Cannot flush from random place ?
+    // Symply clear the rmt
+    // rmt.setall(PREG_MAGIC);
+    rmt_valid.setall(false);
+    isbuzy.setall(FREE_COMMIT);
+    inFF.setall(false);
+    cannotbefreed.setall(false);
+    // And reset FL
+    free_list_popped.clear();
+    free_list.clear();
+    for (int i = 0; i < n; i++){
+      free_list.push_back(i);
+    }
+  }
+}
+
+void
 SA::fixer_t::apply_fix_for(Cva6DynInstPtr &inst, bool fixbp, bool dorb,
   uint64_t deltat){
   last_pc_fault = inst->pc->instAddr();

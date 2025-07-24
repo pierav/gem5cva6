@@ -223,7 +223,8 @@ bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst){
     /* Update BP */
     BranchData branch = getEffectiveBranch(inst);
     if (branch.need_squash){
-        if (branch.is_predicted) {
+        if (branch.is_predicted) { // Mret ...
+            assert(inst->staticInst->isNonSpeculative());
             cpu.pipeline->bp.squash(branch.num,
                 *branch.target, branch.actually_taken, 0);
         } else {
@@ -240,7 +241,6 @@ bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst){
 void
 Execute::evaluate() {
     /* Check interrupts first */
-    resolved_branch = BranchData(); // Default is no branch
     if (checkInterrupts()){ // TODO !
         /* Signalling an interrupt this cycle */
         Fault interrupt = cpu.getInterruptController()->getInterrupt();
@@ -248,11 +248,10 @@ Execute::evaluate() {
         /* The interrupt *must* set pcState */
         cpu.getInterruptController()->updateIntrInfo();
         interrupt->invoke(cpu.getContext());
-        resolved_branch = BranchData::SquashAt(cpu);
-        DPRINTF(Cva6Interrupt, "Invoking interrupt: %s to PC: %s\n",
-            interrupt->name(), resolved_branch);
+        DPRINTF(Cva6Interrupt, "Invoking interrupt: %s\n",
+            interrupt->name());
         cpu.pipeline->sa.fixer.clear_on_it();
-        flush();
+        do_flush();
         return;
     }
 
@@ -261,19 +260,39 @@ Execute::evaluate() {
         inp.pop(); // Instruction are already pushed in fus
     }
 
-    // Execution
+    /* Execute WB : Process result  */
     cpu.pipeline->fus.advance();
-    cpu.pipeline->stats.exfus += tictac();
-    // /** Process result */
-    cpu.pipeline->iq.execute();
-    cpu.pipeline->stats.expop += tictac();
-
-    /* Commit stage*/
-    for (int i = 0; i < commitWidth; i++){ // Dual port commit
-        if (!resolved_branch.isBubble()){
-            break; // Block if already jump, fault ...
+    for (Cva6DynInstPtr inst: cpu.pipeline->iq.getIssueQueue()){
+        // For all instructions in FUs try to complete the execution
+        if (!inst->isInFu()){
+            continue;
         }
+        if (!cpu.pipeline->fus.canPop(inst)){
+            continue;
+        }
+        cpu.pipeline->fus.pop(inst);        /* Compute FU and pop */
+        inst->executeComplete();            /* Complete FU result */
+        cpu.pipeline->iq.completeInst(inst);  /* Notify scoreboard */
+    }
 
+    // Test branch prediction at execute
+    for (Cva6DynInstPtr inst: cpu.pipeline->rob){
+        if (inst->execute_completed &&
+           inst->isMisspredict() &&
+           !inst->staticInst->isNonSpeculative()){
+            // Squash to the target
+            inst->_no_equal_when_match = true; // Hack to preserve inst
+            BranchData branch = getEffectiveBranch(inst);
+            cpu.pipeline->flushfrom(inst, branch);
+            inst->_no_equal_when_match = false;
+            // Fix inst and pred target and squash
+            inst->fixBranchPrediction();
+            break; // Stop
+        }
+    }
+
+    /* Commit stage */
+    for (int i = 0; i < commitWidth; i++){ // Dual port commit
         DPRINTF(Cva6Execute, "Attempting to retire (port%d)\n", i);
         /* Get the Valid Issue Unit */
         if (!cpu.pipeline->rob.size()) {
@@ -301,7 +320,6 @@ Execute::evaluate() {
         /* Inst produced bad value */
         if (is_mem_violation){
             DPRINTF(Cva6Execute, "MISSPRED MEM ORDER : %s\n", *inst);
-            resolved_branch = BranchData::SquashAt(cpu);
             uint64_t pcself = inst->pc->instAddr();
             DPRINTF(Cva6Execute, "Mark violation %lx -> %lx\n",
                     pcstore, pcself);
@@ -316,7 +334,7 @@ Execute::evaluate() {
             stats.flush_mdp += 1;
             cpu.pipeline->hcpred.violation(inst);
             // assert(0);
-            flush();
+            do_flush();
             return; /* EARLY FLUSH : do not commit */
         }
         if (!inst->isFault() && inst->staticInst->isLoad()){
@@ -327,10 +345,9 @@ Execute::evaluate() {
         bool misspred_addr = cpu.pipeline->dpe.post_commit(inst);
         if (misspred_addr){
             DPRINTF(Cva6Execute, "MISSPRED ADDR : %s\n", *inst);
-            resolved_branch = BranchData::SquashAt(cpu);
             stats.flush ++;
             stats.flush_vp += 1;
-            flush();
+            do_flush();
             return; /* EARLY FLUSH : do not commit */
         }
 
@@ -425,9 +442,7 @@ Execute::evaluate() {
                 cpu.pipeline->bp.squash(branch.num,
                     *branch.target, branch.actually_taken, 0);
             }
-
-            resolved_branch = BranchData::SquashAt(cpu);
-            flush();
+            do_flush();
             return;
         } /* Otherwise take the valid path */
 
@@ -440,16 +455,19 @@ Execute::evaluate() {
 
         bool misspred_value = cpu.pipeline->dpe.commit(inst);
         if (misspred_value){
-            resolved_branch = BranchData::SquashAt(cpu);
+            do_flush();
+            return;
         }
     }
-    // Flush in the cycle
-    if (resolved_branch.isStreamChange()){
-        fatal("Unrecheable!\n");
-        flush();
-    }
     cpu.pipeline->bc.dump();
-    cpu.pipeline->stats.excommit += tictac();
+}
+
+
+void
+Execute::do_flush(){
+    // Flush everything and start at the latest uarch state
+    BranchData inplace = BranchData::SquashAt(cpu);
+    cpu.pipeline->flushfrom(Cva6DynInst::bubble(), inplace);
 }
 
 void
@@ -457,13 +475,6 @@ Execute::flushfrom(Cva6DynInstPtr inst){
     DPRINTF(Cva6Execute, "Flush fus & inp\n");
     cpu.pipeline->fus.flushfrom(inst);
     inp.flushfrom(inst);
-    cpu.pipeline->rob.flushfrom(inst);
-    cpu.pipeline->sa.flushfrom(inst);
-    assert(inst->isBubble());
-    cpu.pipeline->dpe.flush();
-    cpu.pipeline->mdp.flush();
-    cpu.pipeline->mdpc.flush();
-    cpu.pipeline->bc.flush(); // Clear inflights pre-committed
 }
 
 bool

@@ -228,6 +228,49 @@ class Pipeline : public Ticked
       assert(rob.size());
       return rob.front() == inst;
     }
+
+    size_t getNbinflightStoresInRob(){
+      size_t cnt = 0;
+      for (Cva6DynInstPtr& inst: rob){
+        cnt += !inst->isFault() && inst->staticInst->isMemRef() &&
+           !inst->staticInst->isLoad();
+      }
+      return cnt;
+    }
+
+    void flushfrom(Cva6DynInstPtr inst, BranchData& branch){
+      // Post Backend
+      cpu.pipeline->bc.flush(); // Clear inflights pre-committed
+
+      // Backend
+      execute.flushfrom(inst); // Flush fus + inp
+      issue.flushfrom(inst); // Flush sb + inp
+
+      cpu.pipeline->sa.flushfrom(inst);
+      cpu.pipeline->dpe.flushfrom(inst);
+
+      // Frontend
+      decode.flush(); // Cannot flush at arbitrary position
+      fetch2.flush();
+      fetch1.flush();
+
+      cpu.pipeline->mdp.flush();
+
+      /* Squash BP */
+      assert(branch.need_squash);
+      if (branch.is_predicted) {
+          cpu.pipeline->bp.squash(branch.num,
+              *branch.target, branch.actually_taken, 0);
+      } else {
+          cpu.pipeline->bp.squash(branch.num, 0);
+      }
+      /* And set new stream to fetch ! */
+      fetch1.changeStream(branch);
+
+      /* Do the ROB at last bc it is used by other components
+       to performs flush */
+      cpu.pipeline->rob.flushfrom(inst);
+    }
 };
 
 } // namespace cva6

@@ -161,7 +161,7 @@ class Execute : public Named
 
     /** Flush input and FUS */
     void flushfrom(Cva6DynInstPtr inst);
-    void flush(){ flushfrom(Cva6DynInst::bubble()); }
+    void do_flush();
 
 };
 

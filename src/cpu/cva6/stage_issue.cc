@@ -172,28 +172,17 @@ IssueUnit::evaluate(){
 
 void
 Issue::evaluate() {
-    /* Flush on missprediction */
-    if (resolved_branch.isStreamChange()) {
-       flush();
-       return;
-    }
-
-    // OLD
-    // while (inp.canPop() && cpu.pipeline->iq.canPush()){
-    //     cpu.pipeline->iq.push(inp.pop());
-    // }
-
     cpu.pipeline->iq.evaluate();
     cpu.pipeline->iq.dump();
     cpu.pipeline->iq.tick();
 }
 
 void
-Issue::flush(){
+Issue::flushfrom(Cva6DynInstPtr inst){
     DPRINTF(Cva6Issue, "Flush Scoreboard and inp\n");
-    inp.flush();
+    inp.flushfrom(inst);
     cpu.pipeline->iq.dump();
-    cpu.pipeline->iq.flush();
+    cpu.pipeline->iq.flushfrom(inst);
 }
 
 

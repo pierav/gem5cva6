@@ -352,6 +352,8 @@ class Cva6DynInstChunk : public Named, public MatchAddrIntf
     Cva6DynInstPtr back()        { return chunk.back(); }
     ContainerT::iterator begin() { return chunk.begin(); }
     ContainerT::iterator end()   { return chunk.end(); }
+    ContainerT::reverse_iterator rbegin() { return chunk.rbegin(); }
+    ContainerT::reverse_iterator rend()   { return chunk.rend(); }
 
     Cva6DynInstPtr& operator[](int idx)      { return chunk[idx]; }
     Cva6DynInstPtr operator[](int idx) const { return chunk[idx]; }
