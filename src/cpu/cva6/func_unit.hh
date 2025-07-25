@@ -129,7 +129,7 @@ class FUUnimp : public FUBase
     FUUnimp(const std::string &name_, std::vector<OpClass> &ops)
       : FUBase(name_, ops) {}
     bool canPush(Cva6DynInstPtr inst) {
-      fatal("Try to push invalid inst: %s", *inst);
+      // fatal("Try to push invalid inst: %s", *inst);
       return false;
     };
     void push(Cva6DynInstPtr inst) { };
@@ -155,7 +155,7 @@ class FUPipelines : public Named
     FUBase *lsu;            /** Load Store Unit */
     FUBase *misc;           /** Not used */
     FUBase *nocost;         /** Not used */
-
+    FUBase *fuunimp;
     /* List containing all FUS */
     std::vector<FUBase *> funcUnits;
 
@@ -259,7 +259,7 @@ class FUPipelines : public Named
       simd = new FUPipeline(name + ".simd", simd_set, 4, 4);
       lsu = new FULSU(name + ".lsu", lsu_set, cpu, params);
       misc = new FUPipeline(name + ".misc", misc_set, 4, 1);
-      FUBase *fuunimp = new FUUnimp(name + ".unimp", vec_set);
+      fuunimp = new FUUnimp(name + ".unimp", vec_set);
 
       funcUnits = {nocost, alu, mul, serdiv, fpu,
                   fpu_divsqrt, simd, lsu, misc, fuunimp};
@@ -277,6 +277,13 @@ class FUPipelines : public Named
     /** Return the number of functional unit */
     size_t nbFu(){
       return funcUnits.size();
+    }
+
+    bool isUnimp(Cva6DynInstPtr& inst){
+      if (inst->isFault()){
+        return false;
+      }
+      return fuunimp->provides(inst->staticInst->opClass());
     }
 
     int capableFuIndex(Cva6DynInstPtr inst){

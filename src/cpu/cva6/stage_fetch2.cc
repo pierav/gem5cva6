@@ -202,6 +202,9 @@ Fetch2::output_inst(Cva6DynInstPtr inst){
             }
         }
     }
+    if (cpu.pipeline->fus.isUnimp(inst)){
+        inst->setFaultFrontend(NeverCommitFault::fault());
+    }
     /* BB idx */
     static uint64_t bbcnt = 0;
     inst->bb_idx = bbcnt;

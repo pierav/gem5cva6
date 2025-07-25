@@ -69,7 +69,8 @@ int id2i(RegId reg){
     } else if (reg.is(FloatRegClass)){
         return reg.index() + 32;
     }
-    fatal("Invalid register: %s\n", reg);
+    warn("Invalid register: %s\n", reg);
+    assert(0);
 }
 
 RegId i2id(int i){

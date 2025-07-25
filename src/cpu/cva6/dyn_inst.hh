@@ -397,7 +397,7 @@ class Cva6DynInst : public RefCounted
     StaticData static_data;           // IMM and load size
     bool needSerialise = false;       // Was serialised (frontend)
     bool needArchSerialize = false;   // Must be serialised (backend)
-
+    bool needSQAllocation = false;    // is a store (even when fault)
 
     /************ Issue stage ************/
     bool stage_issue_enter = false;   // Entered Issue stage

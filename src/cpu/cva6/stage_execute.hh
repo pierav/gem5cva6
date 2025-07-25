@@ -95,6 +95,7 @@ class Execute : public Named
 
     // Some config
     unsigned int commitWidth;
+    bool flushAtExecute = false;
     bool vpFlush;
     bool oracleEarlyCommit = false;
 
@@ -140,16 +141,17 @@ class Execute : public Named
   public:
     Execute(const std::string &name_,
         Cva6CPU &cpu_,
-        const BaseCva6CPUParams &params,
+        const BaseCva6CPUParams &p,
         ForwardInstDataPopIntf &inp_,
         BranchData& resolved_branch_) :
         Named(name_),
         inp(inp_),
         resolved_branch(resolved_branch_),
         cpu(cpu_),
-        commitWidth(params.commitWidth),
-        vpFlush(params.vpFlush),
-        oracleEarlyCommit(params.oracleEarlyCommit),
+        commitWidth(p.commitWidth),
+        flushAtExecute(p.flushAtExecute),
+        vpFlush(p.vpFlush),
+        oracleEarlyCommit(p.oracleEarlyCommit),
         stats(cpu_)
     { }
 

@@ -111,6 +111,7 @@ class Scoreboard : public Named
     PhysicalRegFile<uint8_t> prf_isvp; /* Is value predicted (debug) */
 
     int is_serialise_inflight = 0;
+    int nb_stores_inflight = 0;
 
     // RAW valid <=> state in {FREE, FWABLE}
     // WAW valid <=> state in {FREE}
@@ -241,10 +242,11 @@ class ScoreboardO3 : public Scoreboard
   void dispatch() override {
     /* Dispatch : try to fill IQ*/
     for (int i = 0; i < 4; i++){
+      /* PR care that we do not issues more stores than SQ entries ! */
       if (!(inp.canPop() && /* Instructions ready to be scheduled */
             iq.size() < nr_entries && /* Remaining space in IQ */
-            !is_serialise_inflight /* Wait serialisation drain */
-            /*cpu.pipeline->getNbinflightStoresInRob() < max_inflight_stores*/
+            !is_serialise_inflight && /* Wait serialisation drain */
+            nb_stores_inflight < max_inflight_stores
           )){
         break;
       }
@@ -332,6 +334,7 @@ class ScoreboardFSC : public Scoreboard
   std::vector<queue_t*> queues;
 
   queue_t sq_order;
+  uint64_t max_inflight_stores;
 
   struct Stats : public statistics::Group
   {
@@ -349,9 +352,10 @@ class ScoreboardFSC : public Scoreboard
 
   public:
   ScoreboardFSC(const std::string &name, Cva6CPU &cpu_, uint64_t size,
-        ForwardInstDataPopIntf& inp_) :
+        ForwardInstDataPopIntf& inp_, uint64_t sqsize) :
         Scoreboard(name, cpu_, size, inp_),
         ml(" ml"), dll("dll"), del("del"), hl(" hl"), sq_order("SQ"),
+        max_inflight_stores(sqsize),
         stats(name + ".fsc", cpu_) {
           queues.push_back(&ml);
           queues.push_back(&dll);
@@ -421,7 +425,8 @@ class ScoreboardFSC : public Scoreboard
 
     for (int i = 0; i < 4; i++){
       if (!(inp.canPop() && /* Instructions ready to be scheduled */
-            !is_serialise_inflight /* Wait serialisation drain */)){
+            !is_serialise_inflight && /* Wait serialisation drain */
+            nb_stores_inflight < max_inflight_stores)){
         break;
       }
       queue_t* queue = getQueue(inp.front());

@@ -88,7 +88,8 @@ cva6_config = {
     "renameFreeRegDead": DEFAULT(0), # Free reg dead (bugs)
     "renameSpecRelease": DEFAULT(0), # Speculative Release
     "renameSpecReleasePC": DEFAULT(0), # SR at pre commit
-    "oracleEarlyCommit": DEFAULT(0)
+    "oracleEarlyCommit": DEFAULT(0),
+    "flushAtExecute": STORE_TRUE # Flush at execute
 }
 
 o3_config = {

@@ -12,17 +12,13 @@
 #include <functional>
 #include <iomanip>
 
-#include "arch/generic/isa.hh"
-#include "arch/riscv/pcstate.hh"
-#include "arch/riscv/regs/misc.hh"
+
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/exec_context.hh"
 #include "cpu/cva6/pipeline.hh"
 #include "cpu/op_class.hh"
 #include "debug/Branch.hh"
 #include "debug/Cva6BC.hh"
-#include "debug/Cva6Commit.hh"
-#include "debug/Cva6CommitCpt.hh"
 #include "debug/Cva6Execute.hh"
 #include "debug/Cva6Interrupt.hh"
 #include "debug/Cva6Mem.hh"
@@ -140,10 +136,14 @@ Execute::tryToBranch(Cva6DynInstPtr inst, BranchData &branch){
     DPRINTF(Branch, "tryToBranch : %s\n", branch);
 }
 
+
+
 /** Do the stats handling and instruction count and PC event events
  *  related to the new instruction/op counts */
 void doInstCommitAccounting(Cva6CPU& cpu, Cva6DynInstPtr inst){
-    assert(!inst->isFault());
+    if (inst->isFault()){ // Skip fault
+        return;
+    }
     Cva6Thread *thread = cpu.thread;
     /* Increment the many and various inst and op counts in the
      *  thread and system */
@@ -161,56 +161,12 @@ void doInstCommitAccounting(Cva6CPU& cpu, Cva6DynInstPtr inst){
     cpu.probeInstCommit(inst->staticInst, inst->pc->instAddr());
 }
 
-std::string instDump(Cva6DynInstPtr inst) {
-    std::ostringstream ss;
-    ss << *inst;
-    if (inst->staticInst->isMemRef()){
-        assert(inst->dreq);
-        // assert(inst->dreq->req->hasPaddr());
-        assert(inst->dreq->req->hasVaddr());
-        ss << std::hex;
-        ss << " VA=" << inst->dreq->req->getVaddr();
-        if (inst->dreq->req->hasPaddr()){
-            ss << " PA=" << inst->dreq->req->getPaddr();
-        }
-        // ss << " PTE=" << inst->dreq->req->pte;
-    }
-    return ss.str();
-}
-
 bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst){
     // ThreadContext *thread = cpu.thread->getTC(); // cpu.getContext();
 
-    DPRINTF(Cva6Execute, "executeCommit(%s)\n", *inst);
-    Fault fault = inst->executeCommit(cpu, *cpu.thread);
-    DPRINTF(Cva6Execute, "end executeCommit(%s)\n", *inst);
+    inst->executeCommit(cpu, *cpu.thread);
+    doInstCommitAccounting(cpu, inst);
 
-    if (fault != NoFault){
-        DPRINTF(Cva6Commit, "commit: %s fault: %s\n", *inst, fault->name());
-    } else {
-        static int cpt = 0;
-        if ((cpt++ % 100000) == 0){
-            DPRINTF(Cva6CommitCpt, "LLL: %s\n", instDump(inst));
-        }
-        inst->exec_data.pmode = inst->readMiscReg(RiscvISA::MISCREG_PRV);
-        char priv_c[] = {'U', 'S', '-', 'M'};
-        // PRV_U = 0,
-        // PRV_S = 1,
-        // PRV_M = 3
-        DPRINTF(Cva6Commit, "commit: [%c] %s\n", priv_c[inst->exec_data.pmode],
-            instDump(inst));
-        doInstCommitAccounting(cpu, inst);
-        if (inst->traceData){
-            inst->traceData->dump();
-        }
-        /*
-        static bool linuxTrace = false;
-        linuxTrace |= inst->pc->instAddr() > 0x80200000;
-        if (linuxTrace){
-            DPRINTF(Cva6CommitCpt, "commitLLL: %s\n", instDump(inst));
-        }
-        */
-    }
     /* Update state */
     commit_in_uop = !inst->isFault() &&
                     inst->staticInst->isMicroop() &&
@@ -224,7 +180,8 @@ bool commitInst(Cva6CPU& cpu, Cva6DynInstPtr inst){
     BranchData branch = getEffectiveBranch(inst);
     if (branch.need_squash){
         if (branch.is_predicted) { // Mret ...
-            assert(inst->staticInst->isNonSpeculative());
+            // TODO guard !
+            // assert(inst->staticInst->isNonSpeculative());
             cpu.pipeline->bp.squash(branch.num,
                 *branch.target, branch.actually_taken, 0);
         } else {
@@ -276,18 +233,21 @@ Execute::evaluate() {
     }
 
     // Test branch prediction at execute
-    for (Cva6DynInstPtr inst: cpu.pipeline->rob){
-        if (inst->execute_completed &&
-           inst->isMisspredict() &&
-           !inst->staticInst->isNonSpeculative()){
-            // Squash to the target
-            inst->_no_equal_when_match = true; // Hack to preserve inst
-            BranchData branch = getEffectiveBranch(inst);
-            cpu.pipeline->flushfrom(inst, branch);
-            inst->_no_equal_when_match = false;
-            // Fix inst and pred target and squash
-            inst->fixBranchPrediction();
-            break; // Stop
+    if (flushAtExecute){
+        for (Cva6DynInstPtr inst: cpu.pipeline->rob){
+            if (inst->execute_completed &&
+            inst->isMisspredict() &&
+            !inst->staticInst->isNonSpeculative()){
+                // Squash to the target
+                inst->_no_equal_when_match = true;
+                // Hack to preserve inst
+                BranchData branch = getEffectiveBranch(inst);
+                cpu.pipeline->flushfrom(inst, branch);
+                inst->_no_equal_when_match = false;
+                // Fix inst and pred target and squash
+                inst->fixBranchPrediction();
+                break; // Stop
+            }
         }
     }
 
@@ -482,7 +442,7 @@ Execute::checkInterrupts(){
     assert(FullSystem && cpu.getInterruptController());
     // TODO lastCommitWasEndOfMacroop
     if (cpu.checkInterrupts()) {
-        DPRINTF(Cva6Commit, "CAN IT?\n");
+        DPRINTF(Cva6Execute, "CAN IT?\n");
         if (commit_in_uop){
             return false;
         }

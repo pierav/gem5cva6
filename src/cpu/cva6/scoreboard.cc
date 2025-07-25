@@ -167,8 +167,13 @@ void
 Scoreboard::onInsert(Cva6DynInstPtr inst){
     assert(!inst->stage_issue_enter);
     inst->stage_issue_enter = true;
+    // Annotate SQ
+    inst->needSQAllocation = !inst->isFault() &&
+        inst->staticInst->isMemRef() &&
+        !inst->staticInst->isLoad();
     /* Markup serialisation */
     is_serialise_inflight += inst->needArchSerialize;
+    nb_stores_inflight += inst->needSQAllocation;
     /* Markup registers */
     for (PhysicalReg &reg: inst->regs_dst_phy){
         if (prf_isvp[reg]){ /* Nothing to do */
@@ -283,6 +288,8 @@ Scoreboard::commitInst(Cva6DynInstPtr& inst){
     // Remove the inst from the issue queue
     issue_queue.erase(inst);
     is_serialise_inflight -= inst->needArchSerialize;
+    nb_stores_inflight -= inst->needSQAllocation;
+
     DPRINTF(Cva6Scoreboard, "Commit %s %s\n",
         *inst, inst->needArchSerialize ? "[SER]" : "");
     /* There is no need to free the register !! */
@@ -294,16 +301,7 @@ Scoreboard::commitInst(Cva6DynInstPtr& inst){
 }
 
 void
-Scoreboard::tick(){
-    /* For all instructions to commit */
-    // while (!issue_queue.empty() &&
-    //       issue_queue.front()->commit_completed) {
-    //     /* Remove instruction from sb*/
-    //     /* pop issue queue*/
-    //     Cva6DynInstPtr inst = issue_queue.pop();
-    //     is_serialise_inflight -= inst->needArchSerialize;
-    // }
-}
+Scoreboard::tick(){}
 
 void
 Scoreboard::flushfrom(Cva6DynInstPtr inst){
@@ -318,6 +316,7 @@ Scoreboard::flushfrom(Cva6DynInstPtr inst){
         prf_isfault.setall(false);
         prf_isvp.setall(false);
         is_serialise_inflight = 0;
+        nb_stores_inflight = 0;
         _sb_is_unsafe.setall(false);
     } else {
         // Fix IQ
@@ -346,7 +345,11 @@ Scoreboard::flushfrom(Cva6DynInstPtr inst){
             if (i2->needArchSerialize){
                 assert(is_serialise_inflight);
             }
+            if (i2->needSQAllocation){
+                assert(nb_stores_inflight);
+            }
             is_serialise_inflight -= i2->needArchSerialize;
+            nb_stores_inflight -= i2->needSQAllocation;
             continue;
         }
     }

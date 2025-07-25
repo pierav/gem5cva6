@@ -56,7 +56,8 @@ inline Scoreboard& scoreboardInit(const std::string &name,
     return *new ScoreboardO3(name + ".sb", cpu, p.sbSize, inp,
       p.lsuSQSWidth);
   } else if (p.sbFSC) {
-    return *new ScoreboardFSC(name + ".sb", cpu, p.sbSize, inp);
+    return *new ScoreboardFSC(name + ".sb", cpu, p.sbSize, inp,
+      p.lsuSQSWidth);
   } else {
     return *new Scoreboard(name + ".sb", cpu, p.sbSize, inp);
   }

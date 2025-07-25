@@ -60,10 +60,15 @@ class BaseCva6CPU(BaseCPU):
     sbOoO = Param.Unsigned(0, "Enable OoO IQ")
     sbFSC = Param.Unsigned(0, "Enable FSC cpu model")
 
+    # Ex
+    flushAtExecute = Param.Unsigned(0, "Flush at Execute")
+
     numROBEntries = Param.Unsigned(64, "Rob size")
 
     issueWidth = Param.Unsigned(4, "Issue width")
     commitWidth = Param.Unsigned(4, "Commit Width")
+
+    # Rename
     renameSize = Param.Unsigned(64, "Rename size")
     renameIncArchReg = Param.Unsigned(0, "Sb arch(0) or Full RR(1)")
     renameFreeRegDead = Param.Unsigned(0, "Free Dead registers")

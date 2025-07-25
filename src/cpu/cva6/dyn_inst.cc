@@ -12,12 +12,17 @@
 #include <iomanip>
 #include <sstream>
 
+#include "arch/generic/isa.hh"
+#include "arch/riscv/pcstate.hh"
+#include "arch/riscv/regs/misc.hh"
 #include "cpu/base.hh"
 #include "cpu/cva6/exec_context.hh"
 #include "cpu/cva6/exec_context_speculative.hh"
 #include "cpu/cva6/exec_context_static.hh"
 #include "cpu/null_static_inst.hh"
 #include "cpu/reg_class.hh"
+#include "debug/Cva6Commit.hh"
+#include "debug/Cva6CommitCpt.hh"
 #include "debug/Cva6Execute.hh"
 #include "enums/OpClass.hh"
 
@@ -170,6 +175,16 @@ Cva6DynInst::basedump(std::ostream &os) const {
         }
         os << "]";
     }
+    if (execute_completed && !isFault() && staticInst->isMemRef()){
+        assert(dreq);
+        assert(dreq->req->hasVaddr());
+        os << std::hex;
+        os << " VA=" << dreq->req->getVaddr();
+        if (dreq->req->hasPaddr()){
+            os << " PA=" << dreq->req->getPaddr();
+        }
+        // ss << " PTE=" << inst->dreq->req->pte;
+    }
   }
   return os;
 }
@@ -309,43 +324,59 @@ Cva6DynInst::executeComplete(){
 Fault
 Cva6DynInst::executeCommit(Cva6CPU &cpu, SimpleThread &thread){
     DPRINTF(Cva6X, "executeCommit... %s\n", *this);
+    // Commit non fault instructions
+    if (!isFault() && staticInst->isNonSpeculative()){
+         // Ensure execute()
+        panic_if(staticInst->isMemRef(), "Cannot be memref");
+        // Execute in real context
+        ExecContext context(cpu, thread, this);
+        setFaultEx(staticInst->execute(&context, traceData));
+        // compute next pc
+        staticInst->advancePC(*pc_next);
+    } else if (!isFault() && !staticInst->isNonSpeculative()){
+        // Copy destination regs
+        for (unsigned int i = 0; i < staticInst->numDestRegs(); i++) {
+            RegId reg = staticInst->destRegIdx(i);
+            if (reg.classValue() != InvalidRegClass){
+                // Copy reg
+                RegVal regv = getDstRegOperand(i);
+                thread.setReg(reg, regv);
+            }
+        }
+        // Write CSR if needed
+        for (auto const& p: ex_csrs){
+            thread.setMiscReg(p.first, p.second);
+        }
+    }
+    // Handle fault at commit : jump to the next pc
     if (isFault()) {
         if (traceData) {
             traceData->setFaulting(true);
         }
         getFault()->invoke(thread.getTC());
     } else {
-        if (staticInst->isNonSpeculative()){ // Non speculative
-            // Ensure execute()
-            panic_if(staticInst->isMemRef(), "Cannot be memref");
-            // Execute in real context
-            ExecContext context(cpu, thread, this);
-            setFaultEx(staticInst->execute(&context, traceData));
-            // compute next pc
-            staticInst->advancePC(*pc_next);
-            if (isFault()) {
-                if (traceData) {
-                    traceData->setFaulting(true);
-                }
-                getFault()->invoke(thread.getTC());
-                return getFault();
-            }
-        } else { // Speculative execution:
-            // Copy destination regs
-            for (unsigned int i = 0; i < staticInst->numDestRegs(); i++) {
-                RegId reg = staticInst->destRegIdx(i);
-                if (reg.classValue() != InvalidRegClass){
-                    // Copy reg
-                    RegVal regv = getDstRegOperand(i);
-                    thread.setReg(reg, regv);
-                }
-            }
-            // Write CSR if needed
-            for (auto const& p: ex_csrs){
-                thread.setMiscReg(p.first, p.second);
-            }
-        }
         thread.pcState(*pc_next);
+    }
+
+    /* Dump */
+    if (isFault()){
+        DPRINTF(Cva6Commit, "commit: %s fault: %s\n",
+            *this, getFault()->name());
+    } else {
+        static int cpt = 0;
+        if ((cpt++ % 100000) == 0){
+            DPRINTF(Cva6CommitCpt, "LLL: %s\n", *this);
+        }
+        exec_data.pmode = readMiscReg(RiscvISA::MISCREG_PRV);
+        char priv_c[] = {'U', 'S', '-', 'M'};
+        // PRV_U = 0,
+        // PRV_S = 1,
+        // PRV_M = 3
+        DPRINTF(Cva6Commit, "commit: [%c] %s\n",
+            priv_c[exec_data.pmode], *this);
+        if (traceData){
+            traceData->dump();
+        }
     }
     return getFault();
 }
