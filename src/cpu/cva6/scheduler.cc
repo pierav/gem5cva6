@@ -49,18 +49,52 @@ PhysicalRegAllocator::flushfrom(Cva6DynInstPtr& inst){
       }
     }
   } else {
-    // Cannot flush from random place ?
-    // Symply clear the rmt
-    // rmt.setall(PREG_MAGIC);
-    rmt_valid.setall(false);
-    isbuzy.setall(FREE_COMMIT);
-    inFF.setall(false);
-    cannotbefreed.setall(false);
-    // And reset FL
-    free_list_popped.clear();
-    free_list.clear();
-    for (int i = 0; i < n; i++){
-      free_list.push_back(i);
+    if (inst->isBubble()){
+      // Cannot flush from random place ?
+      // Symply clear the rmt
+      // rmt.setall(PREG_MAGIC);
+      rmt_valid.setall(false);
+      isbuzy.setall(FREE_COMMIT);
+      inFF.setall(false);
+      cannotbefreed.setall(false);
+      // And reset FL
+      free_list_popped.clear();
+      free_list.clear();
+      for (int i = 0; i < n; i++){
+        free_list.push_back(i);
+      }
+    } else {
+      auto rob = cpu.pipeline->rob;
+      for (auto it = rob.rbegin(); it != rob.rend(); it++){
+        Cva6DynInstPtr &i2 = *it;
+        // ([][][x])[][]
+        if (!i2->isAfterOrEqual(inst)){
+          break; // InO no need to continue
+        }
+        if (!i2->regs_dst_phy.size()){
+          continue; // No rd preg
+        }
+        DPRINTF(Cva6Rename, "Free inst : %s :: %s\n",
+          *i2, i2->regs_dst_phy.front());
+        assert(i2->phys_reg_to_free.size() == 1);
+        PhysicalReg& new_mapping = i2->regs_dst_phy.front();
+        PhysicalReg& old_mapping = i2->phys_reg_to_free.front();
+        // Fix things:
+        // assert(free_list_popped.back() == new_mapping.phys_reg_idx);
+        assert(new_mapping.virt_reg_idx == old_mapping.virt_reg_idx);
+        free_list.push_front(new_mapping.phys_reg_idx);
+        /// free_list_popped.pop_back();
+        rmt_valid[new_mapping] = false;
+        isbuzy[new_mapping] = FREE_COMMIT;
+        inFF[new_mapping] = false;
+        cannotbefreed[new_mapping] = false;
+
+        /* Restore old */
+        // rmt[old_mapping] = old_mapping.phys_reg_idx;
+        // rmt_owner[old_mapping] = old_mapping.producer_id;
+        // rmt_valid[old_mapping] = true;
+        // isbuzy[old_mapping] = BUZY;
+      }
     }
   }
 }
