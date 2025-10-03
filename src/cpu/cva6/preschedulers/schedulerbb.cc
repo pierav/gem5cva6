@@ -1,3 +1,12 @@
+/**
+ * @file schedulerbb.cc
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief BasicBlock FIFO scheduler
+ * @version 0.1
+ * @date 2025-07-08
+ *
+ */
+
 #include "cpu/cva6/preschedulers/schedulerbb.hh"
 
 namespace gem5 {

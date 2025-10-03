@@ -1,6 +1,6 @@
 /**
  * @file pipeline.cc
- * @author Pierre Ravenel (pravenel@kalray.eu)
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
  * @brief The full pipeline
  * @version 0.1
  * @date 2023-05-25

@@ -1,7 +1,7 @@
 /**
  * @file orache.hh
  * @author Pierre Ravenel (pravenel@kalrayinc.com)
- * @brief Scheduler Dataflow Orache
+ * @brief Scheduler Dataflow Oracle
  * @version 1.0
  * @date 2025-07-16
  */

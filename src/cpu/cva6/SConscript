@@ -20,7 +20,6 @@ if env['CONF']['BUILD_ISA']:
 
     Source('func_unit.cc')
     Source('pipe_data.cc')
-    Source('buffer.cc')
     Source('pipeline.cc')
     Source('scoreboard.cc')
     Source('stats.cc')

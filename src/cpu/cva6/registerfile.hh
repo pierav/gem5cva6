@@ -1,3 +1,13 @@
+/**
+ * @file registerfile.hh
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief Generic register file
+ * @version 0.1
+ * @date 2025-07-08
+ *
+ */
+
+
 #pragma once
 
 #include <bits/stdc++.h>

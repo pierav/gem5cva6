@@ -1,3 +1,12 @@
+/**
+ * @file ppure_block.cc
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief
+ * @version 0.1
+ * @date 2025-07-08
+ *
+ */
+
 #include "cpu/cva6/pure_block.hh"
 
 #include <fcntl.h>

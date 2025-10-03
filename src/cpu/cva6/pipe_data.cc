@@ -1,3 +1,11 @@
+/**
+ * @file pipe_data.hh
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief
+ * @version 1.0
+ * @date 2023-05-25
+ */
+
 #include "cpu/cva6/pipe_data.hh"
 
 namespace gem5 {

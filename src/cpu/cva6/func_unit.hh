@@ -1,6 +1,6 @@
 /**
  * @file func_unit.hh
- * @author Pierre Ravenel (pravenel@kalray.eu)
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
  * @brief Execute function unit descriptions and pipeline implementations.
  * @version 0.1
  * @date 2023-05-25

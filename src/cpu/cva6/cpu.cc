@@ -1,3 +1,11 @@
+/**
+ * @file cpu.cc
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief Top level definition of the Cva6 in-order CPU model
+ * @version 1.0
+ * @date 2023-05-25
+ */
+
 #include "cpu/cva6/cpu.hh"
 
 #include "arch/riscv/faults.hh"

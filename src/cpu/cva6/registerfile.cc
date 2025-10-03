@@ -1,3 +1,12 @@
+/**
+ * @file registerfile.cc
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief Generic register file
+ * @version 0.1
+ * @date 2025-07-08
+ *
+ */
+
 #include "cpu/cva6/registerfile.hh"
 #include "cpu/reg_class.hh"
 

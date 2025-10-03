@@ -1,9 +1,9 @@
-
 /**
- * @file
- *
- * Base interface for functional unit
- *
+ * @file fu_base.hh
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief Base interface for functional unit
+ * @version 1.0
+ * @date 2023-05-25
  */
 
 #include <ostream>

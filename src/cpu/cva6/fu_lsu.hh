@@ -1,6 +1,6 @@
 /**
  * @file fu_lsu.hh
- * @author Pierre Ravenel (pravenel@kalray.eu)
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
  * @brief
  * @version 0.1
  * @date 20/01/2023

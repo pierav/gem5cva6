@@ -1,6 +1,6 @@
 /**
  * @file stage_fetch2.cc
- * @author Pierre Ravenel (pravenel@kalray.eu)
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
  * @brief
  * @version 1.0
  * @date 2023-05-25

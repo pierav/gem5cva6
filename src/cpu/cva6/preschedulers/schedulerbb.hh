@@ -1,3 +1,13 @@
+/**
+ * @file schedulerbb.hh
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief BasicBlock FIFO scheduler
+ * @version 0.1
+ * @date 2025-07-08
+ *
+ */
+
+
 #pragma once
 
 #include "cpu/cva6/pipeline.hh"

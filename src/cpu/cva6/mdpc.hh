@@ -1,6 +1,6 @@
 /**
  * @file mdpc.hh
- * @author Pierre Ravenel (pravenel@kalray.eu)
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
  * @brief Memory Dependancy Prediction Checker
  * @version 0.1
  * @date 2025-07-08

@@ -1,8 +1,10 @@
 /**
- * @file
- *
- *  Contains class definitions for data flowing between pipeline stages in
- *  the top-level structure portion of this model.
+ * @file pipe_data.cc
+ * @author Pierre Ravenel (pravenel@kalrayinc.com)
+ * @brief Contains class definitions for data flowing between
+ * pipeline stages in the top-level structure portion of this model.
+ * @version 1.0
+ * @date 2023-05-25
  */
 
 #pragma once
