@@ -440,6 +440,7 @@ class Cva6DynInst : public RefCounted
     /* Scheduler data */
     bool free_reg_at_commit = false;
     uint64_t scheduled_time = 0;
+    uint64_t scheduled_time_oracle = 0;
 
     /************ Commit ******************/
     bool commit_completed = false; // Used by LSU store buffer

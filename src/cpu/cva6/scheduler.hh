@@ -628,23 +628,9 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   struct Stats : public statistics::Group
   {
     statistics::Scalar req;
-    statistics::Scalar rescheduled;
-    statistics::Scalar load_bypass_store;
-    statistics::Scalar mdp_false_positive;
-    statistics::Scalar mdp_true_positive;
-    statistics::Scalar mdp_true_negative;
-    statistics::Scalar mdp_false_negative;
-
     Stats(Cva6CPU &cpu) :
       statistics::Group(&cpu, "SchedulerPM"),
-      ADD_STAT(req, ""),
-      ADD_STAT(rescheduled, ""),
-      ADD_STAT(load_bypass_store, "A load bypassed a previous store"),
-      ADD_STAT(mdp_false_positive, ""),
-      ADD_STAT(mdp_true_positive, ""),
-      ADD_STAT(mdp_true_negative, ""),
-      ADD_STAT(mdp_false_negative, "")
-    { }
+      ADD_STAT(req, "")  { }
   } stats;
 
 
