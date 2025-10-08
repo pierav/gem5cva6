@@ -292,6 +292,7 @@ Execute::evaluate() {
             }
             stats.flush ++;
             stats.flush_mdp += 1;
+            stats.flush_mdp_drop += cpu.pipeline->bc.size();
             cpu.pipeline->hcpred.violation(inst);
             // assert(0);
             do_flush();
@@ -358,6 +359,11 @@ Execute::evaluate() {
             stats.flush_load += inst->isFault()
                  && inst->staticInst
                  && inst->staticInst->isLoad();
+            // Account the dropped instructions
+            if (!inst->isFault() && inst->staticInst->isControl()) {
+                stats.flush_control += 1;
+                stats.flush_control_drop += cpu.pipeline->bc.size();
+            }
         }
 
         // Oracle: Early commit

@@ -31,6 +31,7 @@ class BaseCva6CPU(BaseCPU):
     branchPred = Param.BranchPredictor(LocalBP(
         numThreads = Parent.numThreads), "Branch Predictor")
 
+    storeSetSize = Param.Unsigned(1024, "StoreSet Size")
 
     # LSU
     lsuSQCWidth = Param.Unsigned(16, "Store Queue Commit size")

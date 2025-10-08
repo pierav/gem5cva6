@@ -172,7 +172,7 @@ class Pipeline : public Ticked
       fus(cpu.name() + ".fus", cpu, p),
       iq(cpu.name() + ".iq", cpu, p, (ForwardInstDataPopIntf&)sa, fus),
       rob(cpu.name() + ".rob", p.numROBEntries),
-      mdp(1024),
+      mdp(p.storeSetSize),
       mdpc(cpu.name() + "mdpc", cpu),
       /* Misc */
       plugins(cpu.name(), cpu, p),

@@ -69,7 +69,8 @@ cva6_config = {
     "renameSpecRelease": DEFAULT(0), # Speculative Release
     "renameSpecReleasePC": DEFAULT(0), # SR at pre commit
     "oracleEarlyCommit": DEFAULT(0),
-    "flushAtExecute": STORE_TRUE # Flush at execute
+    "flushAtExecute": STORE_TRUE, # Flush at execute
+    "storeSetSize": DEFAULT(1024)
 }
 
 o3_config = {

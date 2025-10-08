@@ -114,6 +114,11 @@ class Execute : public Named
       statistics::Scalar flush_vp;
       statistics::Scalar flush_load;
 
+      statistics::Scalar flush_control;
+      statistics::Scalar flush_control_drop;
+      statistics::Scalar flush_mdp_drop;
+
+
       ExStats(Cva6CPU &cpu) :
         statistics::Group(&cpu, "exec"),
         ADD_STAT(flush, ""),
@@ -126,7 +131,10 @@ class Execute : public Named
         ADD_STAT(flush_serialise, ""),
         ADD_STAT(flush_mdp, ""),
         ADD_STAT(flush_vp, ""),
-        ADD_STAT(flush_load, "") {  }
+        ADD_STAT(flush_load, ""),
+        ADD_STAT(flush_control, ""),
+        ADD_STAT(flush_control_drop, ""),
+        ADD_STAT(flush_mdp_drop, "") {  }
     } stats;
   protected:
 
