@@ -518,6 +518,12 @@ SchedulerPierreMichaud::getScheduleLine(Cva6DynInstPtr inst, uint64_t &delta){
     } else {
       schedule_line = std::max({schedule_line, sl_rr, sl_mdp});
     }
+    // Load serialisation
+    // uint64_t store_schedule_line = 0;
+    // if (last_store_time > base_time){
+    //   store_schedule_line = last_store_time - base_time;
+    // }
+    // schedule_line = std::max({schedule_line, sl_rr, store_schedule_line});
   } else if (!inst->isFault() && inst->staticInst->isStore()) {
     schedule_line = std::max({schedule_line, sl_rr, sl_st, sl_mdp});
   } else {

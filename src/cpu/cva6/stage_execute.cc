@@ -208,6 +208,9 @@ Execute::evaluate() {
         DPRINTF(Cva6Interrupt, "Invoking interrupt: %s\n",
             interrupt->name());
         cpu.pipeline->sa.fixer.clear_on_it();
+        stats.flush += 1;
+        stats.flush_it += 1;
+        stats.flush_it_drop += cpu.pipeline->bc.size();;
         do_flush();
         return;
     }
@@ -338,8 +341,12 @@ Execute::evaluate() {
         /* Some stats */
         if (inst->isASquash()){
             stats.flush ++;
-            stats.flush_serialise += !inst->isFault()
-                && inst->staticInst->isSerializeAfter();
+            if (!inst->isFault()
+                && inst->staticInst->isSerializeAfter()){
+                stats.flush_serialise += 1;
+                stats.flush_serialise_drop += cpu.pipeline->bc.size();
+            }
+
             stats.flush_squashafter += !inst->isFault()
                 && !inst->staticInst->isSerializeAfter()
                 && inst->staticInst->isSquashAfter();
@@ -356,9 +363,14 @@ Execute::evaluate() {
             stats.flush_uncond_indirect += !inst->isFault()
                 && inst->staticInst->isUncondCtrl()
                 && inst->staticInst->isIndirectCtrl();
-            stats.flush_load += inst->isFault()
+
+            if (inst->isFault()
                  && inst->staticInst
-                 && inst->staticInst->isLoad();
+                 && inst->staticInst->isLoad()) {
+                stats.flush_load += 1;
+                stats.flush_load += cpu.pipeline->bc.size();
+            }
+
             // Account the dropped instructions
             if (!inst->isFault() && inst->staticInst->isControl()) {
                 stats.flush_control += 1;
