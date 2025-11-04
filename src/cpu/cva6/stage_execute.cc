@@ -368,7 +368,7 @@ Execute::evaluate() {
                  && inst->staticInst
                  && inst->staticInst->isLoad()) {
                 stats.flush_load += 1;
-                stats.flush_load += cpu.pipeline->bc.size();
+                stats.flush_load_drop += cpu.pipeline->bc.size();
             }
 
             // Account the dropped instructions
