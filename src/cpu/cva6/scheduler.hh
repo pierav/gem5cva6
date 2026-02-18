@@ -103,6 +103,11 @@ class PhysicalRegAllocator : public Named
   bool isInFF(uint64_t preg){
     return isbuzy[preg] == FREE_COMMIT && inFF[preg];
   }
+
+  bool isFree(uint64_t preg){
+    return isbuzy[preg] == FREE_COMMIT || isbuzy[preg] == FREE_SPEC;
+  }
+  
   std::string dump(){
     std::ostringstream os;
     os << '[';

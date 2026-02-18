@@ -446,9 +446,9 @@ class Plugins
     plugins.push_back(new PluginGoodbadTrap(name_ + "gbt", cpu, params));
     // plugins.push_back(new PluginLambda(name_ + "lambda", cpu, params));
     // plugins.push_back(new PluginMemConst(name_ + "memc", cpu, params));
-    plugins.push_back(new PluginScheduler(name_ + ".sched", cpu, params));
+    // plugins.push_back(new PluginScheduler(name_ + ".sched", cpu, params));
     plugins.push_back(new PluginHMP(name_ + ".hmp", cpu, params));
-    plugins.push_back(new PluginChecker(name_ + ".checker", cpu, params));
+    // plugins.push_back(new PluginChecker(name_ + ".checker", cpu, params));
     plugins.push_back(new PluginTageHC(name_ + ".tagehc", cpu, params));
   }
 

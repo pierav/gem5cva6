@@ -388,8 +388,9 @@ SECTIONS
     #     exit(1)
     # cc = f"{RISCV_DIR}/bin/riscv64-unknown-elf-gcc"
     cc = "riscv64-unknown-elf-gcc"
+    cc = "/fast-scratch/ravenelp/RISV/toolchain15.1/bin/riscv64-unknown-elf-gcc"
     incs = f"-I{m5.options.outdir}"
-    cflags = "-march=rv32i -mabi=ilp32 -nostdlib -static -std=gnu99"
+    cflags = "-march=rv32i_zicsr -mabi=ilp32 -nostdlib -static -std=gnu99"
     ldflags = f"-T{linker_file} -Wl,--no-gc-sections,-e_start"
     cmd = f"{cc} {incs} {cflags} -o {elf_file} {bootrom_file} {ldflags}"
     # try:

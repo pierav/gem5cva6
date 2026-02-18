@@ -692,6 +692,7 @@ SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
   uint64_t schedule_time = schedule_line + base_time;
   // DPRINTF(Cva6Sched, "canRenameDest line %d T %d : %s\n",
   //   schedule_line, schedule_time, dumpInstPreg(inst));
+  #if 1
   for (uint64_t pregi: FL){
     // bool same_mapping = physical2arch[pregi] == arch_reg_idx;
     // bool inFF = cpu.pipeline->sa.regalloc.isInFF(pregi);
@@ -713,8 +714,39 @@ SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
       max_schedule_time = preg_use_time;
       preg = pregi;
       hit = true;
+      return hit;
     }
   }
+  #endif
+
+  # if 0
+  // For all physical register
+  for (uint64_t pregi = 0; pregi < cpu.pipeline->sa.regalloc.size(); pregi++){
+    // First filter free register
+    bool free = cpu.pipeline->sa.regalloc.isFree(pregi);
+    if(!free){
+      assert(std::find(FL.begin(), FL.end(), pregi) == FL.end());// quick check
+      continue;
+    }
+    assert(std::find(FL.begin(), FL.end(), pregi) != FL.end());// quick check
+
+    // Second: filter by constraint
+    uint64_t preg_use_time = maxtimeoflasttouch[pregi];
+    bool invalid = (preg_use_time > schedule_time); /* Suboptimal schedule */
+    if (invalid){
+      continue;
+    }
+
+    // Finally take optimal
+    if (!hit || (max_schedule_time < preg_use_time)){
+      /* Use this line */
+      max_schedule_time = preg_use_time;
+      preg = pregi;
+      hit = true;
+      return true;
+    }
+  }
+  #endif
   return hit;
 }
 
