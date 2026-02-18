@@ -4,6 +4,7 @@
 #  brief: main python launcher
 #
 import sys
+
 print(sys.version)
 
 import argparse
@@ -12,16 +13,20 @@ import sys
 import m5
 from m5.defines import buildEnv
 from m5.objects import *
-from m5.util import addToPath, fatal, warn
+from m5.util import (
+    addToPath,
+    fatal,
+    warn,
+)
 from m5.util.fdthelper import *
 
 # TODO !!!
-addToPath('../')
+addToPath("../")
+from os import path
+
 # addToPath("/nfs/home/pravenel/gem7/configs/")
 from common import Options
-
 from common.SysPaths import binary
-from os import path
 
 parser = argparse.ArgumentParser()
 # Options.addCommonOptions(parser)
@@ -31,46 +36,44 @@ parser.add_argument("--kernel", action="store", type=str)
 parser.add_argument("--issueWidth", action="store", type=int, default=4)
 
 # Prefetcher size
-parser.add_argument("--pfSize", action='store', type=str, default='64')
-parser.add_argument("--pf2Size", action='store', type=str, default='256')
+parser.add_argument("--pfSize", action="store", type=str, default="64")
+parser.add_argument("--pf2Size", action="store", type=str, default="256")
 
-STORE_TRUE = { "action": "store_true" }
-DEFAULT = lambda x : { "default":x }
+STORE_TRUE = {"action": "store_true"}
+DEFAULT = lambda x: {"default": x}
 
-common_config = {
-    "numROBEntries": DEFAULT(64)
-}
+common_config = {"numROBEntries": DEFAULT(64)}
 
 cva6_config = {
     **common_config,
-    "lsuSQCWidth" : DEFAULT(32), # SQCommit size
-    "lsuSQSWidth" : DEFAULT(32), # SQSpecualtive size
-    "loadPerCycle" : DEFAULT(2), # Number of load per cycle
-    "frontLatency" : DEFAULT(0), # Branch pred miss extra penality
-    "mcSize" : DEFAULT(0), # The minicache size
-    "vpSize" : DEFAULT(0), # The Value Predictor Size
-    "vpType" : DEFAULT(0), # The Value Predictor Type
-    "vpFlush" :  STORE_TRUE, # Flush on missprediction
-    "dpeTestMode" : STORE_TRUE,
-    "dpeIgnore" : STORE_TRUE,
-    "lltSize" : DEFAULT(0), # Enable lambda things ...
-    "sbSize" : DEFAULT(32), # Scoreboard size
+    "lsuSQCWidth": DEFAULT(32),  # SQCommit size
+    "lsuSQSWidth": DEFAULT(32),  # SQSpecualtive size
+    "loadPerCycle": DEFAULT(2),  # Number of load per cycle
+    "frontLatency": DEFAULT(0),  # Branch pred miss extra penality
+    "mcSize": DEFAULT(0),  # The minicache size
+    "vpSize": DEFAULT(0),  # The Value Predictor Size
+    "vpType": DEFAULT(0),  # The Value Predictor Type
+    "vpFlush": STORE_TRUE,  # Flush on missprediction
+    "dpeTestMode": STORE_TRUE,
+    "dpeIgnore": STORE_TRUE,
+    "lltSize": DEFAULT(0),  # Enable lambda things ...
+    "sbSize": DEFAULT(32),  # Scoreboard size
     "sbOoO": STORE_TRUE,
     "sbFSC": STORE_TRUE,
-    "schedType" : DEFAULT(0), # The type of scheduler used in frontend
-    "schedSize" : DEFAULT(128),
-    "schedWidth" : DEFAULT(4),
+    "schedType": DEFAULT(0),  # The type of scheduler used in frontend
+    "schedSize": DEFAULT(128),
+    "schedWidth": DEFAULT(4),
     "schedRegBarrier": DEFAULT(16),
     "schedDisableRB": DEFAULT(0),
-    "userelf": DEFAULT(""), # User elf for symbols only
-    "renameSize": DEFAULT(16), # Default 16 extra reg
-    "renameIncArchReg": DEFAULT(0), # Include ARCH in PRF
-    "renameFreeRegDead": DEFAULT(0), # Free reg dead (bugs)
-    "renameSpecRelease": DEFAULT(0), # Speculative Release
-    "renameSpecReleasePC": DEFAULT(0), # SR at pre commit
+    "userelf": DEFAULT(""),  # User elf for symbols only
+    "renameSize": DEFAULT(16),  # Default 16 extra reg
+    "renameIncArchReg": DEFAULT(0),  # Include ARCH in PRF
+    "renameFreeRegDead": DEFAULT(0),  # Free reg dead (bugs)
+    "renameSpecRelease": DEFAULT(0),  # Speculative Release
+    "renameSpecReleasePC": DEFAULT(0),  # SR at pre commit
     "oracleEarlyCommit": DEFAULT(0),
-    "flushAtExecute": STORE_TRUE, # Flush at execute
-    "storeSetSize": DEFAULT(1024)
+    "flushAtExecute": STORE_TRUE,  # Flush at execute
+    "storeSetSize": DEFAULT(1024),
 }
 
 o3_config = {
@@ -80,7 +83,7 @@ o3_config = {
     "numPhysFloatRegs": DEFAULT(168),
     "numPhysVecRegs": DEFAULT(168),
     "LQEntries": DEFAULT(32),
-    "SQEntries": DEFAULT(32)
+    "SQEntries": DEFAULT(32),
 }
 
 parser.add_argument("--plugmemtrace", action="store_true")
@@ -89,53 +92,94 @@ for k, v in {**cva6_config, **o3_config}.items():
     parser.add_argument("--" + k, **v)
 
 # CPU
-parser.add_argument("--cpu", choices=['cva', 'o3', 'amo'], default='cva')
+parser.add_argument("--cpu", choices=["cva", "o3", "amo"], default="cva")
 
 
 # IO
 parser.add_argument("--disk", action="store", type=str, help="Virtio disk")
 
 # L1
-parser.add_argument("--l1dsize", action="store", type=str, default='64kB',
-                    help="L1 data cache size. Default: 64kB.")
-parser.add_argument("--l1dlat", action="store", type=int, default=4,
-                    help="L1 data latency. Default: 4")
+parser.add_argument(
+    "--l1dsize",
+    action="store",
+    type=str,
+    default="64kB",
+    help="L1 data cache size. Default: 64kB.",
+)
+parser.add_argument(
+    "--l1dlat",
+    action="store",
+    type=int,
+    default=4,
+    help="L1 data latency. Default: 4",
+)
 parser.add_argument("--l2dlat", default=10, help="L2 data latency")
 
 
 # Checkpoints
-parser.add_argument("--cpt", action="store", type=str, default=None,
-                    help="restore checkpoint dir")
-parser.add_argument("--simcpt", action="store", type=str, default=None,
-                    help="Restore simpoint and do measurements")
-parser.add_argument("--exitOnCpt", action='store_true')
+parser.add_argument(
+    "--cpt",
+    action="store",
+    type=str,
+    default=None,
+    help="restore checkpoint dir",
+)
+parser.add_argument(
+    "--simcpt",
+    action="store",
+    type=str,
+    default=None,
+    help="Restore simpoint and do measurements",
+)
+parser.add_argument("--exitOnCpt", action="store_true")
 
 # Simpoint options (Pass 1 : collect statistics)
-parser.add_argument("--simpoint-profile", action="store_true",
-                    help="Enable basic block profiling for SimPoints")
-parser.add_argument("--simpoint-interval", type=int, default=10000000,
-                    help="SimPoint interval in num of instructions")
+parser.add_argument(
+    "--simpoint-profile",
+    action="store_true",
+    help="Enable basic block profiling for SimPoints",
+)
+parser.add_argument(
+    "--simpoint-interval",
+    type=int,
+    default=10000000,
+    help="SimPoint interval in num of instructions",
+)
 # Simpoint options (Pass 2 : take simpoints checkpoints)
-parser.add_argument("--take-simpoint-checkpoints", action="store", type=str,
-        help="<simpoint file,weight file,interval-length,warmup-length>")
+parser.add_argument(
+    "--take-simpoint-checkpoints",
+    action="store",
+    type=str,
+    help="<simpoint file,weight file,interval-length,warmup-length>",
+)
 
 
 # Run duration options
-parser.add_argument("-I", "--maxinsts", action="store", type=int, default=None,
-                    help="Total number of instructions to simulate")
+parser.add_argument(
+    "-I",
+    "--maxinsts",
+    action="store",
+    type=int,
+    default=None,
+    help="Total number of instructions to simulate",
+)
+
 
 # FUS
 class CVA6_ALU(FUDesc):
-    opList = [ OpDesc(opClass="IntAlu", opLat=1) ]
+    opList = [OpDesc(opClass="IntAlu", opLat=1)]
     count = 4
 
+
 class CVA6_MUL(FUDesc):
-    opList = [ OpDesc(opClass="IntMult", opLat=3) ]
+    opList = [OpDesc(opClass="IntMult", opLat=3)]
     count = 2
 
+
 class CVA6_SERDIV(FUDesc):
-    opList = [ OpDesc(opClass="IntDiv", opLat=8, pipelined=False) ]
+    opList = [OpDesc(opClass="IntDiv", opLat=8, pipelined=False)]
     count = 1
+
 
 class CVA6_FPU(FUDesc):
     opList = [
@@ -144,14 +188,15 @@ class CVA6_FPU(FUDesc):
         OpDesc(opClass="FloatCvt", opLat=3),
         OpDesc(opClass="FloatMult", opLat=3),
         OpDesc(opClass="FloatMultAcc", opLat=3),
-        OpDesc(opClass="FloatMisc", opLat=3)
+        OpDesc(opClass="FloatMisc", opLat=3),
     ]
     count = 4
+
 
 class CVA6_FPU_DIVSQRT(FUDesc):
     opList = [
         OpDesc(opClass="FloatDiv", opLat=18, pipelined=False),
-        OpDesc(opClass="FloatSqrt", opLat=18, pipelined=False)
+        OpDesc(opClass="FloatSqrt", opLat=18, pipelined=False),
     ]
     count = 2
 
@@ -178,7 +223,7 @@ if args.simpoint_profile or args.take_simpoint_checkpoints:
 
 CONFIG_USE_CACHES = 1
 CONFIG_USE_CACHE_L2 = 1
-CONFIG_USE_PTW_CACHES = True # Needed only for buzybox ?!
+CONFIG_USE_PTW_CACHES = True  # Needed only for buzybox ?!
 CONFIG_USE_DDR = True
 
 # GO fast
@@ -193,9 +238,9 @@ if CONFIG_USE_ATOMIC:
 
 # Memory mapping
 BASE_ADDR_BOOTROM = 0x10000
-addr_range_bootrom = AddrRange(start=BASE_ADDR_BOOTROM, size='32KiB')
+addr_range_bootrom = AddrRange(start=BASE_ADDR_BOOTROM, size="32KiB")
 BASE_ADDR_MEM = 0x80000000
-addr_range_mem = AddrRange(start=BASE_ADDR_MEM, size='16GiB')
+addr_range_mem = AddrRange(start=BASE_ADDR_MEM, size="16GiB")
 
 # 8000_0000 : BFFF_FFFF : 1 GB ram
 # C000_0000 : FFFF_FFFF : 1 GB drive
@@ -213,22 +258,28 @@ BASE_ADDR_DRIVE = 0x180000000
 #     bootargs = "console=ttyS0 earlycon";
 #   };
 
+
 def generateChosen():
     node = FdtNode("chosen")
     node.append(FdtPropertyStrings("stdout-path", ["/soc/uart@10000000"]))
     node.append(FdtPropertyStrings("bootargs", ["console=ttyS0 earlycon"]))
     return node
 
+
 def generateMemNode(state, mem_range):
     node = FdtNode("memory@%x" % int(mem_range.start))
     node.append(FdtPropertyStrings("device_type", ["memory"]))
-    node.append(FdtPropertyWords("reg",
-        state.addrCells(mem_range.start) +
-        state.sizeCells(mem_range.size()) ))
+    node.append(
+        FdtPropertyWords(
+            "reg",
+            state.addrCells(mem_range.start)
+            + state.sizeCells(mem_range.size()),
+        )
+    )
     return node
 
-def generateDrive(state, mem_range):
 
+def generateDrive(state, mem_range):
     node = FdtNode("reserved-memory")
     node.append(state.addrCellsProperty())
     node.append(state.sizeCellsProperty())
@@ -238,24 +289,27 @@ def generateDrive(state, mem_range):
     node_part.append(FdtPropertyStrings("label", ["gem5drive"]))
     node_part.append(FdtProperty("no-map"))
 
-    node_part.append(FdtPropertyWords("reg",
-        state.addrCells(mem_range.start) +
-        state.sizeCells(mem_range.size() /4) ))
+    node_part.append(
+        FdtPropertyWords(
+            "reg",
+            state.addrCells(mem_range.start)
+            + state.sizeCells(mem_range.size() / 4),
+        )
+    )
     node.append(node_part)
 
     # node.append(FdtPropertyStrings("device_type", ["memory"]))
 
-#     reserved-memory {
-#    #address-cells = <2>;
-#    #size-cells = <2>;
-#    ranges;
+    #     reserved-memory {
+    #    #address-cells = <2>;
+    #    #size-cells = <2>;
+    #    ranges;
 
-#    reserved: buffer@0 {
-#       no-map;
-#       reg = <0x0 0x70000000 0x0 0x10000000>;
-#    };
-# };
-
+    #    reserved: buffer@0 {
+    #       no-map;
+    #       reg = <0x0 0x70000000 0x0 0x10000000>;
+    #    };
+    # };
 
     # node = FdtNode("memory")
     # local_state = FdtState(addr_cells=2, size_cells=2)
@@ -263,7 +317,6 @@ def generateDrive(state, mem_range):
     # node.append(FdtPropertyWords("reg",
     #     state.addrCells(mem_range.start) +
     #     state.sizeCells(mem_range.size() /4) ))
-
 
     # node_part = FdtNode("region@%x" % int(mem_range.start))
     # node_part.append(FdtPropertyStrings("label", ["gem5drive"]))
@@ -275,13 +328,14 @@ def generateDrive(state, mem_range):
     # node.append(node_part)
     return node
 
+
 def generateDtb(system, dtb_file):
     """
     Autogenerate DTB. Arguments are the folder where the DTB
     will be stored, and the name of the DTB file.
     """
     state = FdtState(addr_cells=2, size_cells=2, cpu_cells=1)
-    root = FdtNode('/')
+    root = FdtNode("/")
     root.append(state.addrCellsProperty())
     root.append(state.sizeCellsProperty())
     root.appendCompatible(["riscv-virtio"])
@@ -314,15 +368,13 @@ def generateDtb(system, dtb_file):
         state, "virtio_mmio", disk.pio_addr, disk.pio_size
     )
     disk_node.append(FdtPropertyWords("interrupts", [disk.interrupt_id]))
-    disk_node.append(
-        FdtPropertyWords("interrupt-parent", state.phandle(plic))
-    )
+    disk_node.append(FdtPropertyWords("interrupt-parent", state.phandle(plic)))
     disk_node.appendCompatible(["virtio,mmio"])
     root.append(disk_node)
 
     fdt = Fdt()
     fdt.add_rootnode(root)
-    fdt.writeDtsFile(path.join(m5.options.outdir, 'cva6.dts'))
+    fdt.writeDtsFile(path.join(m5.options.outdir, "cva6.dts"))
     fdt.writeDtbFile(dtb_file)
 
 
@@ -332,14 +384,14 @@ def write_file(file, data):
 
 
 def generate_bootrom(system, base_addr=0):
-    dtb_file = path.join(m5.options.outdir, 'cva6.dtb')
-    bootrom_file = path.join(m5.options.outdir, 'bootrom.S')
-    linker_file = path.join(m5.options.outdir, 'linker.ld')
-    elf_file = path.join(m5.options.outdir, 'bootrom.elf')
+    dtb_file = path.join(m5.options.outdir, "cva6.dtb")
+    bootrom_file = path.join(m5.options.outdir, "bootrom.S")
+    linker_file = path.join(m5.options.outdir, "linker.ld")
+    elf_file = path.join(m5.options.outdir, "bootrom.elf")
     # print("Generate dtb...")
     generateDtb(system, dtb_file=dtb_file)
 
-    bootrom = f'''
+    bootrom = f"""
 .section .text.start, "ax", @progbits
 .globl _start
 _start:
@@ -363,10 +415,10 @@ _hang:
 .align 5, 0
 _dtb:
 .incbin "{dtb_file}"
-'''
+"""
     write_file(bootrom_file, bootrom)
 
-    linker = '''
+    linker = """
 SECTIONS
 {
     ROM_BASE = 0x10000;
@@ -378,17 +430,18 @@ SECTIONS
     . = ROM_BASE + 0x80;
     .rodata.dtb : { *(.rodata.dtb) }
 }
-'''
+"""
     write_file(linker_file, linker)
-    import subprocess
     import os
+    import subprocess
+
     # RISCV_DIR = os.getenv("RISCV")
     # if RISCV_DIR is None:
     #     print("RISCV env var is not set")
     #     exit(1)
     # cc = f"{RISCV_DIR}/bin/riscv64-unknown-elf-gcc"
     cc = "riscv64-unknown-elf-gcc"
-    cc = "/fast-scratch/ravenelp/RISV/toolchain15.1/bin/riscv64-unknown-elf-gcc"
+    cc = "/crex/proj/uart/ravenelp/toolchain15.1/bin/riscv64-unknown-elf-gcc"
     incs = f"-I{m5.options.outdir}"
     cflags = "-march=rv32i_zicsr -mabi=ilp32 -nostdlib -static -std=gnu99"
     ldflags = f"-T{linker_file} -Wl,--no-gc-sections,-e_start"
@@ -409,9 +462,13 @@ SECTIONS
     # subprocess.run(f"readelf -h {elf_file}", shell=True)
     return elf_file
 
+
 l1delay = 0
+
+
 class L1Cache(Cache):
     """Simple L1 Cache with CVA6 values"""
+
     tag_latency = 0
     data_latency = 0
     response_latency = 0
@@ -422,7 +479,7 @@ class L1Cache(Cache):
     # write_buffers = 0
 
     def __init__(self, options=None):
-        super(L1Cache, self).__init__()
+        super().__init__()
         pass
 
     def connectBus(self, bus):
@@ -431,41 +488,45 @@ class L1Cache(Cache):
 
     def connectCPU(self, cpu):
         """Connect this cache's port to a CPU-side port
-           This must be defined in a subclass"""
+        This must be defined in a subclass"""
         raise NotImplementedError
+
 
 class L1ICache(L1Cache):
     """Simple L1 instruction cache with CVA6 values"""
-    size = '32kB'
+
+    size = "32kB"
     assoc = 4
     # is_read_only = True
-    response_latency = 0 # 3x5cycles
-    mshrs = 16 #
+    response_latency = 0  # 3x5cycles
+    mshrs = 16  #
 
     def __init__(self, opts=None):
-        super(L1ICache, self).__init__(opts)
+        super().__init__(opts)
 
     def connectCPU(self, cpu):
         """Connect this cache's port to a CPU icache port"""
         self.cpu_side = cpu.icache_port
 
+
 class L1DCache(L1Cache):
     """Simple L1 data cache with CVA6 values"""
+
     size = args.l1dsize
     assoc = 8
     # writeback_clean = True WTF is this ?
-    mshrs = 16 # 1 store, 1 load + 1 ???
+    mshrs = 16  # 1 store, 1 load + 1 ???
     # write_buffers = 1024
 
     # demand_mshr_reserve = 512 # MSHRs reserved for demand access
     # tgts_per_mshr = 256 # Max number of accesses per MSHR
 
     data_latency = args.l1dlat - 1
-    tag_latency =  args.l1dlat - 1
+    tag_latency = args.l1dlat - 1
     response_latency = 1
 
     def __init__(self, opts=None):
-        super(L1DCache, self).__init__(opts)
+        super().__init__(opts)
 
     def connectCPU(self, cpu):
         """Connect this cache's port to a CPU dcache port"""
@@ -473,7 +534,7 @@ class L1DCache(L1Cache):
 
 
 class L2Cache(Cache):
-    size = '256kB'
+    size = "256kB"
     assoc = 8
     tag_latency = args.l2dlat
     data_latency = args.l2dlat
@@ -495,11 +556,11 @@ def createHiFivePlatform(system):
     # Main bus without delays, datasize 64bits
     lat = 0
     system.membus = SystemXBar(
-        frontend_latency = lat,
-        forward_latency = lat,
-        response_latency = lat,
-        header_latency = lat,
-        width = 64
+        frontend_latency=lat,
+        forward_latency=lat,
+        response_latency=lat,
+        header_latency=lat,
+        width=64,
     )
     system.membus.badaddr_responder = BadAddr()
     system.membus.badaddr_responder.warn_access = "BAD ADDR ACCESS"
@@ -517,18 +578,18 @@ def createHiFivePlatform(system):
         # Useless
         # system.mem_ctrl.dram.device_size = "16GiB"
         system.mem_ctrl.dram.image_file = args.kernel
-        system.mem_ctrl.static_frontend_latency = '0ns'
-        system.mem_ctrl.static_backend_latency = '0ns'
+        system.mem_ctrl.static_frontend_latency = "0ns"
+        system.mem_ctrl.static_backend_latency = "0ns"
     else:
         system.mem_ctrl = SimpleMemory()
         system.mem_ctrl.range = addr_range_mem
         system.mem_ctrl.image_file = args.kernel
-        system.mem_ctrl.latency = '0ns'
+        system.mem_ctrl.latency = "0ns"
 
     if CONFIG_USE_ATOMIC:
         system.mem_ctrl.port = system.membus.mem_side_ports
     else:
-        system.rambridge = Bridge(delay='0ns')
+        system.rambridge = Bridge(delay="0ns")
         system.rambridge.cpu_side_port = system.membus.mem_side_ports
         system.rambridge.ranges = [addr_range_mem]
         # Single request memory
@@ -539,7 +600,7 @@ def createHiFivePlatform(system):
     # system.mem_ctrl.command_window = '1ns'
     # system.mem_ctrl.dram.
 
-    system.rombridge = Bridge(delay='0ns')
+    system.rombridge = Bridge(delay="0ns")
     system.rombridge.cpu_side_port = system.membus.mem_side_ports
     system.rombridge.ranges = [addr_range_bootrom]
     system.rombridge.req_size = 64
@@ -571,7 +632,7 @@ def createHiFivePlatform(system):
             # Connect the instruction and data caches to the CPU
             cpu.icache.connectCPU(cpu)
             cpu.dcache.connectCPU(cpu)
-            if CONFIG_USE_CACHE_L2: # L2
+            if CONFIG_USE_CACHE_L2:  # L2
                 # create L2
                 system.l2bus = L2XBar()
                 system.l2cache = L2Cache()
@@ -614,14 +675,13 @@ def createHiFivePlatform(system):
             cpu.itlbcache.connectBus(system.membus)
             cpu.dtlbcache = L1DCache()
             cpu.dtlbcache.connectBus(system.membus)
-            cpu.mmu.connectWalkerPorts(cpu.itlbcache.cpu_side,
-                                    cpu.dtlbcache.cpu_side)
+            cpu.mmu.connectWalkerPorts(
+                cpu.itlbcache.cpu_side, cpu.dtlbcache.cpu_side
+            )
         else:
             cpu.mmu.connectWalkerPorts(
-                system.membus.cpu_side_ports,
-                system.membus.cpu_side_ports)
-
-
+                system.membus.cpu_side_ports, system.membus.cpu_side_ports
+            )
 
     system.platform = HiFive()
     # Must be in src/dev/serial/uart
@@ -637,7 +697,7 @@ def createHiFivePlatform(system):
 
     # Add virtIO Disk
     if args.disk:
-        print(f'Setup virtio disk {args.disk}')
+        print(f"Setup virtio disk {args.disk}")
         # image = CowDiskImage(
         #     child=RawDiskImage(read_only=True), read_only=False
         # )
@@ -660,20 +720,20 @@ def createHiFivePlatform(system):
     disk_range = AddrRange(disk.pio_addr, size=disk.pio_size)
 
     # Ranges + pma checker config
-    maxaddr = 0xffffffffffffffff
+    maxaddr = 0xFFFFFFFFFFFFFFFF
     uncacheable = list(AddrRange(0, maxaddr).exclude([addr_range_mem]))
     iorange = [
-            *system.platform._on_chip_ranges(),
-            *system.platform._off_chip_ranges(),
-            disk_range
-        ]
+        *system.platform._on_chip_ranges(),
+        *system.platform._off_chip_ranges(),
+        disk_range,
+    ]
 
     pma_checker = PMAChecker(uncacheable=uncacheable)
     system.cpu[0].mmu.pma_checker = pma_checker
 
     # IOBUS: memory -> ios
     system.iobus = IOXBar()
-    system.bridge = Bridge(delay='0ns') # Bridge(delay='38000ns')
+    system.bridge = Bridge(delay="0ns")  # Bridge(delay='38000ns')
     system.bridge.mem_side_port = system.iobus.cpu_side_ports
     system.bridge.cpu_side_port = system.membus.mem_side_ports
     system.bridge.ranges = iorange
@@ -691,13 +751,14 @@ def good_bad_trap(elfname):
         return {}
     try:
         import lief
+
         binary = lief.parse(elfname)
     except:
         return {}
     try:
         return {
             "passAddr": binary.get_function_address("pass"),
-            "failAddr": binary.get_function_address("fail")
+            "failAddr": binary.get_function_address("fail"),
         }
     except:
         pass
@@ -705,7 +766,7 @@ def good_bad_trap(elfname):
         # print("Try pass/fail...")
         return {
             "passAddr": binary.get_symbol("pass").value,
-            "failAddr": binary.get_symbol("fail").value
+            "failAddr": binary.get_symbol("fail").value,
         }
     except:
         pass
@@ -713,26 +774,24 @@ def good_bad_trap(elfname):
         # print("Try shutdown/panic...") # TODO multiple elf
         return {
             "passAddr": 0,
-            "failAddr": binary.get_function_address("panic")
+            "failAddr": binary.get_function_address("panic"),
         }
     except:
         pass
-    return {
-            "passAddr": 0,
-            "failAddr": 0
-        }
+    return {"passAddr": 0, "failAddr": 0}
+
 
 print("*** Create system...")
 system = System()
 system.clk_domain = SrcClockDomain()
-system.clk_domain.clock = '1GHz' # '50MHz'
-system.clk_domain.voltage_domain=VoltageDomain()
+system.clk_domain.clock = "1GHz"  # '50MHz'
+system.clk_domain.voltage_domain = VoltageDomain()
 system.mem_ranges = [addr_range_mem]
-system.cache_line_size = 64 # 128 // 8
+system.cache_line_size = 64  # 128 // 8
 
 if not CONFIG_USE_ATOMIC:
     cpuConfig = good_bad_trap(args.kernel)
-    system.mem_mode = 'timing'
+    system.mem_mode = "timing"
     if CONFIG_USE_O3:
         # cpuConfig["fetchBufferSize"] = 16 # Bytes; same as I$
         cpuConfig["backComSize"] = 32
@@ -774,7 +833,7 @@ if not CONFIG_USE_ATOMIC:
             WritePort(count=4),
             RdWrPort(count=0),
             IprPort(),
-            SIMD_Unit()
+            SIMD_Unit(),
         ]
 
         cpuConfig["fuPool"] = FUPool(FUList=FUList)
@@ -787,7 +846,7 @@ if not CONFIG_USE_ATOMIC:
         cpuConfig["issueWidth"] = pipewidth
         cpuConfig["commitWidth"] = pipewidth
         if args.plugmemtrace:
-            path = path.join(m5.options.outdir, 'memtrace.bin')
+            path = path.join(m5.options.outdir, "memtrace.bin")
             cpuConfig["plugin_memtrace_path"] = path
         system.cpu = [RiscvCva6CPU(cpu_id=i, **cpuConfig) for i in range(1)]
 
@@ -831,11 +890,13 @@ for cpu in system.cpu:
 root = Root(full_system=True, system=system)
 
 from common import Simulation
+
 # from common import ObjectList
 # cls = ObjectList.cpu_list.get('RiscvTimingSimpleCPU')
 # ObjectList.cpu_list.print()
 # x = cls, cls.memory_mode()
 # print(cls)
+
 
 def simulate_with_checkpoint(totaltime=None):
     start_time = m5.curTick()
@@ -846,7 +907,7 @@ def simulate_with_checkpoint(totaltime=None):
             exit_event = m5.simulate(start_time + totaltime - m5.curTick())
         exit_cause = exit_event.getCause()
         cur_tick = m5.curTick()
-        print(f'Exiting @ tick {cur_tick} because {exit_cause}')
+        print(f"Exiting @ tick {cur_tick} because {exit_cause}")
         if exit_cause == "checkpoint":
             cpt_path = path.join(m5.options.outdir, f"cpt.{cur_tick}")
             print(f"*** Take checkpoint : {cpt_path}")
@@ -854,6 +915,7 @@ def simulate_with_checkpoint(totaltime=None):
         elif exit_cause != 0:
             print("Simulated exit code not 0! Exit code is", exit_cause)
             break
+
 
 if args.simpoint_profile:
     if not CONFIG_USE_ATOMIC:
@@ -870,8 +932,12 @@ if args.maxinsts:
 # Parse simpoints
 simpoints = []
 if args.take_simpoint_checkpoints != None:
-    simpoint_filename, weight_filename, INTERVAL, WARMUP = \
-        args.take_simpoint_checkpoints.split(",", 3)
+    (
+        simpoint_filename,
+        weight_filename,
+        INTERVAL,
+        WARMUP,
+    ) = args.take_simpoint_checkpoints.split(",", 3)
     print("simpoint analysis file:", simpoint_filename)
     print("simpoint weight file:", weight_filename)
     print("interval length:", INTERVAL)
@@ -881,9 +947,9 @@ if args.take_simpoint_checkpoints != None:
     with open(simpoint_filename) as simpoint_stream:
         with open(weight_filename) as weight_stream:
             for ls, lw in zip(simpoint_stream, weight_stream):
-                ts = int(ls.split(' ')[0])
-                we = float(lw.split(' ')[0])
-                if (ts * INTERVAL - WARMUP > 0):
+                ts = int(ls.split(" ")[0])
+                we = float(lw.split(" ")[0])
+                if ts * INTERVAL - WARMUP > 0:
                     start = ts * INTERVAL - WARMUP
                     warm = WARMUP
                 else:
@@ -898,19 +964,21 @@ if args.take_simpoint_checkpoints != None:
     print(starts)
     system.cpu[0].simpoint_start_insts = starts
     for s in simpoints:
-        print(f"Simpoint: @{s[0]}: [{s[0]+s[1]}-{s[1]}",
-              f" {s[0] + s[1] + INTERVAL}] x {s[2]}")
+        print(
+            f"Simpoint: @{s[0]}: [{s[0]+s[1]}-{s[1]}",
+            f" {s[0] + s[1] + INTERVAL}] x {s[2]}",
+        )
     print(f"Coverage : {sum(map(lambda x: x[2], simpoints))}")
 
 if args.simcpt:
     print(f"*** simpoint restore : {args.simcpt}")
-    spl = args.simcpt.split('_')
+    spl = args.simcpt.split("_")
     assert spl[-2] == "warmup"
     assert spl[-4] == "interval"
     interval = int(spl[-3])
     warm = int(spl[-1])
     print(f"*** simpoint restore {interval}, {warm}")
-    system.cpu[0].simpoint_start_insts =  [warm, warm + interval]
+    system.cpu[0].simpoint_start_insts = [warm, warm + interval]
 
     m5.instantiate(args.simcpt)
     print(f"*** simpoint restore @{m5.curTick()}, {[warm, warm + interval]}")
@@ -929,7 +997,7 @@ if args.simcpt:
             print("Done running SimPoint!")
             sys.exit(exit_event.getCode())
 
-    print('Exiting @ tick %i because %s' % (m5.curTick(), exit_cause))
+    print("Exiting @ tick %i because %s" % (m5.curTick(), exit_cause))
     sys.exit(exit_event.getCode())
 
 
@@ -961,17 +1029,23 @@ if args.take_simpoint_checkpoints != None:
             code = exit_event.getCode()
 
         if exit_cause == "simpoint starting point found":
-            m5.checkpoint(path.join(m5.options.outdir,
-                "cpt.simpoint_%02d_inst_%d_weight_%f_interval_%d_warmup_%d"
-                % (index, ts, weight, INTERVAL, warm)))
-            print("Checkpoint #%d written. start inst:%d weight:%f" %
-                (index, ts, weight))
+            m5.checkpoint(
+                path.join(
+                    m5.options.outdir,
+                    "cpt.simpoint_%02d_inst_%d_weight_%f_interval_%d_warmup_%d"
+                    % (index, ts, weight, INTERVAL, warm),
+                )
+            )
+            print(
+                "Checkpoint #%d written. start inst:%d weight:%f"
+                % (index, ts, weight)
+            )
             last_chkpnt_inst_count = ts
         else:
             break
         index += 1
 
-    print('Exiting @ tick %i because %s' % (m5.curTick(), exit_cause))
+    print("Exiting @ tick %i because %s" % (m5.curTick(), exit_cause))
     sys.exit(code)
 
 else:
@@ -979,7 +1053,7 @@ else:
         exit_event = m5.simulate()
         exit_cause = exit_event.getCause()
         cur_tick = m5.curTick()
-        print(f'Exiting @ tick {cur_tick} because {exit_cause}')
+        print(f"Exiting @ tick {cur_tick} because {exit_cause}")
         if exit_cause == "checkpoint":
             cpt_path = path.join(m5.options.outdir, f"cpt.{cur_tick}")
             print(f"*** Take checkpoint : {cpt_path}")

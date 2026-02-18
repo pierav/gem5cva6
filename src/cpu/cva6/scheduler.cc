@@ -6,6 +6,7 @@
  **/
 
 #include "cpu/cva6/scheduler.hh"
+
 #include "cpu/cva6/pipeline.hh"
 #include "cpu/cva6/scheduler_handler.hh"
 
@@ -167,6 +168,15 @@ SA::fixer_t::after_predict(Cva6DynInstPtr &inst){
       // }
     }
   }
+}
+
+
+bool
+SA::fixer_t::on_schedule_need_rb_noupdate(Cva6DynInstPtr &inst){
+ if (!need_fix_rb){
+    return false;
+  }
+  return (cpt_rb+1) == last_deltat;
 }
 
 bool
@@ -683,6 +693,17 @@ SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
   bool hit = false;
 
 
+  PhysicalReg& reg = inst->regs_dst_phy.front();
+  /* Keep track of old mapping for reg free */
+  PhysicalReg freereg = reg;
+  cpu.pipeline->sa.regalloc.rename_one_secure(freereg); // get Old Preg
+  bool will_be_free = cpu.pipeline->sa.regalloc.can_free_spec(freereg);
+  //  &&
+  //      !cpu.pipeline->sa.fixer.on_schedule_need_rb_noupdate(inst) &&
+  //      !needSerialise(inst);
+  uint64_t will_be_free_reg = freereg.phys_reg_idx;
+
+
   // PhysicalReg& reg = inst->regs_dst_phy[0];
   // uint64_t arch_reg_idx = reg.virt_reg_idx;
 
@@ -692,7 +713,7 @@ SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
   uint64_t schedule_time = schedule_line + base_time;
   // DPRINTF(Cva6Sched, "canRenameDest line %d T %d : %s\n",
   //   schedule_line, schedule_time, dumpInstPreg(inst));
-  #if 1
+  #if 0
   for (uint64_t pregi: FL){
     // bool same_mapping = physical2arch[pregi] == arch_reg_idx;
     // bool inFF = cpu.pipeline->sa.regalloc.isInFF(pregi);
@@ -719,16 +740,23 @@ SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
   }
   #endif
 
-  # if 0
+  # if 1
   // For all physical register
   for (uint64_t pregi = 0; pregi < cpu.pipeline->sa.regalloc.size(); pregi++){
     // First filter free register
     bool free = cpu.pipeline->sa.regalloc.isFree(pregi);
-    if(!free){
-      assert(std::find(FL.begin(), FL.end(), pregi) == FL.end());// quick check
+    // Add the futur free register
+    if (false && will_be_free && will_be_free_reg == pregi){
+      free = true;
+    }
+    if (!free){
       continue;
     }
-    assert(std::find(FL.begin(), FL.end(), pregi) != FL.end());// quick check
+    // if (!free){
+    //assert(std::find(FL.begin(), FL.end(), pregi) == FL.end());// quick check
+    //   continue;
+    // }
+    //assert(std::find(FL.begin(), FL.end(), pregi) != FL.end());// quick check
 
     // Second: filter by constraint
     uint64_t preg_use_time = maxtimeoflasttouch[pregi];
@@ -743,7 +771,7 @@ SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
       max_schedule_time = preg_use_time;
       preg = pregi;
       hit = true;
-      return true;
+      // return true;
     }
   }
   #endif

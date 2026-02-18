@@ -107,7 +107,7 @@ class PhysicalRegAllocator : public Named
   bool isFree(uint64_t preg){
     return isbuzy[preg] == FREE_COMMIT || isbuzy[preg] == FREE_SPEC;
   }
-  
+
   std::string dump(){
     std::ostringstream os;
     os << '[';
@@ -213,6 +213,9 @@ class PhysicalRegAllocator : public Named
     rename_one_secure(freereg); // Clean rename of dst
     inst->phys_reg_to_free.push_back(freereg);
 
+    /* Free the old reg now */
+    speculative_update(inst);
+
     /* > Invalidate RMT */
     // > If someone do not have allocated the same ArchReg !
     // if (rmt[reg] == reg.phys_reg_idx){
@@ -257,14 +260,22 @@ class PhysicalRegAllocator : public Named
     rename_one_secure(reg);
     DPRINTF(Cva6Rename, "Alloc reg %s :: FL=[%s]\n", reg, dump());
   }
-  private:
+
 
   // bool is_allocated(PhysicalReg& reg){
   //   return reg.phys_reg_idx != PREG_MAGIC &&
   //          isbuzy[reg] == BUZY &&
   //          rmt_owner[reg] == reg.producer_id;
   // }
-
+public:
+  bool can_free_spec(PhysicalReg& reg){
+    return reg.isRenammedValid && // Have a physical mapping
+           !cannotbefreed[reg] && // Secure mapping
+           isbuzy[reg] == BUZY && // Not already freed
+           (rmt_owner[reg] == reg.producer_id ||
+            rmt_owner[reg] == 0); // Only needed for commit free as InO ?
+  }
+private:
   bool free_reg(PhysicalReg& reg, bool speculative=false){
     // std::cout << "Free " << idx << std::endl;
     if (reg.isRenammedValid){
@@ -767,7 +778,10 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
   bool canRenameDest(Cva6DynInstPtr &inst,
     std::deque<uint64_t> &FL, uint64_t &preg) override;
 
+  uint64_t tickcnt = 0;
+
   void tick() override {
+    tickcnt ++;
     /* Try to increase base time */
     while (!s2d.empty() && s2d.front().empty()){
       s2d.pop_front();
@@ -791,4 +805,3 @@ class SchedulerPierreMichaud : public BaseScheduler, public Named
 
 } // namespace cva6
 } // namespace gem5
-

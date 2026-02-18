@@ -781,6 +781,9 @@ for variant_path in variant_paths:
 
     env['HAVE_PKG_CONFIG'] = env.Detect('pkg-config') == 'pkg-config'
 
+    env.Append(CPPPATH=[os.environ['EBROOTZLIB'] + '/include'])
+    env.Append(LIBPATH=[os.environ['EBROOTZLIB'] + '/lib'])
+
     with gem5_scons.Configure(env) as conf:
         # On Solaris you need to use libsocket for socket ops
         if not conf.CheckLibWithHeader(

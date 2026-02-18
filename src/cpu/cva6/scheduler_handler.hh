@@ -109,6 +109,13 @@ class SA : public ForwardInstDataPopIntf
     }
     // Rename src must success
     regalloc.rename_src(inst);
+
+    /* Serialise before fault to have a valid replay */
+    // We call RB before canRenameDest and rename_dst to allow in place reuse
+    if (fixer.on_schedule_need_rb_noupdate(inst) || needSerialise(inst)){
+      regalloc.reg_barrier();
+    }
+
     if (inst->regs_dst_phy.size()){
       assert(inst->regs_dst_phy.size() == 1);
       auto &FL = regalloc.getFL();
@@ -140,6 +147,7 @@ class SA : public ForwardInstDataPopIntf
     void before_predict(Cva6DynInstPtr &inst);
     void after_predict(Cva6DynInstPtr &inst);
     bool on_schedule_need_rb(Cva6DynInstPtr &inst);
+    bool on_schedule_need_rb_noupdate(Cva6DynInstPtr &inst);
 
     void clear_on_it(){
       need_fix_rb = false;
@@ -209,17 +217,18 @@ class SA : public ForwardInstDataPopIntf
   } rbh;
 
   void push_scheduler(Cva6DynInstPtr inst){
-    /* Serialise before fault to have a valid replay */
-    // need serialsie before for AMO only ?
+    // fixer.on_schedule_need_rb(inst); // Only to Increment cnt
+    // Just to be sure :)
     if (fixer.on_schedule_need_rb(inst) || needSerialise(inst)){
       regalloc.reg_barrier();
     }
+
     /* Schedule */
     scheduler.push(inst);
     /* Some static statistics */
     // isa.commit(inst);
     /* If required perform speculative free */
-    regalloc.speculative_update(inst);
+    // regalloc.speculative_update(inst);
 
     // TODO: ensure that the SQ will always contain enought space
     // static uint64_t cntbranch = 0;
@@ -280,4 +289,3 @@ class SA : public ForwardInstDataPopIntf
 
 } // namespace cva6
 } // namespace gem5
-
