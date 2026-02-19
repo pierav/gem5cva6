@@ -697,7 +697,8 @@ SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
   /* Keep track of old mapping for reg free */
   PhysicalReg freereg = reg;
   cpu.pipeline->sa.regalloc.rename_one_secure(freereg); // get Old Preg
-  bool will_be_free = cpu.pipeline->sa.regalloc.can_free_spec(freereg);
+  bool will_be_free = cpu.pipeline->sa.regalloc.renameSpecRelaseInplace &&
+                      cpu.pipeline->sa.regalloc.can_free_spec(freereg);
   //  &&
   //      !cpu.pipeline->sa.fixer.on_schedule_need_rb_noupdate(inst) &&
   //      !needSerialise(inst);
@@ -746,7 +747,7 @@ SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
     // First filter free register
     bool free = cpu.pipeline->sa.regalloc.isFree(pregi);
     // Add the futur free register
-    if (false && will_be_free && will_be_free_reg == pregi){
+    if (will_be_free && will_be_free_reg == pregi){
       free = true;
     }
     if (!free){
@@ -771,7 +772,9 @@ SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
       max_schedule_time = preg_use_time;
       preg = pregi;
       hit = true;
-      // return true;
+      if (cpu.pipeline->sa.regalloc.renameSerrAllocFirst){ // Early exit
+        return true;
+      }
     }
   }
   #endif

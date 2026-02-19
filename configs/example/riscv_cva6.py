@@ -71,6 +71,8 @@ cva6_config = {
     "renameFreeRegDead": DEFAULT(0),  # Free reg dead (bugs)
     "renameSpecRelease": DEFAULT(0),  # Speculative Release
     "renameSpecReleasePC": DEFAULT(0),  # SR at pre commit
+    "renameSpecRelaseInplace": DEFAULT(1),
+    "renameSerrAllocFirst": DEFAULT(0),
     "oracleEarlyCommit": DEFAULT(0),
     "flushAtExecute": STORE_TRUE,  # Flush at execute
     "storeSetSize": DEFAULT(1024),
@@ -202,7 +204,7 @@ class CVA6_FPU_DIVSQRT(FUDesc):
 
 
 args = parser.parse_args()
-
+print(args)
 
 CONFIG_USE_O3 = False
 CONFIG_USE_CVA6 = False

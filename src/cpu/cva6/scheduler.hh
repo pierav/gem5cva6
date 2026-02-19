@@ -133,11 +133,13 @@ class PhysicalRegAllocator : public Named
     os << ']';
     return os.str();
   }
-
+  public:
   bool incarchreg; // Scoreboard arch or Full RR
   bool freeregdead;
   bool specrelease;
   bool specreleasePC;
+  bool renameSpecRelaseInplace;
+  bool renameSerrAllocFirst;
   public:
   PhysicalRegAllocator(
     const std::string &name_,
@@ -153,7 +155,9 @@ class PhysicalRegAllocator : public Named
     n(nb_regs), incarchreg(incarchreg_),
     freeregdead(freeregdead_),
     specrelease(specrelease_),
-    specreleasePC(p.renameSpecReleasePC) {
+    specreleasePC(p.renameSpecReleasePC),
+    renameSpecRelaseInplace(p.renameSpecRelaseInplace),
+    renameSerrAllocFirst(p.renameSerrAllocFirst) {
     fatal_if(incarchreg && nb_regs <= NB_I2ID, "Need more preg");
     // Default RMT
     for (int i = 0; i < 64; i++){
@@ -269,7 +273,8 @@ class PhysicalRegAllocator : public Named
   // }
 public:
   bool can_free_spec(PhysicalReg& reg){
-    return reg.isRenammedValid && // Have a physical mapping
+    return specrelease &&
+           reg.isRenammedValid && // Have a physical mapping
            !cannotbefreed[reg] && // Secure mapping
            isbuzy[reg] == BUZY && // Not already freed
            (rmt_owner[reg] == reg.producer_id ||
