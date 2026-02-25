@@ -778,6 +778,54 @@ SchedulerPierreMichaud::canRenameDest(Cva6DynInstPtr &inst,
     }
   }
   #endif
+
+  # if 0
+  // Filter by set
+  static int way = 0;
+  way ++;
+  // For all physical register
+  for (uint64_t pregi = 0; pregi < cpu.pipeline->sa.regalloc.size(); pregi++){
+
+    uint64_t base = (tickcnt + way) % 4;
+    if (!(pregi >= base * 4 && pregi < (base + 1) * 4)){
+      continue; // Skip Out of partitino
+    }
+
+    // First filter free register
+    bool free = cpu.pipeline->sa.regalloc.isFree(pregi);
+    // Add the futur free register
+    if (will_be_free && will_be_free_reg == pregi){
+      free = true;
+    }
+    if (!free){
+      continue;
+    }
+    // if (!free){
+    //assert(std::find(FL.begin(), FL.end(), pregi) == FL.end());// quick check
+    //   continue;
+    // }
+    //assert(std::find(FL.begin(), FL.end(), pregi) != FL.end());// quick check
+
+    // Second: filter by constraint
+    uint64_t preg_use_time = maxtimeoflasttouch[pregi];
+    bool invalid = (preg_use_time > schedule_time); /* Suboptimal schedule */
+    if (invalid){
+      continue;
+    }
+
+    // Finally take optimal
+    if (!hit || (max_schedule_time < preg_use_time)){
+      /* Use this line */
+      max_schedule_time = preg_use_time;
+      preg = pregi;
+      hit = true;
+      if (cpu.pipeline->sa.regalloc.renameSerrAllocFirst){ // Early exit
+        return true;
+      }
+    }
+  }
+  #endif
+
   return hit;
 }
 

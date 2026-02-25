@@ -108,6 +108,11 @@ LSUStoreBuffer::lookupSQDW(Cva6DynInstPtr inst, uint64_t& value){
     value = 0;
     uint64_t valid_mask = 0;
     uint64_t dwaddr = paddr & ~0b111ULL;
+
+    uint64_t expected_mask = basemask(inst) << offsetDW(inst);
+    bool last_is_full_match = false;
+    int cnt_match = 0;
+
     for (Cva6DynInstPtr i2: commit_queue){
         if (!inst->isAfterOrEqual(i2)){ // Ignore futur instructuions
             continue;
@@ -115,6 +120,16 @@ LSUStoreBuffer::lookupSQDW(Cva6DynInstPtr inst, uint64_t& value){
         if (dwaddr == i2->dreq->getDWPaddr()){
             DPRINTF(Cva6LSU, "MatchC %s:%s\n", *i2, i2->dreq->name());
             uint64_t cur_mask = makeMaskDW(i2);
+            if (cur_mask & expected_mask){
+                // Twist here to update count
+                if (((cur_mask & expected_mask) & valid_mask) == valid_mask){
+                    cnt_match = 1; // The new entry cover all the lasts
+                } else {
+                    cnt_match += 1;
+                }
+                last_is_full_match =
+                    (cur_mask & expected_mask) == expected_mask;
+            }
             /* Update value and mask */
             value &= ~cur_mask; /* Remove old value */
             value |= i2->dreq->getDWData() & cur_mask; /* Set new value */
@@ -128,12 +143,27 @@ LSUStoreBuffer::lookupSQDW(Cva6DynInstPtr inst, uint64_t& value){
         if (dwaddr == i2->dreq->getDWPaddr()){
             DPRINTF(Cva6LSU, "MatchS %s:%s\n", *i2, i2->dreq->name());
             uint64_t cur_mask = makeMaskDW(i2);
+            if (cur_mask & expected_mask){
+                // Twist here to update count
+                if (((cur_mask & expected_mask) & valid_mask) == valid_mask){
+                    cnt_match = 1; // The new entry cover all the lasts
+                } else {
+                    cnt_match += 1;
+                }
+                last_is_full_match =
+                    (cur_mask & expected_mask) == expected_mask;
+            }
             /* Update value and mask */
             value &= ~cur_mask; /* Remove old value */
             value |= i2->dreq->getDWData() & cur_mask; /* Set new value */
             valid_mask |= cur_mask; /* Update mask */
         }
     }
+    stats.stlf_lookup += 1;
+    stats.stlf += cnt_match >= 1;
+    stats.full_match += last_is_full_match;
+    stats.partial_match += cnt_match && !last_is_full_match;
+    stats.multiple_stores_depends += cnt_match > 1 && !last_is_full_match;
     return valid_mask;
 }
 

@@ -88,6 +88,13 @@ o3_config = {
     "SQEntries": DEFAULT(32),
 }
 
+parser.add_argument(
+    "--freq",
+    type=str,
+    default="1GHz",
+    help="Core frequency",
+)
+
 parser.add_argument("--plugmemtrace", action="store_true")
 
 for k, v in {**cva6_config, **o3_config}.items():
@@ -786,7 +793,7 @@ def good_bad_trap(elfname):
 print("*** Create system...")
 system = System()
 system.clk_domain = SrcClockDomain()
-system.clk_domain.clock = "1GHz"  # '50MHz'
+system.clk_domain.clock = args.freq  # "1GHz"  # '50MHz'
 system.clk_domain.voltage_domain = VoltageDomain()
 system.mem_ranges = [addr_range_mem]
 system.cache_line_size = 64  # 128 // 8

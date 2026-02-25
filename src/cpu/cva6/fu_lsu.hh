@@ -10,6 +10,7 @@
 
 #include <string>
 #include <vector>
+
 #include "base/named.hh"
 #include "base/statistics.hh"
 #include "cpu/cva6/cpu.hh"
@@ -36,7 +37,23 @@ class LSUStoreBuffer
     unsigned int depth_commit; // WT: 4; WB: 8
     Cva6DynInstChunk speculative_queue;
     Cva6DynInstChunk commit_queue;
+    struct LSULoadUnitStats : public statistics::Group
+    {
+      statistics::Scalar stlf_lookup;
+      statistics::Scalar stlf;
+      statistics::Scalar full_match;
+      statistics::Scalar partial_match;
+      statistics::Scalar multiple_stores_depends;
 
+      LSULoadUnitStats(BaseCPU &cpu):
+        statistics::Group(&cpu, "sq"),
+        ADD_STAT(stlf_lookup, statistics::units::Count::get(),""),
+        ADD_STAT(stlf, statistics::units::Count::get(),""),
+        ADD_STAT(full_match, statistics::units::Count::get(), ""),
+        ADD_STAT(partial_match, statistics::units::Count::get(), ""),
+        ADD_STAT(multiple_stores_depends, statistics::units::Count::get(), "")
+        {}
+    } stats;
   public:
     LSUStoreBuffer(const std::string &name,
                    Cva6CPU &cpu_,
@@ -46,7 +63,8 @@ class LSUStoreBuffer
         depth_spec(p.lsuSQSWidth),
         depth_commit(p.lsuSQCWidth),
         speculative_queue(name + ".SQS"),
-        commit_queue(name + ".SQC") { ; }
+        commit_queue(name + ".SQC"),
+        stats(cpu) { ; }
 
     // there is no store pending in neither the speculative unit or
     // the non-speculative queue
