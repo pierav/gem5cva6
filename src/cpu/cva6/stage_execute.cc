@@ -12,7 +12,6 @@
 #include <functional>
 #include <iomanip>
 
-
 #include "cpu/cva6/cpu.hh"
 #include "cpu/cva6/exec_context.hh"
 #include "cpu/cva6/pipeline.hh"
@@ -231,7 +230,21 @@ Execute::evaluate() {
             continue;
         }
         cpu.pipeline->fus.pop(inst);        /* Compute FU and pop */
+        assert(wbbuffer.canPush());
+        wbbuffer.push(inst);
+        assert(!inst->fu_completed);
+        inst->fu_completed = true;
+    }
+
+    for (int i = 0; i < wbWidth; i++){
+        if (wbbuffer.empty()){
+            break;
+        }
+        Cva6DynInstPtr inst = wbbuffer.pop();
+        assert(inst->fu_completed);
         inst->executeComplete();            /* Complete FU result */
+        assert(!inst->execute_completed); // not already commplete
+        inst->execute_completed = true; // Finished execution
         cpu.pipeline->iq.completeInst(inst);  /* Notify scoreboard */
     }
 
@@ -446,6 +459,7 @@ Execute::do_flush(){
     // Flush everything and start at the latest uarch state
     BranchData inplace = BranchData::SquashAt(cpu);
     cpu.pipeline->flushfrom(Cva6DynInst::bubble(), inplace);
+    wbbuffer.flushfrom(Cva6DynInst::bubble());
 }
 
 void
@@ -453,6 +467,7 @@ Execute::flushfrom(Cva6DynInstPtr inst){
     DPRINTF(Cva6Execute, "Flush fus & inp\n");
     cpu.pipeline->fus.flushfrom(inst);
     inp.flushfrom(inst);
+    wbbuffer.flushfrom(inst);
 }
 
 bool

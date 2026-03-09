@@ -43,6 +43,7 @@
 #pragma once
 
 #include <vector>
+
 #include "base/named.hh"
 #include "base/statistics.hh"
 #include "cpu/cva6/dyn_inst.hh"
@@ -430,7 +431,7 @@ class ScoreboardFSC : public Scoreboard
         break;
       }
       queue_t* queue = getQueue(inp.front());
-      if (queue->size() >= 16){
+      if (queue->size() >= 64){
         return;
       }
       // Finally dispatch

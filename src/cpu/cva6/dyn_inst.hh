@@ -9,6 +9,7 @@
 #pragma once
 
 #include <iostream>
+
 #include "arch/generic/decoder.hh"
 #include "arch/generic/isa.hh"
 #include "base/named.hh"
@@ -417,6 +418,7 @@ class Cva6DynInst : public RefCounted
     void *steered_queue = nullptr;
 
     /************ Execute stage ************/
+    bool fu_completed = false;
     bool execute_completed = false;
     bool ex_request_squash = false;
     /** Destination registers values */
@@ -554,7 +556,7 @@ class Cva6DynInst : public RefCounted
     static Cva6DynInstPtr bubble() { return bubbleInst; }
 
     bool isInFu(){
-      return !execute_completed && issue_completed;
+      return !fu_completed && issue_completed;
     }
 
     void reset(){
@@ -573,6 +575,7 @@ class Cva6DynInst : public RefCounted
       }
       untrackDreq();
       // Reset Execute
+      fu_completed = false;
       execute_completed = false;
       pc_next_taken = false;
       ex_csrs.clear();

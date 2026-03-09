@@ -7,6 +7,7 @@
  */
 
 #include "cpu/cva6/scoreboard.hh"
+
 #include "cpu/cva6/pipeline.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Cva6Scoreboard.hh"
@@ -242,8 +243,7 @@ Scoreboard::writeBackRF(Cva6DynInstPtr& inst){
 
 void
 Scoreboard::completeInst(Cva6DynInstPtr inst) {
-    assert(!inst->execute_completed); // not already commplete
-    inst->execute_completed = true; // Finished execution
+
     if (!inst->isFault() && inst->staticInst->isNonSpeculative()){
         return;
         // Bypass the WB as the instruction is pending

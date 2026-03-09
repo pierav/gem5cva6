@@ -92,9 +92,11 @@ class Execute : public Named
     /** Pointer back to the containing CPU */
     Cva6CPU &cpu;
 
+    Cva6DynInstChunk wbbuffer;
 
     // Some config
     unsigned int commitWidth;
+    unsigned int wbWidth;
     bool flushAtExecute = false;
     bool vpFlush;
     bool oracleEarlyCommit = false;
@@ -168,7 +170,9 @@ class Execute : public Named
         inp(inp_),
         resolved_branch(resolved_branch_),
         cpu(cpu_),
+        wbbuffer(cpu.name() + ".wbbuffer", 2048),
         commitWidth(p.commitWidth),
+        wbWidth(2048),
         flushAtExecute(p.flushAtExecute),
         vpFlush(p.vpFlush),
         oracleEarlyCommit(p.oracleEarlyCommit),
