@@ -1,3 +1,51 @@
+
+# CVA6 in gem5.
+
+This project provides a performance model of the OpenHW CVA6 processor implemented in gem5.
+
+The CPU implementation is located in `src/cpu/cva6`, and the corresponding configuration script is `configs/example/riscv_cva6.py`.
+
+```sh
+# build
+scons build/RISCV/gem5.opt -j 32
+# run:
+./build/RISCV/gem5.opt ./configs/example/riscv_cva6.py --kernel ...
+```
+
+
+# Publication
+
+The work available in this repository was published at the 2023 RISC-V Summit Europe under the title:
+
+> A gem5-based CVA6 Framework for Microarchitectural Pathfinding
+
+```bibtex
+@inproceedings{ravenel2023gem5,
+  title={A gem5-based CVA6 Framework for Microarchitectural Pathfinding},
+  author={Ravenel, Pierre and Perais, Arthur and De Dinechin, Beno{\^\i}t and P{\'e}trot, Fr{\'e}d{\'e}ric},
+  booktitle={RISC-V Summit Eur},
+  year={2023}
+}
+```
+
+# Notes
+
+The CPU model implements the following improvements by default:
+
+* TAGE branch predictor
+* 4-way issue from fetch to commit
+* Larger LSU, ROB, register files, and related structures
+* Store-to-load forwarding (STLF)
+* Optional out-of-order execution with --sbOoO
+
+There are also a few important differences between the CVA6 RTL and this gem5 model:
+
+* The CVA6 RTL does not implement a decoupled fetch, whereas gem5 does. The BTB size therefore needs to be adjusted to maintain a realistic configuration.
+* gem5 does not currently provide a write-through (WT) cache model, which makes tuning the model to accurately match the RTL more challenging.
+
+
+
+
 # The gem5 Simulator
 
 This is the repository for the gem5 simulator. It contains the full source code
