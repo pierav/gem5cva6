@@ -8,9 +8,12 @@
 
 #pragma once
 
+#include <zlib.h>
+
 #include <string>
 #include <vector>
 
+#include "base/callback.hh"
 #include "base/named.hh"
 #include "base/statistics.hh"
 #include "base/time.hh"
@@ -20,6 +23,7 @@
 #include "cpu/cva6/pure_block.hh"
 #include "debug/Cva6Plugin.hh"
 #include "mem/packet.hh"
+#include "sim/core.hh"
 
 namespace gem5 {
 namespace cva6 {
@@ -34,6 +38,7 @@ class Plugin : public Named
         : Named(name), cpu(cpu_) { ; }
 
     virtual void commit(Cva6DynInstPtr inst) = 0;
+    virtual void finalyse() {}
 };
 
 class PluginChecker : public Plugin
@@ -428,6 +433,22 @@ class PluginScheduler : public Plugin
     }
 };
 
+class PluginCBP2025 : public Plugin
+{
+  protected:
+    // std::ofstream out;
+    gzFile out;// = gzopen("trace.bin.gz", "wb");
+  public:
+    PluginCBP2025(const std::string &name,
+    Cva6CPU &cpu,
+    const BaseCva6CPUParams &p);
+    void commit(Cva6DynInstPtr inst);
+    void finalyse() override {
+      gzclose(out);
+    }
+};
+
+
 class Plugins
 {
   /** Plugins */
@@ -435,30 +456,22 @@ class Plugins
   public:
   Plugins(const std::string &name_,
         Cva6CPU &cpu,
-        const BaseCva6CPUParams &params){
-    if (params.plugin_memtrace_path != ""){
-      plugins.push_back(new PluginMemtrace(
-          name_ + "memtrace", cpu, params));
-    }
-    plugins.push_back(new PluginSimpointBar(name_ + "simbar", cpu, params));
-    // plugins.push_back(new PluginVPP(name_ + "vpp", cpu, params));
-    // plugins.push_back(new PluginMCVP(name_ + "mcvp", cpu, params));
-    plugins.push_back(new PluginGoodbadTrap(name_ + "gbt", cpu, params));
-    // plugins.push_back(new PluginLambda(name_ + "lambda", cpu, params));
-    // plugins.push_back(new PluginMemConst(name_ + "memc", cpu, params));
-    // plugins.push_back(new PluginScheduler(name_ + ".sched", cpu, params));
-    plugins.push_back(new PluginHMP(name_ + ".hmp", cpu, params));
-    // plugins.push_back(new PluginChecker(name_ + ".checker", cpu, params));
-    plugins.push_back(new PluginTageHC(name_ + ".tagehc", cpu, params));
-  }
+        const BaseCva6CPUParams &params);
 
   void commit(Cva6DynInstPtr inst){
     for (Plugin *plugin: plugins){
       plugin->commit(inst);
     }
   }
+
+  void finalyse(){
+    std::cout << "Callback before gem5 exit!" << std::endl;
+    for (Plugin *plugin: plugins){
+      plugin->finalyse();
+    }
+  }
+
 };
 
 } // namespace cva6
 } // namespace gem5
-

@@ -218,7 +218,7 @@ CONFIG_USE_CVA6 = False
 CONFIG_USE_ATOMIC = False
 
 # Fixup
-if args.userelf == "":
+if args.userelf == "" and args.kernel:
     args.userelf = args.kernel
 
 CONFIG_USE_CVA6 = args.cpu == "cva"
@@ -854,6 +854,7 @@ if not CONFIG_USE_ATOMIC:
         pipewidth = args.issueWidth
         cpuConfig["issueWidth"] = pipewidth
         cpuConfig["commitWidth"] = pipewidth
+        cpuConfig["m5out"] = m5.options.outdir
         if args.plugmemtrace:
             path = path.join(m5.options.outdir, "memtrace.bin")
             cpuConfig["plugin_memtrace_path"] = path

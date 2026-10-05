@@ -59,6 +59,7 @@ class BaseCva6CPU(BaseCPU):
     failAddr = Param.Addr(0x0, "Bad trap address")
 
     plugin_memtrace_path = Param.String("", "Memtrace")
+    m5out = Param.String("", "m5 rundir")
 
     # IEW
     sbSize = Param.Unsigned(32, "Scoreboard size")

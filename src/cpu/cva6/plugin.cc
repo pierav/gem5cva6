@@ -9,8 +9,35 @@
 
 #include <string>
 
+#include "cpu/cva6/misc/cbp2025.hh"
+
 namespace gem5 {
 namespace cva6 {
+
+Plugins::Plugins(const std::string &name_,
+        Cva6CPU &cpu,
+        const BaseCva6CPUParams &params){
+
+    registerExitCallback([this](){
+        this->finalyse();
+    });
+
+    if (params.plugin_memtrace_path != ""){
+      plugins.push_back(new PluginMemtrace(
+          name_ + "memtrace", cpu, params));
+    }
+    plugins.push_back(new PluginSimpointBar(name_ + "simbar", cpu, params));
+    // plugins.push_back(new PluginVPP(name_ + "vpp", cpu, params));
+    // plugins.push_back(new PluginMCVP(name_ + "mcvp", cpu, params));
+    plugins.push_back(new PluginGoodbadTrap(name_ + "gbt", cpu, params));
+    // plugins.push_back(new PluginLambda(name_ + "lambda", cpu, params));
+    // plugins.push_back(new PluginMemConst(name_ + "memc", cpu, params));
+    // plugins.push_back(new PluginScheduler(name_ + ".sched", cpu, params));
+    plugins.push_back(new PluginHMP(name_ + ".hmp", cpu, params));
+    // plugins.push_back(new PluginChecker(name_ + ".checker", cpu, params));
+    plugins.push_back(new PluginTageHC(name_ + ".tagehc", cpu, params));
+    plugins.push_back(new PluginCBP2025(name_ + ".cbp", cpu, params));
+}
 
 void
 PluginMemtrace::init(const std::string &path){
@@ -277,6 +304,18 @@ PluginMemConst::commit(Cva6DynInstPtr inst){
             }
         }
     }
+}
+
+PluginCBP2025::PluginCBP2025(const std::string &name,
+    Cva6CPU &cpu,
+    const BaseCva6CPUParams &p) :
+    Plugin(name, cpu) {
+    out = gzopen((p.m5out + "/trace.bin.gz").c_str(), "wb");
+}
+
+void
+PluginCBP2025::commit(Cva6DynInstPtr inst){
+    TraceRecordCBP2025(inst).write(out);
 }
 
 } // namespace cva6

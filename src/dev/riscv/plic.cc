@@ -555,7 +555,10 @@ Plic::unserialize(CheckpointIn &cp)
         arrayParamIn(cp, std::string("effPriority") +
             std::to_string(i), effPriority[i]);
     }
-    UNSERIALIZE_CONTAINER(lastID);
+    UNSERIALIZE_CONTAINER(lastID); // Wrong data in cpt
+    for (int i = 0; i < nContext; i++) {
+        lastID[i] = registers.claim[i].get();
+    }
     updateInt();
 }
 

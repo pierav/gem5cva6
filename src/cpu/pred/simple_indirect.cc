@@ -161,7 +161,8 @@ SimpleIndirectPredictor::lookup(ThreadID tid, Addr br_addr,
         // check that way->target has been initialized.
         if (way->tag == history->tag && way->target) {
             DPRINTF(Indirect, "Hit %x (target:%s)\n", br_addr, *way->target);
-            set(target, *way->target);
+            // set(target, *way->target);
+            target = way->target.get();
             history->hit = true;
             stats.hits++;
             last_high_conf = way->isHc();

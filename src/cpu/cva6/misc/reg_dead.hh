@@ -51,6 +51,7 @@ class RegDeadAnayser : public Named
     stats(cpu_)
   {
     if (!params.userelf.empty()){
+      std::cout << "*** Init RDmap from " << params.userelf << std::endl;
       init_rdmap(params.userelf.c_str());
     }
   }
