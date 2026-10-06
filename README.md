@@ -8,10 +8,33 @@ The CPU implementation is located in `src/cpu/cva6`, and the corresponding confi
 ```sh
 # build
 scons build/RISCV/gem5.opt -j 32
-# run:
-./build/RISCV/gem5.opt ./configs/example/riscv_cva6.py --kernel ...
+# Demo binary
+riscv64-unknown-elf-gcc -x assembler-with-cpp - -nostdlib -nostartfiles -march=rv64imafdc -mabi=lp64d -Ttext=0x80000000 -e _start -Wl,-n -o x.elf << 'EOF'
+.text
+_start:
+.globl _start
+li t0, 42
+pass:
+.globl pass
+j pass
+fail:
+.globl fail
+j fail
+EOF
+# Run Gem5
+./build/RISCV/gem5.opt --debug-flags=Cva6Commit ./configs/example/riscv_cva6.py --kernel=x.elf
+# src/sim/simulate.cc:199: info: Entering event queue @ 0.  Starting simulation...
+#   60000: global: commit: [M] 0x10000 sn:1: addi s0, zero, 1               s0:%0%%%:0000000000000001
+#   61000: global: commit: [M] 0x10004 sn:2: slli s0, s0, 31                s0:%1%%%:0000000080000000 *s0:%0%%%:0000000000000001
+#   61000: global: commit: [M] 0x10008 sn:3: csrrs a0, mhartid, zero        a0:%2%%%:0000000000000000
+#  120000: global: commit: [M] 0x1000c sn:27: auipc a1, 0                    a1:%0%%%:000000000001000c
+#  121000: global: commit: [M] 0x10010 sn:28: addi a1, a1, 116               a1:%1%%%:0000000000010080 *a1:%0%%%:000000000001000c
+#  121000: global: commit: [M] 0x10014 sn:29: jalr zero, 0(s0)               s0:A%0%%%:0000000080000000 [T:1 =>80000000 MISS (T:0 =>10018)]
+#  178000: global: commit: [M] 0x80000000 sn:50: addi t0, zero, 42              t0:%0%%%:000000000000002a
+#  178000: global: commit: [M] 0x80000004 sn:51: c_j 0                         [T:1 =>80000004 HIT]
+# *** GOOD TRAP *** @0x80000004
+# Exiting @ tick 178000 because *** GOOD TRAP ***
 ```
-
 
 # Publication
 
