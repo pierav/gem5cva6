@@ -20,13 +20,8 @@ from m5.util import (
 )
 from m5.util.fdthelper import *
 
-# TODO !!!
 addToPath("../")
 from os import path
-
-# addToPath("/nfs/home/pravenel/gem7/configs/")
-from common import Options
-from common.SysPaths import binary
 
 parser = argparse.ArgumentParser()
 # Options.addCommonOptions(parser)
@@ -450,7 +445,6 @@ SECTIONS
     #     exit(1)
     # cc = f"{RISCV_DIR}/bin/riscv64-unknown-elf-gcc"
     cc = "riscv64-unknown-elf-gcc"
-    cc = "/crex/proj/uart/ravenelp/toolchain15.1/bin/riscv64-unknown-elf-gcc"
     incs = f"-I{m5.options.outdir}"
     cflags = "-march=rv32i_zicsr -mabi=ilp32 -nostdlib -static -std=gnu99"
     ldflags = f"-T{linker_file} -Wl,--no-gc-sections,-e_start"
@@ -758,35 +752,33 @@ def createHiFivePlatform(system):
 def good_bad_trap(elfname):
     if elfname is None:
         return {}
-    try:
-        import lief
 
-        binary = lief.parse(elfname)
-    except:
-        return {}
-    try:
-        return {
-            "passAddr": binary.get_function_address("pass"),
-            "failAddr": binary.get_function_address("fail"),
-        }
-    except:
-        pass
-    try:
-        # print("Try pass/fail...")
-        return {
-            "passAddr": binary.get_symbol("pass").value,
-            "failAddr": binary.get_symbol("fail").value,
-        }
-    except:
-        pass
-    try:
-        # print("Try shutdown/panic...") # TODO multiple elf
-        return {
-            "passAddr": 0,
-            "failAddr": binary.get_function_address("panic"),
-        }
-    except:
-        pass
+    import lief
+
+    binary = lief.parse(elfname)
+
+    # Newer lief returns a lief_errors value instead of raising
+    def addr(name):
+        try:
+            a = binary.get_function_address(name)
+            if isinstance(a, int):
+                return a
+        except Exception:
+            pass
+        try:
+            sym = binary.get_symbol(name)
+            if sym is not None and isinstance(sym.value, int):
+                return sym.value
+        except Exception:
+            pass
+        return None
+
+    passAddr, failAddr = addr("pass"), addr("fail")
+    if passAddr is not None and failAddr is not None:
+        return {"passAddr": passAddr, "failAddr": failAddr}
+    panicAddr = addr("panic")  # TODO multiple elf
+    if panicAddr is not None:
+        return {"passAddr": 0, "failAddr": panicAddr}
     return {"passAddr": 0, "failAddr": 0}
 
 
@@ -876,7 +868,7 @@ print("*** Generate bootrom...")
 # # = FSWorkload.init_compatible(args.binary)
 system.workload = RiscvBareMetal()
 zsbl = generate_bootrom(system)
-# zsbl = "/nfs/home/pravenel/cva6master/corev_apu/bootrom/bootrom.elf"
+# "Same" as cva6/corev_apu/bootrom/bootrom.elf"
 system.workload.bootloader = zsbl
 
 # system.workload.reset_vect = 42
