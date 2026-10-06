@@ -45,9 +45,9 @@ with gem5_scons.Configure(main) as conf:
     if 0: # PR: disable HDF5 probe
         conf.env['CONF']['HAVE_HDF5'] = \
                 conf.CheckLibWithHeader('hdf5', 'hdf5.h', 'C',
-                                        'H5Fcreate("", 0, 0, 0);') and \
+                                        call='H5Fcreate("", 0, 0, 0);') and \
                 conf.CheckLibWithHeader('hdf5_cpp', 'H5Cpp.h', 'C++',
-                                        'H5::H5File("", 0);')
+                                        call='H5::H5File("", 0);')
     else:
         conf.env['CONF']['HAVE_HDF5'] = 0
 
